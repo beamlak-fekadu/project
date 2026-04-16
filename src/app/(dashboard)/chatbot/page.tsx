@@ -28,6 +28,7 @@ import {
   type SelectorOption,
 } from '@/services/chatbot/chat-client.service';
 import type { AssistantContent, ChatContextRefs } from '@/types/chatbot';
+import { normalizeAssistantPayload } from '@/services/chatbot/chat-response-normalizer';
 
 type UIMessage = {
   id: string;
@@ -58,27 +59,10 @@ const CONFIDENCE_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'error'> 
   low: 'error',
 };
 
-function normalizeAssistantContent(assistant: Partial<AssistantContent>): AssistantContent {
-  return {
-    decision: assistant.decision ?? 'limited_answer',
-    summary: assistant.summary ?? 'No summary available.',
-    likely_causes: Array.isArray(assistant.likely_causes) ? assistant.likely_causes : [],
-    troubleshooting_steps: Array.isArray(assistant.troubleshooting_steps) ? assistant.troubleshooting_steps : [],
-    maintenance_tips: Array.isArray(assistant.maintenance_tips) ? assistant.maintenance_tips : [],
-    required_tools_or_parts: Array.isArray(assistant.required_tools_or_parts) ? assistant.required_tools_or_parts : [],
-    escalation_recommendation: assistant.escalation_recommendation,
-    reason_for_limit: assistant.reason_for_limit,
-    answer_basis: assistant.answer_basis ?? 'insufficient_data',
-    confidence: assistant.confidence ?? 'low',
-    escalation_required: assistant.escalation_required ?? false,
-  };
-}
-
 function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
-  const assistant =
-    row.role === 'assistant' && row.metadata?.assistant
-      ? normalizeAssistantContent(row.metadata.assistant as Partial<AssistantContent>)
-      : undefined;
+  const assistant = row.role === 'assistant'
+    ? normalizeAssistantPayload(row.metadata?.assistant, row.content)
+    : undefined;
 
   return {
     id: row.id,
@@ -206,7 +190,7 @@ export default function ChatbotPage() {
 
       setActiveSessionId(payload.sessionId);
 
-      const assistantNormalized = normalizeAssistantContent(payload.assistant);
+      const assistantNormalized = normalizeAssistantPayload(payload.assistant);
       const assistantMessage: UIMessage = {
         id: `local-assistant-${Date.now()}`,
         role: 'assistant',

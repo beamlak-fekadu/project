@@ -12,18 +12,56 @@ export const CHAT_INTENTS = [
   'out_of_scope',
 ] as const;
 
+export const CHAT_CAPABILITIES = [
+  'my_tasks',
+  'prioritize_tasks',
+  'summarize_work_order',
+  'explain_equipment_risk',
+  'explain_pm_status',
+  'safe_troubleshooting',
+  'maintenance_guidance',
+  'logistics_status',
+  'approval_tasks',
+  'alerts_and_escalations',
+  'decision_support_analysis',
+  'general_fallback',
+] as const;
+
 export const CHAT_DECISIONS = ['answer', 'limited_answer', 'check_manual', 'escalate', 'refuse'] as const;
 export const ANSWER_BASIS = ['system_data', 'manual_or_sop', 'general_safe_guidance', 'insufficient_data'] as const;
 export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const;
 export const CHAT_PROVIDERS = ['stub', 'ollama', 'groq'] as const;
+export const SAFETY_MODES = ['normal', 'strict', 'fallback'] as const;
+export const RESOLUTION_SOURCES = ['explicit_context', 'module_context', 'memory_context', 'text_match', 'none'] as const;
+export const ENTITY_TYPES = ['equipment', 'work_order', 'department', 'part'] as const;
+export const FALLBACK_REASONS = [
+  'no_capability_match',
+  'low_confidence_match',
+  'insufficient_context',
+  'insufficient_permissions',
+  'provider_failure',
+  'unsafe_query',
+  'out_of_scope',
+] as const;
 
 export type ChatIntent = (typeof CHAT_INTENTS)[number];
+export type CapabilityId = (typeof CHAT_CAPABILITIES)[number];
 export type ChatDecision = (typeof CHAT_DECISIONS)[number];
 export type AnswerBasis = (typeof ANSWER_BASIS)[number];
 export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 export type ChatProviderName = (typeof CHAT_PROVIDERS)[number];
+export type SafetyMode = (typeof SAFETY_MODES)[number];
+export type ResolutionSource = (typeof RESOLUTION_SOURCES)[number];
+export type EntityType = (typeof ENTITY_TYPES)[number];
+export type FallbackReason = (typeof FALLBACK_REASONS)[number];
 export type ChatMessageRole = 'user' | 'assistant';
 export type ChatModelMessageRole = 'system' | 'user' | 'assistant';
+export type TroubleshootingSubtype =
+  | 'safe_general_troubleshooting'
+  | 'specific_technical_troubleshooting'
+  | 'unsafe_internal_or_bypass_troubleshooting'
+  | 'none';
+export type RequestSpecificity = 'general' | 'specific' | 'unsafe';
 
 export const ChatContextRefsSchema = z.object({
   equipmentId: z.string().uuid().optional(),
@@ -31,10 +69,16 @@ export const ChatContextRefsSchema = z.object({
   departmentId: z.string().uuid().optional(),
 });
 
+export const ChatModuleContextSchema = z.object({
+  moduleLabel: z.string().trim().min(1).max(80).optional(),
+  pathname: z.string().trim().min(1).max(250).optional(),
+});
+
 export const ChatRequestSchema = z.object({
   message: z.string().trim().min(3).max(2000),
   sessionId: z.string().uuid().optional(),
   contextRefs: ChatContextRefsSchema.optional(),
+  moduleContext: ChatModuleContextSchema.optional(),
 });
 
 export const AssistantContentSchema = z.object({
@@ -49,13 +93,20 @@ export const AssistantContentSchema = z.object({
   answer_basis: z.enum(ANSWER_BASIS),
   confidence: z.enum(CONFIDENCE_LEVELS),
   escalation_required: z.boolean().default(false),
+  actions: z.array(z.string().max(400)).max(10).default([]),
+  insights: z.array(z.string().max(400)).max(10).default([]),
+  recommendations: z.array(z.string().max(400)).max(10).default([]),
+  escalation_guidance: z.string().max(600).optional(),
 });
 
 export const ChatResponseSchema = z.object({
   sessionId: z.string().uuid(),
   intent: z.enum(CHAT_INTENTS),
+  capability: z.enum(CHAT_CAPABILITIES).optional(),
   decision: z.enum(CHAT_DECISIONS),
   blocked: z.boolean(),
+  confidenceScore: z.number().min(0).max(1).optional(),
+  fallbackReason: z.enum(FALLBACK_REASONS).optional(),
   assistant: AssistantContentSchema,
 });
 
@@ -66,7 +117,16 @@ export type ChatResponse = z.infer<typeof ChatResponseSchema>;
 
 export interface ClassifiedRequest {
   intent: ChatIntent;
+  capability: CapabilityId;
   reasons: string[];
+  troubleshootingSubtype: TroubleshootingSubtype;
+  specificity: RequestSpecificity;
+  matchedSignals: string[];
+  confidence: number;
+  confidenceLabel: ConfidenceLevel;
+  ambiguous: boolean;
+  fallbackReason?: FallbackReason;
+  candidates: CapabilityMatch[];
 }
 
 export interface UserChatProfile {
@@ -90,6 +150,42 @@ export interface ChatEvidence {
   accessDenied: boolean;
 }
 
+export interface CapabilityMatch {
+  capability: CapabilityId;
+  confidence: number;
+  reasons: string[];
+}
+
+export interface ResolvedEntity {
+  type: EntityType;
+  id: string;
+  label: string;
+  source: ResolutionSource;
+}
+
+export interface MemorySnapshot {
+  sessionId: string;
+  shortSummary: string;
+  focus: string;
+  recentTurns: Array<{ role: ChatMessageRole; content: string }>;
+  lastEntities: ResolvedEntity[];
+}
+
+export interface TaskContextBundle {
+  capability: CapabilityId;
+  blocks: Record<string, unknown>;
+  evidence: ChatEvidence;
+}
+
+export interface OrchestratorContext {
+  message: string;
+  profile: UserChatProfile;
+  sessionId: string;
+  contextRefs?: ChatContextRefs;
+  moduleContext?: ChatModuleContext;
+  safetyMode: SafetyMode;
+}
+
 export interface SafetyEvaluation {
   decision: ChatDecision;
   blocked: boolean;
@@ -97,6 +193,48 @@ export interface SafetyEvaluation {
   confidence: ConfidenceLevel;
   reason: string;
   escalationRequired: boolean;
+  evidenceTier: 'high' | 'medium' | 'low';
+  policyCategory: 'general_operational' | 'specific_technical' | 'unsafe_or_out_of_scope';
+}
+
+export interface TelemetryEvent {
+  sessionId: string;
+  query: string;
+  intent: ChatIntent;
+  capability: CapabilityId;
+  confidenceScore: number;
+  confidenceLabel: ConfidenceLevel;
+  decision: ChatDecision;
+  blocked: boolean;
+  fallbackReason?: FallbackReason;
+  roleNames: string[];
+  moduleLabel?: string;
+  evidenceSignals: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface OrchestratorResult {
+  intent: ChatIntent;
+  capability: CapabilityId;
+  confidenceScore: number;
+  confidenceLabel: ConfidenceLevel;
+  decision: ChatDecision;
+  blocked: boolean;
+  fallbackReason?: FallbackReason;
+  assistant: AssistantContent;
+  evidence: ChatEvidence;
+  classified: ClassifiedRequest;
+  memory?: MemorySnapshot;
+  resolvedEntities: ResolvedEntity[];
+  provider?: ChatProviderName;
+  model?: string;
+  providerMetadata?: Record<string, unknown>;
+  policyReason?: string;
+}
+
+export interface ChatModuleContext {
+  moduleLabel?: string;
+  pathname?: string;
 }
 
 export interface ChatModelMessage {
@@ -114,6 +252,7 @@ export interface LlmProviderResult {
   assistant: AssistantContent;
   provider: ChatProviderName;
   model: string;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface ChatLlmProvider {

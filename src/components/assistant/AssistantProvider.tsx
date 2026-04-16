@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { sendChatMessage } from '@/services/chatbot/chat-client.service';
 import type { AssistantContent, ChatContextRefs } from '@/types/chatbot';
 import { useToast } from '@/components/ui/Toast';
+import { normalizeAssistantPayload } from '@/services/chatbot/chat-response-normalizer';
 
 export interface AssistantUiMessage {
   id: string;
@@ -47,22 +48,6 @@ function mapModuleFromPathname(pathname: string): string {
   if (pathname.startsWith('/analytics') || pathname.startsWith('/decision-support') || pathname.startsWith('/replacement')) return 'Decision Support';
   if (pathname.startsWith('/reports')) return 'Reporting';
   return 'Operations';
-}
-
-function normalizeAssistantContent(assistant: Partial<AssistantContent>): AssistantContent {
-  return {
-    decision: assistant.decision ?? 'limited_answer',
-    summary: assistant.summary ?? 'No summary available.',
-    likely_causes: Array.isArray(assistant.likely_causes) ? assistant.likely_causes : [],
-    troubleshooting_steps: Array.isArray(assistant.troubleshooting_steps) ? assistant.troubleshooting_steps : [],
-    maintenance_tips: Array.isArray(assistant.maintenance_tips) ? assistant.maintenance_tips : [],
-    required_tools_or_parts: Array.isArray(assistant.required_tools_or_parts) ? assistant.required_tools_or_parts : [],
-    escalation_recommendation: assistant.escalation_recommendation,
-    reason_for_limit: assistant.reason_for_limit,
-    answer_basis: assistant.answer_basis ?? 'insufficient_data',
-    confidence: assistant.confidence ?? 'low',
-    escalation_required: assistant.escalation_required ?? false,
-  };
 }
 
 export function AssistantProvider({ children }: { children: ReactNode }) {
@@ -116,10 +101,14 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         message: text,
         sessionId: activeSessionId,
         contextRefs,
+        moduleContext: {
+          moduleLabel,
+          pathname,
+        },
       });
 
       setActiveSessionId(response.sessionId);
-      const assistantNormalized = normalizeAssistantContent(response.assistant);
+      const assistantNormalized = normalizeAssistantPayload(response.assistant);
 
       const assistantMessage: AssistantUiMessage = {
         id: `assistant-response-${Date.now()}`,

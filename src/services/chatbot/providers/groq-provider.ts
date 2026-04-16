@@ -1,24 +1,21 @@
 import {
-  AssistantContentSchema,
   type ChatLlmProvider,
   type ChatModelMessage,
   type ChatProviderName,
   type LlmGenerateParams,
   type LlmProviderResult,
 } from '@/types/chatbot';
+import { normalizeProviderOutput } from './normalize-provider-output';
 
 interface GroqResponse {
+  id?: string;
+  model?: string;
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
     };
   }>;
-}
-
-function extractJsonPayload(raw: string) {
-  const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch?.[1]) return fencedMatch[1].trim();
-  return raw.trim();
 }
 
 function toGroqMessages(messages: ChatModelMessage[]) {
@@ -28,6 +25,17 @@ function toGroqMessages(messages: ChatModelMessage[]) {
       role: message.role,
       content: message.content,
     }));
+}
+
+function readNumberEnv(name: string, fallback: number) {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function debugRawProviderLogs() {
+  return (process.env.CHAT_DEBUG_RAW_PROVIDER ?? '').toLowerCase() === 'true';
 }
 
 export const groqProvider: ChatLlmProvider = {
@@ -41,13 +49,15 @@ export const groqProvider: ChatLlmProvider = {
     const baseUrl = process.env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1';
     const model = process.env.GROQ_MODEL ?? 'llama-3.1-8b-instant';
     const temperature = Number(process.env.GROQ_TEMPERATURE ?? 0.1);
-    const timeoutMs = Number(process.env.GROQ_TIMEOUT_MS ?? 30000);
+    const timeoutMs = readNumberEnv('GROQ_TIMEOUT_MS', 30000);
+    const maxCompletionTokens = readNumberEnv('GROQ_MAX_COMPLETION_TOKENS', 800);
+    const shouldDebugRaw = debugRawProviderLogs();
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,6 +67,7 @@ export const groqProvider: ChatLlmProvider = {
           model,
           temperature,
           response_format: { type: 'json_object' },
+          max_completion_tokens: maxCompletionTokens,
           messages: toGroqMessages(params.messages),
         }),
         signal: controller.signal,
@@ -67,17 +78,39 @@ export const groqProvider: ChatLlmProvider = {
         throw new Error(`Groq request failed (${response.status}): ${details || 'No response body'}`);
       }
 
-      const payload = (await response.json()) as GroqResponse;
-      const modelText = payload.choices?.[0]?.message?.content ?? '';
-      const parsed = JSON.parse(extractJsonPayload(modelText)) as unknown;
-      const validated = AssistantContentSchema.parse(parsed);
+      const rawResponseText = await response.text();
+      const parsedPayload = (() => {
+        try {
+          return JSON.parse(rawResponseText) as GroqResponse;
+        } catch {
+          return null;
+        }
+      })();
+      const modelText = parsedPayload?.choices?.[0]?.message?.content ?? rawResponseText;
+      const normalized = normalizeProviderOutput(modelText, params.requiredDecision);
+
+      if (shouldDebugRaw) {
+        console.info('[chatbot][groq][raw-response]', {
+          provider: 'groq',
+          modelConfigured: model,
+          modelReturned: parsedPayload?.model ?? model,
+          finishReason: parsedPayload?.choices?.[0]?.finish_reason ?? null,
+          responseId: parsedPayload?.id ?? null,
+          rawContent: modelText,
+        });
+      }
 
       return {
-        assistant: validated.decision === params.requiredDecision
-          ? validated
-          : { ...validated, decision: params.requiredDecision },
+        assistant: normalized.assistant,
         provider: 'groq' as ChatProviderName,
-        model,
+        model: parsedPayload?.model ?? model,
+        providerMetadata: {
+          parser: normalized.metadata,
+          finishReason: parsedPayload?.choices?.[0]?.finish_reason ?? null,
+          responseId: parsedPayload?.id ?? null,
+          maxCompletionTokens,
+          nonJsonProviderBody: parsedPayload ? false : true,
+        },
       };
     } finally {
       clearTimeout(timer);

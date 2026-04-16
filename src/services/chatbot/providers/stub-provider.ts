@@ -40,6 +40,9 @@ function buildStubAssistant(params: LlmGenerateParams): AssistantContent {
       'Track repeat issues per asset and schedule targeted preventive actions.',
     ],
     required_tools_or_parts: ['Basic inspection tools', 'Approved replacement consumables per SOP/manual'],
+    actions: ['Review current assignments and update work-order notes.', 'Escalate if first-line checks fail or risk remains high.'],
+    insights: ['Stub mode provides deterministic response scaffolding.', 'Use provider telemetry for production tuning.'],
+    recommendations: ['Confirm grounded data availability before deeper guidance.', 'Use capability-level evaluation prompts during validation.'],
     reason_for_limit: params.requiredDecision === 'limited_answer'
       ? 'Stub mode: constrained guidance only in provider-agnostic development state.'
       : undefined,
@@ -48,6 +51,9 @@ function buildStubAssistant(params: LlmGenerateParams): AssistantContent {
     escalation_required: params.requiredDecision === 'limited_answer' && params.intent === 'troubleshooting',
     escalation_recommendation: params.intent === 'troubleshooting'
       ? 'If first-line checks do not resolve the issue, escalate to qualified biomedical engineer/vendor.'
+      : undefined,
+    escalation_guidance: params.intent === 'troubleshooting'
+      ? 'Escalate immediately if patient safety or critical operations are impacted.'
       : undefined,
   };
 }

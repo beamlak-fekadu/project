@@ -1,26 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { classifyChatRequest } from '@/services/chatbot/classifier-service';
-import { buildChatEvidence } from '@/services/chatbot/context-service';
-import { generateAssistantContent } from '@/services/chatbot/llm-service';
-import { buildPromptPayload } from '@/services/chatbot/prompt-service';
-import { evaluateSafetyDecision, STANDARD_RESPONSES } from '@/services/chatbot/safety-service';
-import { ChatRequestSchema, ChatResponseSchema, type AssistantContent, type ChatDecision, type UserChatProfile } from '@/types/chatbot';
+import { orchestrateAssistantResponse } from '@/services/chatbot/assistant-orchestrator';
+import { ChatRequestSchema, ChatResponseSchema, type ChatDecision, type UserChatProfile } from '@/types/chatbot';
 
-function buildBlockedAssistantContent(decision: ChatDecision, reason: string): AssistantContent {
-  return {
-    decision,
-    summary: reason,
-    likely_causes: [],
-    troubleshooting_steps: [],
-    maintenance_tips: [],
-    required_tools_or_parts: [],
-    escalation_recommendation: decision === 'escalate' ? STANDARD_RESPONSES.escalate : undefined,
-    reason_for_limit: reason,
-    answer_basis: 'insufficient_data',
-    confidence: 'low',
-    escalation_required: decision === 'escalate',
-  };
+function debugPolicyLogsEnabled() {
+  return (process.env.CHAT_DEBUG_POLICY ?? '').toLowerCase() === 'true';
 }
 
 async function getUserChatProfile() {
@@ -139,9 +123,14 @@ export async function POST(request: Request) {
   }
 
   const { message, sessionId, contextRefs } = parsed.data;
-  const classified = classifyChatRequest(message);
+  const moduleContext = parsed.data.moduleContext;
 
-  console.info('[chatbot] intent classified', { intent: classified.intent, reasons: classified.reasons });
+  if (debugPolicyLogsEnabled()) {
+    console.info('[chatbot] inbound request', {
+      hasContextRefs: Boolean(contextRefs),
+      moduleContext: moduleContext ?? null,
+    });
+  }
 
   const session = await ensureChatSession({
     supabase,
@@ -156,125 +145,69 @@ export async function POST(request: Request) {
     sessionId: session,
     role: 'user',
     content: message,
-    intent: classified.intent,
+    intent: undefined,
     metadata: {
       contextRefs: contextRefs ?? null,
-      classificationReasons: classified.reasons,
+      moduleContext: moduleContext ?? null,
     },
   });
 
-  const evidence = await buildChatEvidence(supabase, contextRefs, profile, classified.intent);
-  const safety = evaluateSafetyDecision(message, classified.intent, profile, evidence);
-
-  console.info('[chatbot] safety decision', {
-    intent: classified.intent,
-    decision: safety.decision,
-    blocked: safety.blocked,
-    reason: safety.reason,
-  });
-
-  if (safety.blocked) {
-    const blockedAssistant = buildBlockedAssistantContent(safety.decision, safety.reason);
-    await insertChatMessage({
-      supabase,
-      sessionId: session,
-      role: 'assistant',
-      content: blockedAssistant.summary,
-      decision: blockedAssistant.decision,
-      intent: classified.intent,
-      answerBasis: blockedAssistant.answer_basis,
-      confidence: blockedAssistant.confidence,
-      metadata: { blocked: true, assistant: blockedAssistant },
-    });
-
-    const blockedResponse = ChatResponseSchema.parse({
-      sessionId: session,
-      intent: classified.intent,
-      decision: safety.decision,
-      blocked: true,
-      assistant: blockedAssistant,
-    });
-
-    return NextResponse.json(blockedResponse);
-  }
-
-  const prompt = buildPromptPayload({
+  const orchestrated = await orchestrateAssistantResponse({
+    supabase,
+    sessionId: session,
     message,
-    intent: classified.intent,
-    decision: safety.decision,
-    evidence,
+    profile,
+    contextRefs,
+    moduleContext,
   });
 
-  try {
-    const providerResult = await generateAssistantContent({
-      messages: [
-        { role: 'system', content: prompt.systemPrompt },
-        { role: 'user', content: prompt.userPrompt },
-      ],
-      requiredDecision: safety.decision,
-      intent: classified.intent,
+  if (debugPolicyLogsEnabled()) {
+    console.info('[chatbot] orchestrator decision', {
+      intent: orchestrated.intent,
+      capability: orchestrated.capability,
+      confidenceScore: orchestrated.confidenceScore,
+      confidenceLabel: orchestrated.confidenceLabel,
+      decision: orchestrated.decision,
+      blocked: orchestrated.blocked,
+      fallbackReason: orchestrated.fallbackReason ?? null,
     });
-
-    const finalAssistant: AssistantContent = {
-      ...providerResult.assistant,
-      answer_basis: providerResult.assistant.answer_basis ?? safety.answerBasis,
-      confidence: providerResult.assistant.confidence ?? safety.confidence,
-      escalation_required: providerResult.assistant.escalation_required || safety.escalationRequired,
-    };
-
-    await insertChatMessage({
-      supabase,
-      sessionId: session,
-      role: 'assistant',
-      content: finalAssistant.summary,
-      decision: finalAssistant.decision,
-      intent: classified.intent,
-      answerBasis: finalAssistant.answer_basis,
-      confidence: finalAssistant.confidence,
-      metadata: {
-        blocked: false,
-        evidenceSignals: evidence.evidenceSignals,
-        provider: providerResult.provider,
-        providerModel: providerResult.model,
-        assistant: finalAssistant,
-      },
-    });
-
-    const responsePayload = ChatResponseSchema.parse({
-      sessionId: session,
-      intent: classified.intent,
-      decision: finalAssistant.decision,
-      blocked: false,
-      assistant: finalAssistant,
-    });
-
-    return NextResponse.json(responsePayload);
-  } catch (error) {
-    console.error('[chatbot] provider or schema failure', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    const fallbackAssistant = buildBlockedAssistantContent('check_manual', STANDARD_RESPONSES.checkManual);
-    await insertChatMessage({
-      supabase,
-      sessionId: session,
-      role: 'assistant',
-      content: fallbackAssistant.summary,
-      decision: fallbackAssistant.decision,
-      intent: classified.intent,
-      answerBasis: fallbackAssistant.answer_basis,
-      confidence: fallbackAssistant.confidence,
-      metadata: { fallbackDueToError: true, assistant: fallbackAssistant },
-    });
-
-    const fallbackResponse = ChatResponseSchema.parse({
-      sessionId: session,
-      intent: classified.intent,
-      decision: fallbackAssistant.decision,
-      blocked: true,
-      assistant: fallbackAssistant,
-    });
-
-    return NextResponse.json(fallbackResponse, { status: 200 });
   }
+
+  await insertChatMessage({
+    supabase,
+    sessionId: session,
+    role: 'assistant',
+    content: orchestrated.assistant.summary,
+    decision: orchestrated.assistant.decision,
+    intent: orchestrated.intent,
+    answerBasis: orchestrated.assistant.answer_basis,
+    confidence: orchestrated.assistant.confidence,
+    metadata: {
+      blocked: orchestrated.blocked,
+      capability: orchestrated.capability,
+      confidenceScore: orchestrated.confidenceScore,
+      confidenceLabel: orchestrated.confidenceLabel,
+      fallbackReason: orchestrated.fallbackReason ?? null,
+      policyReason: orchestrated.policyReason ?? null,
+      provider: orchestrated.provider ?? null,
+      providerModel: orchestrated.model ?? null,
+      providerMetadata: orchestrated.providerMetadata ?? null,
+      resolvedEntities: orchestrated.resolvedEntities,
+      evidenceSignals: orchestrated.evidence.evidenceSignals,
+      assistant: orchestrated.assistant,
+    },
+  });
+
+  const responsePayload = ChatResponseSchema.parse({
+    sessionId: session,
+    intent: orchestrated.intent,
+    capability: orchestrated.capability,
+    decision: orchestrated.assistant.decision,
+    blocked: orchestrated.blocked,
+    confidenceScore: orchestrated.confidenceScore,
+    fallbackReason: orchestrated.fallbackReason,
+    assistant: orchestrated.assistant,
+  });
+
+  return NextResponse.json(responsePayload, { status: 200 });
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@/lib/supabase/client';
-import type { ChatContextRefs, ChatResponse } from '@/types/chatbot';
+import type { ChatContextRefs, ChatModuleContext, ChatResponse } from '@/types/chatbot';
 
 export interface ChatSessionListItem {
   id: string;
@@ -47,6 +47,7 @@ export async function sendChatMessage(payload: {
   message: string;
   sessionId?: string;
   contextRefs?: ChatContextRefs;
+  moduleContext?: ChatModuleContext;
 }) {
   const response = await fetch('/api/chat', {
     method: 'POST',
@@ -54,10 +55,26 @@ export async function sendChatMessage(payload: {
     body: JSON.stringify(payload),
   });
 
-  const json = (await response.json()) as ChatResponse | { error: string };
+  const rawText = await response.text();
+  const json = (() => {
+    try {
+      return JSON.parse(rawText) as ChatResponse | { error?: string; message?: string };
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!json) {
+    throw new Error(`Chat endpoint returned non-JSON response (${response.status}).`);
+  }
+
   if (!response.ok) {
-    const errorMessage = 'error' in json ? json.error : 'Chat request failed';
+    const errorMessage = ('error' in json && typeof json.error === 'string' && json.error) || ('message' in json && typeof json.message === 'string' && json.message) || 'Chat request failed';
     throw new Error(errorMessage);
+  }
+
+  if (!('sessionId' in json) || typeof json.sessionId !== 'string') {
+    throw new Error('Chat response missing session identifier.');
   }
 
   return json as ChatResponse;
