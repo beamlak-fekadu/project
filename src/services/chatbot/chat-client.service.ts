@@ -50,10 +50,11 @@ export async function sendChatMessage(payload: {
   contextRefs?: ChatContextRefs;
   moduleContext?: ChatModuleContext;
 }) {
+  const preparedPayload = prepareChatRequestPayload(payload);
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(preparedPayload),
   });
 
   const rawText = await response.text();
@@ -79,6 +80,49 @@ export async function sendChatMessage(payload: {
   }
 
   return json as ChatResponse;
+}
+
+function cleanContextRefs(contextRefs?: ChatContextRefs) {
+  if (!contextRefs) return undefined;
+  const cleaned: ChatContextRefs = {
+    equipmentId: contextRefs.equipmentId || undefined,
+    workOrderId: contextRefs.workOrderId || undefined,
+    departmentId: contextRefs.departmentId || undefined,
+    organizationUnitId: contextRefs.organizationUnitId || undefined,
+  };
+  if (!cleaned.equipmentId && !cleaned.workOrderId && !cleaned.departmentId && !cleaned.organizationUnitId) {
+    return undefined;
+  }
+  return cleaned;
+}
+
+function cleanModuleContext(moduleContext?: ChatModuleContext) {
+  if (!moduleContext) return undefined;
+  const cleaned: ChatModuleContext = {
+    moduleLabel: moduleContext.moduleLabel?.trim() || undefined,
+    pathname: moduleContext.pathname?.trim() || undefined,
+    route: moduleContext.route?.trim() || undefined,
+    pageLabel: moduleContext.pageLabel?.trim() || undefined,
+    currentFilters: moduleContext.currentFilters,
+  };
+  if (!cleaned.moduleLabel && !cleaned.pathname && !cleaned.route && !cleaned.pageLabel && !cleaned.currentFilters) {
+    return undefined;
+  }
+  return cleaned;
+}
+
+export function prepareChatRequestPayload(payload: {
+  message: string;
+  sessionId?: string;
+  contextRefs?: ChatContextRefs;
+  moduleContext?: ChatModuleContext;
+}) {
+  return {
+    message: payload.message.trim(),
+    sessionId: payload.sessionId || undefined,
+    contextRefs: cleanContextRefs(payload.contextRefs),
+    moduleContext: cleanModuleContext(payload.moduleContext),
+  };
 }
 
 export async function getEquipmentSelectorOptions() {

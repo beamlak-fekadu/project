@@ -90,6 +90,19 @@ export function evaluateSafetyDecision(
   const normalizedMessage = message.trim();
   const lowConfidence = classified.confidenceLabel === 'low' || classified.confidence < 0.62 || classified.ambiguous;
 
+  if (intent === 'assistant_intro') {
+    return {
+      decision: 'answer',
+      blocked: false,
+      answerBasis: 'general_safe_guidance',
+      confidence: 'high',
+      reason: 'Onboarding and capability summary for BMERMS copilot (no high-risk medical advice).',
+      escalationRequired: false,
+      evidenceTier: 'low',
+      policyCategory: 'general_operational',
+    };
+  }
+
   if (intent === 'out_of_scope') {
     return {
       decision: 'refuse',

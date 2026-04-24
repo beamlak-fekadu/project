@@ -2,6 +2,10 @@ import { AssistantContentSchema, type AssistantContent, type ChatDecision } from
 
 const FALLBACK_SUMMARY =
   "I couldn't generate a reliably structured response from the AI provider. Please try again or use the equipment manual/escalation path.";
+const DISPLAY_REPAIR_SUMMARY = 'I generated a response but it could not be displayed reliably. Please try again.';
+
+export const AI_UNAVAILABLE_SUMMARY = 'AI temporarily unavailable';
+export const AI_UNAVAILABLE_SUGGESTION = 'Try again shortly';
 
 function coerceStringArray(value: unknown, maxItems: number, maxLength: number) {
   if (Array.isArray(value)) {
@@ -63,6 +67,33 @@ function safeJsonParse(candidate: string): unknown | null {
       return null;
     }
   }
+}
+
+function stripCodeFences(text: string) {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenceMatch?.[1]) return fenceMatch[1].trim();
+  return trimmed;
+}
+
+function looksLikeJsonPayload(text: string) {
+  const t = text.trim();
+  if (!t) return false;
+  if (t.startsWith('{') && t.endsWith('}')) return true;
+  if (t.startsWith('```')) return true;
+  if (/"summary"\s*:|{"decision"|{"title"/i.test(t)) return true;
+  return false;
+}
+
+function sanitizeSummaryText(input: string) {
+  const noFence = stripCodeFences(input);
+  if (!looksLikeJsonPayload(noFence)) return noFence.slice(0, 2000);
+  const parsed = safeJsonParse(noFence);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const summary = (parsed as { summary?: unknown }).summary;
+    if (typeof summary === 'string' && summary.trim()) return summary.trim().slice(0, 2000);
+  }
+  return DISPLAY_REPAIR_SUMMARY;
 }
 
 function normalizeFromObject(rawObject: Record<string, unknown>, requiredDecision: ChatDecision): AssistantContent {
@@ -131,6 +162,13 @@ function normalizeFromObject(rawObject: Record<string, unknown>, requiredDecisio
         : typeof camel.escalationRequired === 'boolean'
           ? camel.escalationRequired
           : false,
+    proactive_signals: coerceStringArray(snake.proactive_signals ?? camel.proactiveSignals, 8, 400),
+    routing_explanation: coerceStringArray(snake.routing_explanation ?? camel.routingExplanation, 8, 320),
+    intelligence_mode: (() => {
+      const raw = snake.intelligence_mode ?? camel.intelligenceMode;
+      if (raw === 'standard' || raw === 'troubleshooting' || raw === 'prioritization' || raw === 'synthesis') return raw;
+      return undefined;
+    })(),
   };
 
   const validated = AssistantContentSchema.safeParse(normalized);
@@ -162,6 +200,9 @@ function buildSafeFallback(requiredDecision: ChatDecision): AssistantContent {
     recommendations: [],
     entities_referenced: [],
     follow_up_suggestions: [],
+    proactive_signals: [],
+    routing_explanation: [],
+    intelligence_mode: undefined,
     reason_for_limit: 'Provider output was not reliably parseable into the required structure.',
     answer_basis: 'insufficient_data',
     confidence: 'low',
@@ -171,6 +212,90 @@ function buildSafeFallback(requiredDecision: ChatDecision): AssistantContent {
         ? 'Escalate to a qualified biomedical engineer or vendor.'
         : undefined,
   };
+}
+
+/** When the provider fails after retries or throws; always schema-safe for the UI. */
+export function buildAiUnavailableAssistant(requiredDecision: ChatDecision): AssistantContent {
+  const decision: ChatDecision =
+    requiredDecision === 'refuse' || requiredDecision === 'escalate' ? 'limited_answer' : requiredDecision;
+  const candidate: AssistantContent = {
+    decision,
+    title: 'Service notice',
+    summary: AI_UNAVAILABLE_SUMMARY,
+    key_findings: [],
+    recommended_actions: [],
+    priority_reasoning: [],
+    likely_causes: [],
+    troubleshooting_steps: [],
+    maintenance_tips: [],
+    required_tools_or_parts: [],
+    actions: [AI_UNAVAILABLE_SUGGESTION],
+    insights: [],
+    recommendations: [AI_UNAVAILABLE_SUGGESTION],
+    entities_referenced: [],
+    follow_up_suggestions: [AI_UNAVAILABLE_SUGGESTION],
+    proactive_signals: [],
+    routing_explanation: [],
+    intelligence_mode: undefined,
+    reason_for_limit: 'The AI service could not complete this request. You can retry in a moment.',
+    answer_basis: 'insufficient_data',
+    confidence: 'low',
+    escalation_required: false,
+  };
+  const validated = AssistantContentSchema.safeParse(candidate);
+  return validated.success ? validated.data : buildSafeFallback('limited_answer');
+}
+
+/** Coerce any assistant-like object into a valid AssistantContent for API/UI consumers. */
+export function ensureUiSafeAssistant(
+  assistant: AssistantContent | null | undefined,
+  requiredDecision: ChatDecision
+): AssistantContent {
+  if (!assistant || typeof assistant !== 'object') {
+    return buildAiUnavailableAssistant(requiredDecision);
+  }
+
+  const merged: AssistantContent = {
+    decision: (assistant.decision as ChatDecision) ?? requiredDecision,
+    title: typeof assistant.title === 'string' ? assistant.title.slice(0, 180) : undefined,
+    summary:
+      typeof assistant.summary === 'string' && assistant.summary.trim()
+        ? assistant.summary.slice(0, 2000)
+        : FALLBACK_SUMMARY,
+    key_findings: Array.isArray(assistant.key_findings) ? assistant.key_findings : [],
+    recommended_actions: Array.isArray(assistant.recommended_actions) ? assistant.recommended_actions : [],
+    priority_reasoning: Array.isArray(assistant.priority_reasoning) ? assistant.priority_reasoning : [],
+    likely_causes: Array.isArray(assistant.likely_causes) ? assistant.likely_causes : [],
+    troubleshooting_steps: Array.isArray(assistant.troubleshooting_steps) ? assistant.troubleshooting_steps : [],
+    maintenance_tips: Array.isArray(assistant.maintenance_tips) ? assistant.maintenance_tips : [],
+    required_tools_or_parts: Array.isArray(assistant.required_tools_or_parts) ? assistant.required_tools_or_parts : [],
+    actions: Array.isArray(assistant.actions) ? assistant.actions : [],
+    insights: Array.isArray(assistant.insights) ? assistant.insights : [],
+    recommendations: Array.isArray(assistant.recommendations) ? assistant.recommendations : [],
+    entities_referenced: Array.isArray(assistant.entities_referenced) ? assistant.entities_referenced : [],
+    follow_up_suggestions: Array.isArray(assistant.follow_up_suggestions) ? assistant.follow_up_suggestions : [],
+    proactive_signals: Array.isArray(assistant.proactive_signals) ? assistant.proactive_signals : [],
+    routing_explanation: Array.isArray(assistant.routing_explanation) ? assistant.routing_explanation : [],
+    intelligence_mode: assistant.intelligence_mode,
+    escalation_recommendation: assistant.escalation_recommendation,
+    escalation_guidance: assistant.escalation_guidance,
+    reason_for_limit: assistant.reason_for_limit,
+    answer_basis: assistant.answer_basis ?? 'insufficient_data',
+    confidence: assistant.confidence ?? 'low',
+    escalation_required: Boolean(assistant.escalation_required),
+  };
+
+  const validated = AssistantContentSchema.safeParse(merged);
+  if (!validated.success) {
+    return buildAiUnavailableAssistant(requiredDecision);
+  }
+
+  const out = validated.data;
+  if (out.decision === requiredDecision) {
+    return out;
+  }
+  const withDecision = AssistantContentSchema.safeParse({ ...out, decision: requiredDecision });
+  return withDecision.success ? withDecision.data : buildAiUnavailableAssistant(requiredDecision);
 }
 
 export function normalizeProviderOutput(rawOutput: string, requiredDecision: ChatDecision) {
@@ -185,7 +310,7 @@ export function normalizeProviderOutput(rawOutput: string, requiredDecision: Cha
     const assistant = normalizeFromObject(parsed as Record<string, unknown>, requiredDecision);
     const usedFallback = assistant.summary === FALLBACK_SUMMARY;
     return {
-      assistant,
+      assistant: ensureUiSafeAssistant(assistant, requiredDecision),
       metadata: {
         parserStrategy: 'json_candidate',
         usedFallback,
@@ -198,7 +323,7 @@ export function normalizeProviderOutput(rawOutput: string, requiredDecision: Cha
   if (rawOutput.trim()) {
     const plainTextFallback = buildSafeFallback(requiredDecision);
     return {
-      assistant: plainTextFallback,
+      assistant: ensureUiSafeAssistant(plainTextFallback, requiredDecision),
       metadata: {
         parserStrategy: 'plain_text_fallback',
         usedFallback: true,
@@ -209,9 +334,81 @@ export function normalizeProviderOutput(rawOutput: string, requiredDecision: Cha
   }
 
   return {
-    assistant: buildSafeFallback(requiredDecision),
+    assistant: ensureUiSafeAssistant(buildSafeFallback(requiredDecision), requiredDecision),
     metadata: {
       parserStrategy: 'empty_output_fallback',
+      usedFallback: true,
+      candidateCount: candidates.length,
+      rawPreview: '',
+    },
+  };
+}
+
+export function normalizeTextModeOutput(rawOutput: string, requiredDecision: ChatDecision): AssistantContent {
+  const summary = rawOutput.trim() ? sanitizeSummaryText(rawOutput) : FALLBACK_SUMMARY;
+  const decision: ChatDecision = requiredDecision === 'answer' ? 'answer' : 'limited_answer';
+  const normalized: AssistantContent = {
+    decision,
+    title: 'BMERMS Assistant',
+    summary: summary.slice(0, 2000),
+    key_findings: [],
+    recommended_actions: [],
+    priority_reasoning: [],
+    likely_causes: [],
+    troubleshooting_steps: [],
+    maintenance_tips: [],
+    required_tools_or_parts: [],
+    actions: [],
+    insights: [],
+    recommendations: [],
+    entities_referenced: [],
+    follow_up_suggestions: ['What is on my to-do?', 'Summarize this work order', 'Show open alerts'],
+    proactive_signals: [],
+    routing_explanation: [],
+    intelligence_mode: 'standard',
+    answer_basis: 'general_safe_guidance',
+    confidence: 'medium',
+    escalation_required: false,
+  };
+
+  const validated = AssistantContentSchema.safeParse(normalized);
+  return validated.success ? validated.data : buildSafeFallback(requiredDecision);
+}
+
+export function normalizeTextModeProviderOutput(rawOutput: string, requiredDecision: ChatDecision) {
+  const candidates = extractJsonCandidates(rawOutput);
+
+  for (const candidate of candidates) {
+    const parsed = safeJsonParse(candidate);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    const assistant = ensureUiSafeAssistant(normalizeFromObject(parsed as Record<string, unknown>, requiredDecision), requiredDecision);
+    return {
+      assistant,
+      metadata: {
+        parserStrategy: 'text_mode_json_candidate',
+        usedFallback: false,
+        candidateCount: candidates.length,
+        rawPreview: rawOutput.slice(0, 500),
+      },
+    };
+  }
+
+  if (rawOutput.trim()) {
+    return {
+      assistant: normalizeTextModeOutput(rawOutput, requiredDecision),
+      metadata: {
+        parserStrategy: 'text_mode_plain_text',
+        usedFallback: false,
+        candidateCount: candidates.length,
+        rawPreview: rawOutput.slice(0, 500),
+      },
+    };
+  }
+
+  return {
+    assistant: ensureUiSafeAssistant(buildSafeFallback(requiredDecision), requiredDecision),
+    metadata: {
+      parserStrategy: 'text_mode_empty_output_fallback',
       usedFallback: true,
       candidateCount: candidates.length,
       rawPreview: '',

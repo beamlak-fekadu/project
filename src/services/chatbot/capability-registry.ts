@@ -1,4 +1,4 @@
-import type { CapabilityId, ChatIntent } from '@/types/chatbot';
+import type { CapabilityId, ChatIntent, ResponseMode } from '@/types/chatbot';
 
 export interface CapabilityDefinition {
   id: CapabilityId;
@@ -7,6 +7,7 @@ export interface CapabilityDefinition {
   requiredInputs: string[];
   retrievalBlocks: string[];
   responseSections: Array<'summary' | 'actions' | 'insights' | 'recommendations' | 'escalation_guidance' | 'confidence'>;
+  responseMode: ResponseMode;
   safetyConstraints: string[];
   fallbackBehavior: 'general_guidance' | 'request_context' | 'escalate';
 }
@@ -21,6 +22,17 @@ const ALL_SECTIONS: CapabilityDefinition['responseSections'] = [
 ];
 
 export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
+  assistant_intro: {
+    id: 'assistant_intro',
+    intents: ['assistant_intro'],
+    description: 'BMERMS copilot intro, capabilities, and safe scope.',
+    requiredInputs: [],
+    retrievalBlocks: ['currentUserContext', 'openWorkPreview', 'alertsTeaser'],
+    responseSections: ALL_SECTIONS,
+    responseMode: 'text',
+    safetyConstraints: ['safe_general_only'],
+    fallbackBehavior: 'general_guidance',
+  },
   my_tasks: {
     id: 'my_tasks',
     intents: ['maintenance_tip', 'work_order_help'],
@@ -28,6 +40,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['profileId'],
     retrievalBlocks: ['assignedWorkOrders', 'pendingApprovals', 'overduePm'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -38,6 +51,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['profileId'],
     retrievalBlocks: ['decisionSupport', 'recommendationFlags', 'openWorkOrders'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -48,6 +62,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['workOrderId'],
     retrievalBlocks: ['workOrder', 'maintenanceHistory'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -58,6 +73,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['equipmentId'],
     retrievalBlocks: ['equipment', 'maintenanceHistory', 'riskScores', 'reliability'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -68,6 +84,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['equipmentId'],
     retrievalBlocks: ['riskScores', 'reliability', 'replacementPriority'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -78,6 +95,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['equipmentId?'],
     retrievalBlocks: ['replacementPriority', 'riskScores', 'reliability', 'recommendationFlags'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -88,6 +106,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['overduePm', 'pmCompliance'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -98,6 +117,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['equipmentId?'],
     retrievalBlocks: ['equipment', 'manualOrSop', 'maintenanceHistory'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['no_board_level', 'no_bypass', 'first_line_only'],
     fallbackBehavior: 'escalate',
   },
@@ -108,6 +128,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['equipment', 'pmSnapshot', 'overduePm'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -118,6 +139,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['equipment', 'workOrders', 'pmSnapshot'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -128,6 +150,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['lowStock', 'procurementPipeline'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -138,6 +161,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['procurementPipeline', 'lowStock', 'openWorkOrders'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -148,6 +172,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['profileId'],
     retrievalBlocks: ['maintenanceRequests', 'disposalRequests', 'procurementPipeline'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -158,6 +183,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['profileId'],
     retrievalBlocks: ['maintenanceRequests', 'disposalRequests', 'procurementPipeline'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'request_context',
   },
@@ -168,6 +194,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['recommendationFlags', 'recentAlerts'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -178,6 +205,40 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: ['departmentId?'],
     retrievalBlocks: ['decisionSupport'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'json',
+    safetyConstraints: ['role_scope_only'],
+    fallbackBehavior: 'general_guidance',
+  },
+  summarize_department_readiness: {
+    id: 'summarize_department_readiness',
+    intents: ['analytics_explanation'],
+    description: 'Summarizes department clinical readiness and essential equipment posture from snapshots.',
+    requiredInputs: ['departmentId?'],
+    retrievalBlocks: ['readinessSnapshot', 'workloadSnapshot', 'recommendationFlags'],
+    responseSections: ALL_SECTIONS,
+    responseMode: 'json',
+    safetyConstraints: ['role_scope_only'],
+    fallbackBehavior: 'general_guidance',
+  },
+  training_status: {
+    id: 'training_status',
+    intents: ['maintenance_tip'],
+    description: 'Summarizes training requests, scheduling posture, and workload context.',
+    requiredInputs: ['departmentId?'],
+    retrievalBlocks: ['trainingRequests', 'workloadSnapshot'],
+    responseSections: ALL_SECTIONS,
+    responseMode: 'json',
+    safetyConstraints: ['role_scope_only'],
+    fallbackBehavior: 'general_guidance',
+  },
+  disposal_status: {
+    id: 'disposal_status',
+    intents: ['maintenance_tip'],
+    description: 'Summarizes disposal pipeline status and pending approvals.',
+    requiredInputs: ['departmentId?'],
+    retrievalBlocks: ['disposalPipeline', 'disposalApprovals'],
+    responseSections: ALL_SECTIONS,
+    responseMode: 'json',
     safetyConstraints: ['role_scope_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -188,6 +249,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: [],
     retrievalBlocks: ['lightweightContext'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'text',
     safetyConstraints: ['safe_general_only'],
     fallbackBehavior: 'general_guidance',
   },
@@ -198,13 +260,14 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
     requiredInputs: [],
     retrievalBlocks: ['lightweightContext'],
     responseSections: ALL_SECTIONS,
+    responseMode: 'text',
     safetyConstraints: ['safe_general_only'],
     fallbackBehavior: 'general_guidance',
   },
 };
 
-export function getCapabilityDefinition(capability: CapabilityId) {
-  return CAPABILITY_REGISTRY[capability];
+export function getCapabilityDefinition(capability: CapabilityId): CapabilityDefinition {
+  return CAPABILITY_REGISTRY[capability] ?? CAPABILITY_REGISTRY.general_system_fallback;
 }
 
 const CAPABILITY_ALIASES: Record<string, CapabilityId> = {

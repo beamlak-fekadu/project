@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const CHAT_INTENTS = [
+  'assistant_intro',
   'maintenance_tip',
   'troubleshooting',
   'work_order_help',
@@ -13,6 +14,7 @@ export const CHAT_INTENTS = [
 ] as const;
 
 export const CHAT_CAPABILITIES = [
+  'assistant_intro',
   'my_tasks',
   'prioritize_tasks',
   'summarize_work_order',
@@ -29,15 +31,25 @@ export const CHAT_CAPABILITIES = [
   'approval_tasks',
   'alerts_and_escalations',
   'decision_support_analysis',
+  'summarize_department_readiness',
+  'training_status',
+  'disposal_status',
   'general_fallback',
   'general_system_fallback',
 ] as const;
 
 export const CHAT_DECISIONS = ['answer', 'limited_answer', 'check_manual', 'escalate', 'refuse'] as const;
-export const ANSWER_BASIS = ['system_data', 'manual_or_sop', 'general_safe_guidance', 'insufficient_data'] as const;
+export const ANSWER_BASIS = [
+  'system_data',
+  'system_capabilities',
+  'manual_or_sop',
+  'general_safe_guidance',
+  'insufficient_data',
+] as const;
 export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const;
 export const CHAT_PROVIDERS = ['gemini'] as const;
 export const SAFETY_MODES = ['normal', 'strict', 'fallback'] as const;
+export const RESPONSE_MODES = ['json', 'text'] as const;
 export const RESOLUTION_SOURCES = ['explicit_context', 'module_context', 'memory_context', 'text_match', 'none'] as const;
 export const ENTITY_TYPES = ['equipment', 'work_order', 'department', 'part'] as const;
 export const FALLBACK_REASONS = [
@@ -57,6 +69,7 @@ export type AnswerBasis = (typeof ANSWER_BASIS)[number];
 export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 export type ChatProviderName = (typeof CHAT_PROVIDERS)[number];
 export type SafetyMode = (typeof SAFETY_MODES)[number];
+export type ResponseMode = (typeof RESPONSE_MODES)[number];
 export type ResolutionSource = (typeof RESOLUTION_SOURCES)[number];
 export type EntityType = (typeof ENTITY_TYPES)[number];
 export type FallbackReason = (typeof FALLBACK_REASONS)[number];
@@ -85,7 +98,7 @@ export const ChatModuleContextSchema = z.object({
 });
 
 export const ChatRequestSchema = z.object({
-  message: z.string().trim().min(3).max(2000),
+  message: z.string().trim().min(1).max(2000),
   sessionId: z.string().uuid().optional(),
   contextRefs: ChatContextRefsSchema.optional(),
   moduleContext: ChatModuleContextSchema.optional(),
@@ -94,6 +107,7 @@ export const ChatRequestSchema = z.object({
 export const AssistantContentSchema = z.object({
   decision: z.enum(CHAT_DECISIONS),
   title: z.string().max(180).optional(),
+  intelligence_mode: z.enum(['standard', 'troubleshooting', 'prioritization', 'synthesis']).optional(),
   summary: z.string().max(2000),
   key_findings: z.array(z.string().max(400)).max(10).default([]),
   recommended_actions: z.array(z.string().max(400)).max(10).default([]),
@@ -113,6 +127,8 @@ export const AssistantContentSchema = z.object({
   escalation_guidance: z.string().max(600).optional(),
   entities_referenced: z.array(z.string().max(160)).max(12).default([]),
   follow_up_suggestions: z.array(z.string().max(240)).max(8).default([]),
+  proactive_signals: z.array(z.string().max(400)).max(8).default([]),
+  routing_explanation: z.array(z.string().max(320)).max(8).default([]),
 });
 
 export const ChatResponseSchema = z.object({
@@ -130,6 +146,11 @@ export type ChatContextRefs = z.infer<typeof ChatContextRefsSchema>;
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 export type AssistantContent = z.infer<typeof AssistantContentSchema>;
 export type ChatResponse = z.infer<typeof ChatResponseSchema>;
+
+export interface MemoryRoutingHint {
+  activeCapability?: CapabilityId;
+  threadIntent?: ChatIntent;
+}
 
 export interface ClassifiedRequest {
   intent: ChatIntent;
@@ -166,6 +187,12 @@ export interface ChatEvidence {
   logisticsSnapshot: Record<string, unknown> | null;
   analyticsSnapshot: Record<string, unknown> | null;
   manualOrSopTexts: string[];
+  documentRetrieval: {
+    notImplemented: boolean;
+    searchDocuments: Array<{ id?: string; title: string; snippet?: string }>;
+    forEquipment: Array<{ id?: string; title: string; snippet?: string }>;
+    forCategory: Array<{ id?: string; title: string; snippet?: string }>;
+  };
   evidenceSignals: string[];
   deniedContextRefs: Array<'equipment' | 'work_order' | 'department'>;
   accessDenied: boolean;
@@ -278,6 +305,8 @@ export interface LlmGenerateParams {
   messages: ChatModelMessage[];
   requiredDecision: ChatDecision;
   intent: ChatIntent;
+  responseMode?: ResponseMode;
+  capability?: CapabilityId;
 }
 
 export interface LlmProviderResult {

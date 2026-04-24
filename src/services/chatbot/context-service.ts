@@ -242,6 +242,13 @@ export async function buildChatEvidence(
     if (manualOrSopTexts.length > 0) evidenceSignals.push('Loaded manual/SOP snippets.');
   }
 
+  const port = documentRetrievalNotImplemented;
+  const [searchRes, forEquipRes, forCatRes] = await Promise.all([
+    port.searchDocuments(''),
+    equipmentId ? port.getDocumentsForEquipment(equipmentId) : Promise.resolve([]),
+    port.getDocumentsForCategory(''),
+  ]);
+
   return {
     equipment,
     workOrder,
@@ -252,8 +259,36 @@ export async function buildChatEvidence(
     logisticsSnapshot,
     analyticsSnapshot,
     manualOrSopTexts,
+    documentRetrieval: {
+      notImplemented: true,
+      searchDocuments: searchRes,
+      forEquipment: forEquipRes,
+      forCategory: forCatRes,
+    },
     evidenceSignals,
     deniedContextRefs,
     accessDenied: deniedContextRefs.length > 0,
   };
 }
+
+/** RAG / pgvector hook — structured DB reads stay in tools; this path is for manuals/docs later. */
+export interface DocumentRetrievalPort {
+  searchDocuments(
+    _query: string,
+    _filters?: { categoryId?: string; limit?: number }
+  ): Promise<Array<{ id?: string; title: string; snippet?: string }>>;
+  getDocumentsForEquipment(_equipmentId: string): Promise<Array<{ id?: string; title: string; snippet?: string }>>;
+  getDocumentsForCategory(_categoryId: string): Promise<Array<{ id?: string; title: string; snippet?: string }>>;
+}
+
+export const documentRetrievalNotImplemented: DocumentRetrievalPort = {
+  async searchDocuments() {
+    return [];
+  },
+  async getDocumentsForEquipment() {
+    return [];
+  },
+  async getDocumentsForCategory() {
+    return [];
+  },
+};

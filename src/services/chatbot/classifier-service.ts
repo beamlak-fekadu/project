@@ -1,4 +1,10 @@
-import type { CapabilityId, ChatIntent, ClassifiedRequest, ConfidenceLevel } from '@/types/chatbot';
+import type {
+  CapabilityId,
+  ChatIntent,
+  ClassifiedRequest,
+  ConfidenceLevel,
+  MemoryRoutingHint,
+} from '@/types/chatbot';
 
 const OUT_OF_SCOPE_PATTERNS = [
   /\bdiagnos(is|e)\b/i,
@@ -27,9 +33,9 @@ const UNSAFE_PATTERNS = [
 const TOO_DETAILED_PATTERNS = [
   /\bexact error code\b/i,
   /\bwhat does.*error code\b/i,
-  /\bwhich board\b/i,
-  /\bwhich .*board\b/i,
-  /\bexact .*board\b/i,
+  /\bwhich (main|mother|circuit|control|logic) board\b/i,
+  /\bwhich .* (main|mother) board\b/i,
+  /\bexact .* (main|mother|logic) board\b/i,
   /\bcalibrate this model\b/i,
   /\benter service mode\b/i,
   /\bmanufacturer procedure\b/i,
@@ -37,6 +43,7 @@ const TOO_DETAILED_PATTERNS = [
   /\bcalibration sequence\b/i,
   /\bdiagnostic code\b/i,
   /\breplace component\b/i,
+  /\breplace the main board\b/i,
 ];
 
 const SAFE_GENERAL_TROUBLESHOOTING_PATTERNS = [
@@ -47,20 +54,27 @@ const SAFE_GENERAL_TROUBLESHOOTING_PATTERNS = [
   /\blikely causes?\b/i,
   /\bintermittent failure\b/i,
   /\bnot powering on\b/i,
+  /\bnot powering\b/i,
+  /\bwon'?t power\b/i,
+  /\bno power\b/i,
+  /\bimage quality\b/i,
+  /\b(fuzzy|artifact|artefact|noise|resolution|noisy|blurry|black screen|blank screen)\b/i,
   /\breduce repeat failures?\b/i,
 ];
 
 const SPECIFIC_TECHNICAL_TROUBLESHOOTING_PATTERNS = [
-  /\bexact\b/i,
-  /\berror code\b/i,
-  /\bboard\b/i,
+  /\bexact\b.*\b(error|code|calibration|procedure)\b/i,
+  /\b(error|fault)\s*code\b/i,
+  /\bE\d{3,4}\b/i,
+  /\b(mother|main|circuit|control|logic)\s*board\s+(replacement|swap|solder|trace)\b/i,
   /\bservice mode\b/i,
   /\bcalibration sequence\b/i,
-  /\bfirmware\b/i,
+  /\bflash(ing)?\s+firmware|firmware (flash|update|downgrade|patch)\b/i,
   /\bdiagnostic code\b/i,
-  /\binternal board\b/i,
-  /\breplace component\b/i,
-  /\bthis model\b/i,
+  /\binternal (board|repair|pcb)\b/i,
+  /\breplace (the|a)\s*(main|mother|logic|power)\s*board\b/i,
+  /\bthis model\'?s?\s+exact (calibration|alignment|tuning)\b/i,
+  /\bwhich board\b.*\b(replace|swap)\b/i,
 ];
 
 const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
@@ -79,6 +93,10 @@ const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
       /\bwhat should i check (next|first)\b/i,
       /\blikely causes?\b/i,
       /\bescalat(e|ion)\b/i,
+      /\bultrasound\b/i,
+      /\bpatient monitor\b/i,
+      /\bmonitor (issue|problem|fault|not powering|won't|wont|no power|powering)\b/i,
+      /\bnot powering|won'?t power|no power|black screen|blank screen|image quality|artifact|artefact\b/i,
     ],
   },
   {
@@ -200,9 +218,42 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
     patterns: [/\bdecision support\b/i, /\btriage\b/i, /\breadiness\b/i, /\bworkload\b/i],
     baseScore: 0.8,
   },
+  {
+    capability: 'summarize_department_readiness',
+    patterns: [/\bdepartment readiness\b/i, /\breadiness snapshot\b/i, /\bclinical readiness\b/i, /\bdepartment operational readiness\b/i],
+    baseScore: 0.78,
+  },
+  {
+    capability: 'training_status',
+    patterns: [/\btraining status\b/i, /\bstaff training\b/i, /\btraining requests?\b/i, /\btraining sessions?\b/i, /\bequipment training\b/i],
+    baseScore: 0.76,
+  },
+  {
+    capability: 'disposal_status',
+    patterns: [/\bdisposal status\b/i, /\bdisposal requests?\b/i, /\basset disposal\b/i, /\bend of life\b/i],
+    baseScore: 0.76,
+  },
 ];
 
+const ASSISTANT_INTRO_PATTERNS = [
+  /^(hi|hello|hey|howdy|greetings|good (morning|afternoon|evening))\b[\s!.,?-]*$/i,
+  /^(hi|hello|hey|howdy)\b[\s!.,-]*\b(there|you|all)\b[\s!.,?-]*$/i,
+  /^\bhelp\b[\s!.,?-]*$/i,
+  /\b(what|how) (can|do) you (help|do)(\s+me)?(\s+with|\s+about)?\?*\s*$/i,
+  /\bwhat (are )?you(r)?\s+capab(ilit(ies|y)|lities)/i,
+  /^(get started|start here|start guide|overview|introduction)\b/i,
+  /\b(what|which) (can|could) you (help|do)( me| us)?\b/i,
+  /\bwhat (are|is) (you|this|the) (able|for) to (help|do)\b/i,
+  /\bwhat can you help me (with|about)\b/i,
+];
+
+const FOLLOW_UP_PRIORITIZE = /\bwhy\b.*\b(high priority|highest|urgent|top of|ranked|critical)\b/i;
+const FOLLOW_UP_NEXT = /\bwhat should i (do|tackle) next\b/i;
+const TASK_LIST = /\bturn (that|this|it) into a (task|to-?do|todo) list\b/i;
+const HOW_TASK_LIST = /\bhow (do i|to) (turn|make|build)\b.*\b(list|plan)\b/i;
+
 const INTENT_TO_CAPABILITY: Record<ChatIntent, CapabilityId> = {
+  assistant_intro: 'assistant_intro',
   maintenance_tip: 'maintenance_guidance',
   troubleshooting: 'safe_troubleshooting',
   work_order_help: 'summarize_work_order',
@@ -220,7 +271,11 @@ function toConfidenceLabel(score: number): ConfidenceLevel {
   return 'low';
 }
 
-export function classifyChatRequest(message: string): ClassifiedRequest {
+function isShortFollowUp(message: string) {
+  return message.trim().length < 72 && message.trim().split(/\s+/).length <= 10;
+}
+
+export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): ClassifiedRequest {
   const reasons: string[] = [];
   const matchedSignals: string[] = [];
   const normalized = message.trim();
@@ -256,7 +311,7 @@ export function classifyChatRequest(message: string): ClassifiedRequest {
 
     return {
       intent,
-      capability: confidenceLabel === 'low' ? 'general_system_fallback' : fallbackCapability,
+      capability: fallbackCapability,
       reasons,
       troubleshootingSubtype: details.troubleshootingSubtype ?? 'none',
       specificity: details.specificity ?? 'general',
@@ -306,6 +361,18 @@ export function classifyChatRequest(message: string): ClassifiedRequest {
     });
   }
 
+  if (ASSISTANT_INTRO_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    reasons.push('Matched BMERMS assistant intro / help intent.');
+    matchedSignals.push('assistant_intro');
+    return buildResult('assistant_intro', {
+      capability: 'assistant_intro',
+      confidence: 0.95,
+      confidenceLabel: 'high',
+      fallbackReason: undefined,
+      candidates: [{ capability: 'assistant_intro', confidence: 0.95, reasons: ['BMERMS assistant intro heuristics.'] }],
+    });
+  }
+
   for (const intentPattern of INTENT_PATTERNS) {
     if (intentPattern.patterns.some((pattern) => pattern.test(normalized))) {
       reasons.push(`Matched heuristic for ${intentPattern.intent}.`);
@@ -346,13 +413,80 @@ export function classifyChatRequest(message: string): ClassifiedRequest {
     }
   }
 
+  if (FOLLOW_UP_PRIORITIZE.test(normalized) && (hint?.activeCapability || isShortFollowUp(normalized))) {
+    reasons.push('Follow-up: priority explanation; bias to prioritize_tasks.');
+    matchedSignals.push('follow_up_priority');
+    return buildResult('analytics_explanation', {
+      capability: 'prioritize_tasks',
+      confidence: 0.84,
+      confidenceLabel: 'high',
+      fallbackReason: undefined,
+    });
+  }
+
+  if (FOLLOW_UP_NEXT.test(normalized) && (hint?.activeCapability || isShortFollowUp(normalized))) {
+    reasons.push('Follow-up: next steps; bias to prioritize_tasks.');
+    matchedSignals.push('follow_up_next');
+    return buildResult('maintenance_tip', {
+      capability: 'prioritize_tasks',
+      confidence: 0.82,
+      confidenceLabel: 'high',
+    });
+  }
+
+  if (TASK_LIST.test(normalized) || HOW_TASK_LIST.test(normalized)) {
+    reasons.push('User asked to structure actions as a task list; bias to prioritize_tasks.');
+    matchedSignals.push('task_list_synthesis');
+    return buildResult('work_order_help', {
+      capability: 'prioritize_tasks',
+      confidence: 0.8,
+      confidenceLabel: 'high',
+    });
+  }
+
   reasons.push('Defaulted to maintenance_tip for operational guidance.');
   matchedSignals.push('default_maintenance_tip');
+
+  if (hint?.activeCapability && isShortFollowUp(normalized) && ambiguous) {
+    matchedSignals.push('memory_capability_bias');
+    return buildResult(hint.threadIntent ?? 'maintenance_tip', {
+      capability: hint.activeCapability,
+      confidence: Math.max(0.55, topCandidate?.confidence ?? 0.52),
+      confidenceLabel: 'medium',
+      specificity: 'general',
+      fallbackReason: 'low_confidence_match',
+    });
+  }
+
+  const defaultConfidence = Math.max(0.38, topCandidate?.confidence ?? 0.4);
+  const defaultCapability = topCandidate?.capability ?? 'general_system_fallback';
+  const defaultLabel = toConfidenceLabel(defaultConfidence);
+
   return buildResult('maintenance_tip', {
-    capability: 'general_system_fallback',
-    confidence: Math.max(0.38, topCandidate?.confidence ?? 0.4),
-    confidenceLabel: 'low',
+    capability: defaultCapability,
+    confidence: defaultConfidence,
+    confidenceLabel: defaultLabel,
     specificity: 'general',
-    fallbackReason: 'no_capability_match',
+    fallbackReason:
+      defaultCapability === 'general_system_fallback'
+        ? 'no_capability_match'
+        : ambiguous || defaultLabel === 'low'
+          ? 'low_confidence_match'
+          : undefined,
   });
+}
+
+export function buildRoutingExplanation(classified: ClassifiedRequest): string[] {
+  const lines = [
+    `Selected capability: ${classified.capability}`,
+    `Matcher confidence: ${classified.confidenceLabel} (${classified.confidence.toFixed(2)})`,
+  ];
+  if (classified.ambiguous) lines.push('Multiple capabilities scored closely; the top match still drives retrieval.');
+  if (classified.fallbackReason) lines.push(`Routing flag: ${classified.fallbackReason}`);
+  if (classified.troubleshootingSubtype && classified.troubleshootingSubtype !== 'none') {
+    lines.push(`Troubleshooting subtype: ${classified.troubleshootingSubtype}`);
+  }
+  const top = classified.candidates.slice(0, 4).map((c) => `${c.capability}:${c.confidence.toFixed(2)}`);
+  if (top.length) lines.push(`Top candidates: ${top.join(', ')}`);
+  return lines;
 }

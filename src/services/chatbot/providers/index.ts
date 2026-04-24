@@ -7,10 +7,13 @@ const PROVIDERS: Record<ChatProviderName, ChatLlmProvider> = {
 
 function resolveProviderName() {
   const configured = (process.env.AI_PROVIDER ?? 'gemini').toLowerCase();
-  return (configured === 'gemini' ? 'gemini' : 'gemini') as ChatProviderName;
+  if (configured !== 'gemini') {
+    throw new Error(`Unsupported AI_PROVIDER "${configured}". This deployment only registers the gemini provider.`);
+  }
+  return 'gemini';
 }
 
-export function getChatProvider() {
+export function getChatProvider(): ChatLlmProvider {
   const providerName = resolveProviderName();
-  return PROVIDERS[providerName];
+  return PROVIDERS[providerName as ChatProviderName];
 }

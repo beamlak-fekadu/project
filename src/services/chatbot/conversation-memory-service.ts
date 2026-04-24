@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ChatMessageRole, MemorySnapshot, ResolvedEntity } from '@/types/chatbot';
+import type { AssistantContent, ChatMessageRole, MemorySnapshot, ResolvedEntity } from '@/types/chatbot';
 
 const MEMORY_TURN_LIMIT = 10;
 const RECENT_TURN_SUMMARY_LIMIT = 6;
@@ -11,7 +11,25 @@ function inferFocusFromText(text: string) {
   if (normalized.includes('pm') || normalized.includes('preventive maintenance')) return 'pm';
   if (normalized.includes('approval')) return 'approvals';
   if (normalized.includes('stock') || normalized.includes('parts') || normalized.includes('logistics')) return 'logistics';
+  if (normalized.includes('bypass') || normalized.includes('safety') || normalized.includes('escalat')) return 'safety';
+  if (/\b(hello|hi|hey|get started|what can you do)\b/.test(normalized) && normalized.length < 64) return 'onboarding';
   return 'operations';
+}
+
+export function buildRollingMemorySummary(
+  prev: string,
+  params: { userMessage: string; assistant?: AssistantContent | null; blockedSummary?: string }
+) {
+  if (params.blockedSummary) {
+    return `${prev.slice(0, 400)} | Last note: ${params.blockedSummary.slice(0, 280)}`.slice(0, 900);
+  }
+  const assistant = params.assistant;
+  const slice = assistant?.key_findings?.slice(0, 3).join(' · ') ?? assistant?.summary?.slice(0, 320) ?? '';
+  if (!slice.trim()) return prev.slice(0, 900);
+  return `Last focus: ${slice} | You asked: ${params.userMessage.slice(0, 160)} | Track for follow-up: equipment/wo/department from prior turns.`.slice(
+    0,
+    900
+  );
 }
 
 function summarizeTurns(turns: Array<{ role: ChatMessageRole; content: string }>) {

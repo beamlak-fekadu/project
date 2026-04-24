@@ -3,9 +3,10 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { sendChatMessage } from '@/services/chatbot/chat-client.service';
-import type { AssistantContent, ChatContextRefs } from '@/types/chatbot';
+import type { AssistantContent, ChatContextRefs, ChatDecision } from '@/types/chatbot';
 import { useToast } from '@/components/ui/Toast';
-import { normalizeAssistantPayload } from '@/services/chatbot/chat-response-normalizer';
+import { normalizeAssistantPayloadForUi } from '@/services/chatbot/chat-response-normalizer';
+import { buildAiUnavailableAssistant } from '@/services/chatbot/providers/normalize-provider-output';
 
 export interface AssistantUiMessage {
   id: string;
@@ -13,6 +14,10 @@ export interface AssistantUiMessage {
   content: string;
   createdAt: string;
   assistant?: AssistantContent;
+  /** Populated for assistant role when API returns routing metadata */
+  intent?: string;
+  capability?: string;
+  fallbackReason?: string;
 }
 
 export interface AssistantLaunchOptions {
@@ -112,7 +117,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       });
 
       setActiveSessionId(response.sessionId);
-      const assistantNormalized = normalizeAssistantPayload(response.assistant);
+      const assistantNormalized = normalizeAssistantPayloadForUi(
+        response.assistant,
+        undefined,
+        response.assistant?.decision as ChatDecision | undefined
+      );
 
       const assistantMessage: AssistantUiMessage = {
         id: `assistant-response-${Date.now()}`,
@@ -120,10 +129,22 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         content: assistantNormalized.summary,
         createdAt: new Date().toISOString(),
         assistant: assistantNormalized,
+        intent: response.intent,
+        capability: response.capability,
+        fallbackReason: response.fallbackReason,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Unable to process assistant request');
+      const fallbackAssistant = buildAiUnavailableAssistant('limited_answer');
+      const assistantMessage: AssistantUiMessage = {
+        id: `assistant-response-${Date.now()}`,
+        role: 'assistant',
+        content: fallbackAssistant.summary,
+        createdAt: new Date().toISOString(),
+        assistant: fallbackAssistant,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
     } finally {
       setSending(false);
     }

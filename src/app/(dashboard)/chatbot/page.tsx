@@ -29,7 +29,8 @@ import {
   type SelectorOption,
 } from '@/services/chatbot/chat-client.service';
 import type { AssistantContent, ChatContextRefs } from '@/types/chatbot';
-import { normalizeAssistantPayload } from '@/services/chatbot/chat-response-normalizer';
+import { normalizeAssistantPayloadForUi } from '@/services/chatbot/chat-response-normalizer';
+import { buildAiUnavailableAssistant } from '@/services/chatbot/providers/normalize-provider-output';
 import { CHATBOT_NAME, ASSISTANT_NAME } from '@/constants';
 
 type UIMessage = {
@@ -63,7 +64,7 @@ const CONFIDENCE_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'error'> 
 
 function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
   const assistant = row.role === 'assistant'
-    ? normalizeAssistantPayload(row.metadata?.assistant, row.content)
+    ? normalizeAssistantPayloadForUi(row.metadata?.assistant, row.content)
     : undefined;
 
   return {
@@ -75,18 +76,39 @@ function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
   };
 }
 
+function sanitizeSummaryForRender(value: string | undefined) {
+  const raw = (value ?? '').trim();
+  if (!raw) return 'No summary available.';
+  if (/^```|^\{/.test(raw)) return 'I generated a response but it could not be displayed reliably. Please try again.';
+  return raw;
+}
+
 function buildCopyText(assistant: AssistantContent) {
+  const kf = assistant.key_findings ?? [];
+  const ra = assistant.recommended_actions ?? [];
+  const pr = assistant.priority_reasoning ?? [];
+  const lc = assistant.likely_causes ?? [];
+  const ts = assistant.troubleshooting_steps ?? [];
+  const mt = assistant.maintenance_tips ?? [];
+  const rtp = assistant.required_tools_or_parts ?? [];
   const sections = [
     assistant.title ? `Title: ${assistant.title}` : '',
     `Summary: ${assistant.summary}`,
-    assistant.key_findings.length ? `Key findings:\n- ${assistant.key_findings.join('\n- ')}` : '',
-    assistant.recommended_actions.length ? `Recommended actions:\n- ${assistant.recommended_actions.join('\n- ')}` : '',
-    assistant.priority_reasoning.length ? `Priority reasoning:\n- ${assistant.priority_reasoning.join('\n- ')}` : '',
-    assistant.likely_causes.length ? `Likely causes:\n- ${assistant.likely_causes.join('\n- ')}` : '',
-    assistant.troubleshooting_steps.length ? `Troubleshooting steps:\n- ${assistant.troubleshooting_steps.join('\n- ')}` : '',
-    assistant.maintenance_tips.length ? `Maintenance tips:\n- ${assistant.maintenance_tips.join('\n- ')}` : '',
-    assistant.required_tools_or_parts.length ? `Required tools or parts:\n- ${assistant.required_tools_or_parts.join('\n- ')}` : '',
+    kf.length ? `Key findings:\n- ${kf.join('\n- ')}` : '',
+    ra.length ? `Recommended actions:\n- ${ra.join('\n- ')}` : '',
+    pr.length ? `Priority reasoning:\n- ${pr.join('\n- ')}` : '',
+    lc.length ? `Likely causes:\n- ${lc.join('\n- ')}` : '',
+    ts.length ? `Troubleshooting steps:\n- ${ts.join('\n- ')}` : '',
+    mt.length ? `Maintenance tips:\n- ${mt.join('\n- ')}` : '',
+    rtp.length ? `Required tools or parts:\n- ${rtp.join('\n- ')}` : '',
     assistant.escalation_recommendation ? `Escalation recommendation: ${assistant.escalation_recommendation}` : '',
+    assistant.intelligence_mode ? `Intelligence mode: ${assistant.intelligence_mode}` : '',
+    assistant.proactive_signals?.length
+      ? `Proactive signals:\n- ${assistant.proactive_signals.join('\n- ')}`
+      : '',
+    assistant.routing_explanation?.length
+      ? `Routing:\n- ${assistant.routing_explanation.join('\n- ')}`
+      : '',
   ].filter(Boolean);
   return sections.join('\n\n');
 }
@@ -203,7 +225,7 @@ export default function ChatbotPage() {
 
       setActiveSessionId(payload.sessionId);
 
-      const assistantNormalized = normalizeAssistantPayload(payload.assistant);
+      const assistantNormalized = normalizeAssistantPayloadForUi(payload.assistant);
       const assistantMessage: UIMessage = {
         id: `local-assistant-${Date.now()}`,
         role: 'assistant',
@@ -220,6 +242,15 @@ export default function ChatbotPage() {
       }
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Unable to process chatbot request');
+      const fallbackAssistant = buildAiUnavailableAssistant('limited_answer');
+      const assistantMessage: UIMessage = {
+        id: `local-assistant-${Date.now()}`,
+        role: 'assistant',
+        content: fallbackAssistant.summary,
+        createdAt: new Date().toISOString(),
+        assistant: fallbackAssistant,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
     } finally {
       setSending(false);
     }
@@ -306,68 +337,96 @@ export default function ChatbotPage() {
                       {message.assistant ? (
                         <div className="space-y-3 text-sm">
                           {message.assistant.title && <p className="font-semibold">{message.assistant.title}</p>}
-                          <p>{message.assistant.summary || message.content}</p>
+                          <p>{sanitizeSummaryForRender(message.assistant.summary) || message.content || 'No summary available.'}</p>
 
-                          {message.assistant.key_findings.length > 0 && (
+                          {message.assistant.intelligence_mode && (
+                            <Badge variant="info" className="text-xs capitalize">
+                              Mode: {message.assistant.intelligence_mode.replace(/_/g, ' ')}
+                            </Badge>
+                          )}
+
+                          {(message.assistant.proactive_signals?.length ?? 0) > 0 && (
+                            <div>
+                              <p className="mb-1 font-semibold">Operational signals</p>
+                              <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
+                                {message.assistant.proactive_signals!.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {(message.assistant.routing_explanation?.length ?? 0) > 0 && (
+                            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 text-xs text-[var(--text-muted)]">
+                              <p className="mb-1 font-semibold text-[var(--text-primary)]">Routing</p>
+                              <ul className="list-disc space-y-1 pl-4">
+                                {message.assistant.routing_explanation!.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {(message.assistant.key_findings ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Key findings</p>
                               <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.key_findings.map((item) => (
+                                {(message.assistant.key_findings ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ul>
                             </div>
                           )}
 
-                          {message.assistant.recommended_actions.length > 0 && (
+                          {(message.assistant.recommended_actions ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Recommended actions</p>
                               <ol className="list-decimal space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.recommended_actions.map((item) => (
+                                {(message.assistant.recommended_actions ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ol>
                             </div>
                           )}
 
-                          {message.assistant.likely_causes.length > 0 && (
+                          {(message.assistant.likely_causes ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Likely causes</p>
                               <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.likely_causes.map((item) => (
+                                {(message.assistant.likely_causes ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ul>
                             </div>
                           )}
 
-                          {message.assistant.troubleshooting_steps.length > 0 && (
+                          {(message.assistant.troubleshooting_steps ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Troubleshooting steps</p>
                               <ol className="list-decimal space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.troubleshooting_steps.map((item) => (
+                                {(message.assistant.troubleshooting_steps ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ol>
                             </div>
                           )}
 
-                          {message.assistant.maintenance_tips.length > 0 && (
+                          {(message.assistant.maintenance_tips ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Maintenance tips</p>
                               <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.maintenance_tips.map((item) => (
+                                {(message.assistant.maintenance_tips ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ul>
                             </div>
                           )}
 
-                          {message.assistant.required_tools_or_parts.length > 0 && (
+                          {(message.assistant.required_tools_or_parts ?? []).length > 0 && (
                             <div>
                               <p className="mb-1 font-semibold">Required tools or parts</p>
                               <ul className="list-disc space-y-1 pl-5 text-[var(--text-muted)]">
-                                {message.assistant.required_tools_or_parts.map((item) => (
+                                {(message.assistant.required_tools_or_parts ?? []).map((item) => (
                                   <li key={item}>{item}</li>
                                 ))}
                               </ul>
@@ -387,11 +446,13 @@ export default function ChatbotPage() {
                           )}
 
                           <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <Badge variant={BASIS_BADGE_VARIANT[message.assistant.answer_basis] ?? 'default'}>
-                              Basis: {message.assistant.answer_basis.replace(/_/g, ' ')}
+                            <Badge
+                              variant={BASIS_BADGE_VARIANT[message.assistant.answer_basis ?? 'insufficient_data'] ?? 'default'}
+                            >
+                              Basis: {(message.assistant.answer_basis ?? 'insufficient_data').replace(/_/g, ' ')}
                             </Badge>
-                            <Badge variant={CONFIDENCE_BADGE_VARIANT[message.assistant.confidence] ?? 'warning'}>
-                              Confidence: {message.assistant.confidence}
+                            <Badge variant={CONFIDENCE_BADGE_VARIANT[message.assistant.confidence ?? 'low'] ?? 'warning'}>
+                              Confidence: {message.assistant.confidence ?? 'low'}
                             </Badge>
                             <Button
                               variant="ghost"

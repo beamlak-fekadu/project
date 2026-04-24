@@ -16,7 +16,11 @@ function parseWorkOrderNumber(message: string) {
 }
 
 function asksForPriorReference(message: string) {
-  return /\b(it|that|this one|previous|earlier|the one we discussed|the monitor we discussed)\b/i.test(message);
+  return (
+    /\b(it|that|this one|that one|this asset|this wo|this work order|previous|earlier|last (one|time)|the one we discussed|the (monitor|unit|device|machine) (we |)(discussed|looked at))\b/i.test(
+      message
+    ) || /\bwhat about (this|that|it)\b/i.test(message) || /\b(compare|compared) to the (other|last)\b/i.test(message)
+  );
 }
 
 export async function resolveEntities(params: ResolveParams): Promise<ResolvedEntity[]> {
