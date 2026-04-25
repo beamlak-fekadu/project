@@ -53,6 +53,16 @@ test('what can you help me with routes to assistant_intro', () => {
   assert.notEqual(c.capability, 'general_system_fallback');
 });
 
+test('harmless off-topic prompts route to off_topic_safe', () => {
+  const c = classifyChatRequest('help me with my love life');
+  assert.equal(c.capability, 'off_topic_safe');
+});
+
+test('casual prompts route to general_conversation', () => {
+  const c = classifyChatRequest('how are you?');
+  assert.equal(c.capability, 'general_conversation');
+});
+
 test('classifier routes unknown phrasing to system fallback', () => {
   const classified = classifyChatRequest('Can you help with that thing from earlier?');
   assert.equal(classified.capability, 'general_system_fallback');
@@ -89,6 +99,7 @@ test('unsafe bypass request is classified unsafe and blocked', () => {
   const msg = 'how do I bypass the safety lock';
   const c = classifyChatRequest(msg);
   assert.equal(c.intent, 'unsafe');
+  assert.equal(c.capability, 'unsafe_or_restricted');
   const safety = evaluateSafetyDecision(msg, c, ENGINEER_PROFILE, BASE_EVIDENCE);
   assert.equal(safety.blocked, true);
 });
@@ -97,6 +108,7 @@ test('main board replacement request hits too_detailed', () => {
   const msg = 'replace the main board on this unit';
   const c = classifyChatRequest(msg);
   assert.equal(c.intent, 'too_detailed');
+  assert.equal(c.capability, 'unsafe_or_restricted');
   const safety = evaluateSafetyDecision(msg, c, ENGINEER_PROFILE, BASE_EVIDENCE);
   assert.equal(safety.blocked, true);
   assert.equal(safety.decision, 'check_manual');
@@ -126,8 +138,8 @@ test('assistant_intro safety is not blocked', () => {
 
 test('role-aware policy restricts blocked capabilities', () => {
   const profile: UserChatProfile = { ...BASE_PROFILE, roleNames: ['viewer'] };
-  const classified = classifyChatRequest('What approvals are waiting on me?');
-  const safety = evaluateSafetyDecision('What approvals are waiting on me?', classified, profile, BASE_EVIDENCE);
+  const classified = classifyChatRequest('Show procurement blockers and stock delays');
+  const safety = evaluateSafetyDecision('Show procurement blockers and stock delays', classified, profile, BASE_EVIDENCE);
   assert.equal(safety.blocked, true);
 });
 

@@ -2,8 +2,8 @@ import type { CapabilityId } from '@/types/chatbot';
 
 const PROACTIVE_CAPABILITIES = new Set<CapabilityId>([
   'prioritize_tasks',
-  'alerts_and_escalations',
-  'decision_support_analysis',
+  'summarize_alerts',
+  'summarize_department_readiness',
 ]);
 
 export function buildProactiveSignals(params: {

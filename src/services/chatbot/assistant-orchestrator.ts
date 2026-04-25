@@ -17,6 +17,8 @@ import { evaluateSafetyDecision, STANDARD_RESPONSES } from './safety-service';
 import { buildPromptPayload } from './prompt-service';
 import { generateAssistantContent } from './llm-service';
 import { buildAiUnavailableAssistant, ensureUiSafeAssistant } from './providers/normalize-provider-output';
+import { normalizeAssistantResponse } from './assistant-response-pipeline';
+import { buildDeterministicStructuredFallback, hasUsableStructuredContext } from './structured-context-fallback';
 import { logCopilotTelemetry } from './telemetry-service';
 import { getCapabilityDefinition, normalizeCapabilityId } from './capability-registry';
 
@@ -34,28 +36,26 @@ function deriveAnswerType(assistant: AssistantContent) {
 function defaultIntelligenceMode(capability: CapabilityId) {
   if (capability === 'safe_troubleshooting') return 'troubleshooting' as const;
   if (capability === 'prioritize_tasks') return 'prioritization' as const;
-  if (capability === 'alerts_and_escalations') return 'synthesis' as const;
+  if (capability === 'summarize_alerts') return 'synthesis' as const;
   if (capability === 'assistant_intro') return 'standard' as const;
   return 'standard' as const;
 }
 
 function shouldAttachProactiveSignals(capability: CapabilityId) {
   if (capability === 'assistant_intro') return false;
-  if (capability === 'general_system_fallback' || capability === 'general_fallback') return false;
+  if (
+    capability === 'general_system_fallback' ||
+    capability === 'general_conversation' ||
+    capability === 'off_topic_safe' ||
+    capability === 'unsafe_or_restricted'
+  )
+    return false;
   return true;
 }
 
-export function shouldUseProvider(params: { capability: CapabilityId; message: string }) {
-  if (params.capability === 'assistant_intro') return false;
-  if (params.capability === 'general_system_fallback') {
-    if (
-      /\b(hi|hello|hey|help|what can you help|what can you do|introduce yourself|how can you help)\b/i.test(
-        params.message
-      )
-    ) {
-      return false;
-    }
-  }
+export function shouldUseProvider(params: { capability: CapabilityId; message: string; responseMode: 'local' | 'text' | 'structured' }) {
+  if (params.capability === 'assistant_intro' || params.capability === 'unsafe_or_restricted') return false;
+  if (params.responseMode === 'local') return false;
   return true;
 }
 
@@ -109,7 +109,7 @@ function enrichAssistantPayload(params: {
     shouldAttachProactiveSignals(capability) && Array.isArray(blocks.proactiveSignals)
       ? (blocks.proactiveSignals as string[])
       : [];
-  const mergedProactive = [...new Set([...fromBlocks, ...(assistant.proactive_signals ?? [])])].slice(0, 5);
+  const mergedProactive = [...new Set([...fromBlocks, ...(assistant.proactive_signals ?? [])])].slice(0, 3);
   const routing = buildRoutingExplanation(classified);
   const routingEcho =
     capability === 'assistant_intro' ? [] : assistant.routing_explanation?.length ? assistant.routing_explanation : routing;
@@ -118,6 +118,20 @@ function enrichAssistantPayload(params: {
     proactive_signals: mergedProactive,
     routing_explanation: routingEcho.slice(0, 8),
     intelligence_mode: assistant.intelligence_mode ?? defaultIntelligenceMode(capability),
+  };
+}
+
+function enforceOffTopicRedirect(assistant: AssistantContent, capability: CapabilityId): AssistantContent {
+  if (capability !== 'general_conversation' && capability !== 'off_topic_safe') return assistant;
+  const redirect = 'I can also help with BMERMS tasks, work orders, equipment summaries, alerts, and safe troubleshooting.';
+  const summary = assistant.summary.includes('BMERMS') ? assistant.summary : `${assistant.summary.trim()} ${redirect}`.trim();
+  return {
+    ...assistant,
+    summary: summary.slice(0, 2000),
+    title: capability === 'off_topic_safe' ? 'General Guidance' : 'General Conversation',
+    follow_up_suggestions: ['What is on my to-do list?', 'What should I prioritize today?', 'Summarize this work order'],
+    answer_basis: 'model_output',
+    confidence: 'medium',
   };
 }
 
@@ -272,8 +286,25 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
     };
   }
 
-  if (!shouldUseProvider({ capability, message })) {
+  if (!shouldUseProvider({ capability, message, responseMode: capabilityDef.responseMode })) {
     const localAssistant = ensureUiSafeAssistant(buildDeterministicAssistantIntro(), safety.decision);
+    const localResponse =
+      capability === 'assistant_intro'
+        ? localAssistant
+        : ensureUiSafeAssistant(
+            {
+              ...localAssistant,
+              decision: safety.decision === 'refuse' || safety.decision === 'escalate' ? 'limited_answer' : safety.decision,
+              title: capability === 'unsafe_or_restricted' ? 'Safety Restriction' : localAssistant.title,
+              summary:
+                capability === 'unsafe_or_restricted'
+                  ? safety.reason
+                  : "I can help with BMERMS operations like tasks, work orders, equipment summaries, alerts, and safe troubleshooting.",
+              answer_basis: capability === 'unsafe_or_restricted' ? 'insufficient_data' : 'system_capabilities',
+              confidence: capability === 'unsafe_or_restricted' ? 'low' : 'high',
+            },
+            safety.decision
+          );
     await logCopilotTelemetry(supabase, {
       sessionId,
       query: message,
@@ -281,7 +312,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       capability: classified.capability,
       confidenceScore: classified.confidence,
       confidenceLabel: classified.confidenceLabel,
-      decision: localAssistant.decision,
+      decision: localResponse.decision,
       blocked: false,
       fallbackReason: classified.fallbackReason,
       roleNames: profile.roleNames,
@@ -302,7 +333,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       ...memory,
       shortSummary: buildRollingMemorySummary(memory.shortSummary, {
         userMessage: message,
-        assistant: localAssistant,
+        assistant: localResponse,
       }),
       focus: capability,
       activeCapability: capability,
@@ -314,10 +345,10 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       capability: classified.capability,
       confidenceScore: classified.confidence,
       confidenceLabel: classified.confidenceLabel,
-      decision: localAssistant.decision,
+      decision: localResponse.decision,
       blocked: false,
       fallbackReason: classified.fallbackReason,
-      assistant: localAssistant,
+      assistant: localResponse,
       evidence: taskContext.evidence,
       classified,
       memory,
@@ -344,6 +375,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
     classified,
     moduleContext,
     profile,
+    responseMode: capabilityDef.responseMode,
   });
 
   try {
@@ -390,6 +422,14 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       });
     }
 
+    const parser = providerResult.providerMetadata?.parser as
+      | { usedFallback?: boolean; parserStrategy?: string }
+      | undefined;
+    const parserRecoveryUsed = Boolean(parser?.usedFallback) || parser?.parserStrategy === 'format_recovery';
+    const contextBlocksAvailable = hasUsableStructuredContext(taskContext.blocks, taskContext.evidence);
+    const toolTraceAvailable = Array.isArray(taskContext.blocks.toolTrace) && taskContext.blocks.toolTrace.length > 0;
+    let deterministicContextFallbackUsed = false;
+
     const mergedAssistant = {
       ...providerResult.assistant,
       answer_basis: providerResult.assistant.answer_basis ?? safety.answerBasis,
@@ -410,9 +450,35 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       classified,
       capability,
     });
+    let scopedAssistant = enforceOffTopicRedirect(finalAssistant, capability);
+    if (capabilityDef.responseMode === 'structured' && contextBlocksAvailable && (parserRecoveryUsed || providerFallback)) {
+      scopedAssistant = buildDeterministicStructuredFallback({
+        capability,
+        decision: safety.decision,
+        blocks: taskContext.blocks,
+        evidence: taskContext.evidence,
+      });
+      deterministicContextFallbackUsed = true;
+    }
 
-    const safeAssistant = ensureUiSafeAssistant(finalAssistant, safety.decision);
-    const responseFallbackReason = providerFallback ? 'provider_failure' : classified.fallbackReason;
+    const effectiveProviderStatus = providerFallback && !deterministicContextFallbackUsed ? 'failure' : 'success';
+    const enhancedProviderMetadata = {
+      ...(providerResult.providerMetadata ?? {}),
+      parserRecoveryUsed,
+      deterministicContextFallbackUsed,
+      contextBlocksAvailable,
+      toolTraceAvailable,
+    };
+
+    const safeAssistant = normalizeAssistantResponse({
+      rawProviderContent: scopedAssistant,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      providerStatus: effectiveProviderStatus,
+      requiredDecision: safety.decision,
+      fallbackReason: providerFallback ? 'provider_failure' : classified.fallbackReason,
+    }).assistant;
+    const responseFallbackReason = providerFallback && !deterministicContextFallbackUsed ? 'provider_failure' : classified.fallbackReason;
 
     await logCopilotTelemetry(supabase, {
       sessionId,
@@ -429,16 +495,14 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       route: moduleContext?.route ?? moduleContext?.pathname,
       evidenceSignals: taskContext.evidence.evidenceSignals,
       groundedBy: taskContext.evidence.evidenceSignals.length ? 'live_data' : 'general_fallback',
-      parsingRecoveryUsed:
-        providerFallback ||
-        Boolean((providerResult.providerMetadata?.parser as { usedFallback?: boolean } | undefined)?.usedFallback),
+      parsingRecoveryUsed: parserRecoveryUsed,
       classifierCandidates: classified.candidates,
       resolvedEntities,
       latencyMs: Date.now() - startedAt,
       metadata: {
         provider: providerResult.provider,
         model: providerResult.model,
-        providerMetadata: providerResult.providerMetadata ?? null,
+        providerMetadata: enhancedProviderMetadata,
         capabilityDefinition: capabilityDef,
         troubleshootingSubtype: classified.troubleshootingSubtype,
         intelligenceMode: safeAssistant.intelligence_mode,
@@ -446,6 +510,10 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         emptyModelContent: (providerResult.providerMetadata as { emptyModelContent?: boolean } | undefined)
           ?.emptyModelContent,
         providerFallback,
+        parserRecoveryUsed,
+        deterministicContextFallbackUsed,
+        contextBlocksAvailable,
+        toolTraceAvailable,
         toolTrace: taskContext.blocks.toolTrace,
       },
     });
@@ -476,7 +544,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       resolvedEntities,
       provider: providerResult.provider,
       model: providerResult.model,
-      providerMetadata: providerResult.providerMetadata,
+      providerMetadata: enhancedProviderMetadata,
       policyReason: safety.reason,
     };
   } catch (error) {

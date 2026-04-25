@@ -16,6 +16,16 @@ const OUT_OF_SCOPE_PATTERNS = [
   /\bclinical diagnosis\b/i,
 ];
 
+const GENERAL_CONVERSATION_PATTERNS = [
+  /\btell me a joke\b/i,
+  /\blove life\b/i,
+  /\bwrite (an|a) (email|message)\b/i,
+  /\bmotivate me\b/i,
+  /\borganize my day\b/i,
+  /\bexplain (stress|anxiety|confidence)\b/i,
+  /\bgeneral advice\b/i,
+];
+
 const UNSAFE_PATTERNS = [
   /\bbypass\b/i,
   /\boverride\b/i,
@@ -78,6 +88,14 @@ const SPECIFIC_TECHNICAL_TROUBLESHOOTING_PATTERNS = [
 ];
 
 const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
+  {
+    intent: 'general_conversation',
+    patterns: [/^thanks?$/i, /^thank you$/i, /^ok(ay)?$/i, /^cool$/i, /^great$/i, /\bhow are you\b/i],
+  },
+  {
+    intent: 'off_topic_safe',
+    patterns: GENERAL_CONVERSATION_PATTERNS,
+  },
   {
     intent: 'maintenance_tip',
     patterns: [/\bpm\b/i, /\bpreventive maintenance\b/i, /\bmaintenance tips?\b/i, /\bchecklist\b/i],
@@ -164,11 +182,6 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
     baseScore: 0.78,
   },
   {
-    capability: 'explain_replacement_priority',
-    patterns: [/\breplacement priority\b/i, /\bwhy .*replace\b/i, /\breplacement urgency\b/i, /\breplacement rank\b/i],
-    baseScore: 0.78,
-  },
-  {
     capability: 'explain_pm_status',
     patterns: [/\boverdue pm\b/i, /\bpm status\b/i, /\bpm compliance\b/i, /\bpreventive maintenance status\b/i],
     baseScore: 0.74,
@@ -177,11 +190,6 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
     capability: 'safe_troubleshooting',
     patterns: [/\btroubleshoot/i, /\bcheck first\b/i, /\bintermittent\b/i, /\bfailure\b/i],
     baseScore: 0.7,
-  },
-  {
-    capability: 'maintenance_guidance',
-    patterns: [/\bmaintenance guidance\b/i, /\bmaintenance tips?\b/i, /\bpreventive\b/i],
-    baseScore: 0.68,
   },
   {
     capability: 'maintenance_tips',
@@ -199,24 +207,19 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
     baseScore: 0.75,
   },
   {
-    capability: 'pending_approvals',
-    patterns: [/\bpending approvals?\b/i, /\bwhat approvals\b/i, /\bawaiting sign[-\s]?off\b/i],
+    capability: 'summarize_alerts',
+    patterns: [/\balerts?\b/i, /\bescalat(e|ion)\b/i, /\bcritical flags?\b/i, /\bwhat alerts need attention\b/i],
     baseScore: 0.75,
   },
   {
-    capability: 'approval_tasks',
-    patterns: [/\bapprovals?\b/i, /\bpending approvals?\b/i, /\bawaiting approval\b/i],
-    baseScore: 0.74,
+    capability: 'general_conversation',
+    patterns: [/^thanks?$/i, /^thank you$/i, /^ok(ay)?$/i, /^cool$/i, /^great$/i],
+    baseScore: 0.72,
   },
   {
-    capability: 'alerts_and_escalations',
-    patterns: [/\balerts?\b/i, /\bescalat(e|ion)\b/i, /\bcritical flags?\b/i],
-    baseScore: 0.73,
-  },
-  {
-    capability: 'decision_support_analysis',
-    patterns: [/\bdecision support\b/i, /\btriage\b/i, /\breadiness\b/i, /\bworkload\b/i],
-    baseScore: 0.8,
+    capability: 'off_topic_safe',
+    patterns: GENERAL_CONVERSATION_PATTERNS,
+    baseScore: 0.82,
   },
   {
     capability: 'summarize_department_readiness',
@@ -254,15 +257,17 @@ const HOW_TASK_LIST = /\bhow (do i|to) (turn|make|build)\b.*\b(list|plan)\b/i;
 
 const INTENT_TO_CAPABILITY: Record<ChatIntent, CapabilityId> = {
   assistant_intro: 'assistant_intro',
-  maintenance_tip: 'maintenance_guidance',
+  general_conversation: 'general_conversation',
+  off_topic_safe: 'off_topic_safe',
+  maintenance_tip: 'maintenance_tips',
   troubleshooting: 'safe_troubleshooting',
   work_order_help: 'summarize_work_order',
   equipment_lookup: 'summarize_equipment',
-  analytics_explanation: 'decision_support_analysis',
+  analytics_explanation: 'summarize_department_readiness',
   calibration_or_logistics: 'logistics_status',
-  too_detailed: 'safe_troubleshooting',
-  unsafe: 'safe_troubleshooting',
-  out_of_scope: 'general_system_fallback',
+  too_detailed: 'unsafe_or_restricted',
+  unsafe: 'unsafe_or_restricted',
+  out_of_scope: 'unsafe_or_restricted',
 };
 
 function toConfidenceLabel(score: number): ConfidenceLevel {
@@ -328,7 +333,7 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
     reasons.push('Detected patient-care or diagnosis language.');
     matchedSignals.push('out_of_scope_pattern');
     return buildResult('out_of_scope', {
-      capability: 'general_system_fallback',
+      capability: 'unsafe_or_restricted',
       confidence: 0.98,
       confidenceLabel: 'high',
       specificity: 'unsafe',
@@ -340,7 +345,7 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
     reasons.push('Detected unsafe internal repair or bypass language.');
     matchedSignals.push('unsafe_pattern');
     return buildResult('unsafe', {
-      capability: 'safe_troubleshooting',
+      capability: 'unsafe_or_restricted',
       confidence: 0.97,
       confidenceLabel: 'high',
       troubleshootingSubtype: 'unsafe_internal_or_bypass_troubleshooting',
@@ -353,7 +358,7 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
     reasons.push('Detected request for unsupported model-specific technical detail.');
     matchedSignals.push('too_detailed_pattern');
     return buildResult('too_detailed', {
-      capability: 'safe_troubleshooting',
+      capability: 'unsafe_or_restricted',
       confidence: 0.9,
       confidenceLabel: 'high',
       troubleshootingSubtype: 'specific_technical_troubleshooting',

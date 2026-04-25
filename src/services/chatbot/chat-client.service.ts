@@ -67,7 +67,7 @@ export async function sendChatMessage(payload: {
   })();
 
   if (!json) {
-    throw new Error(`Chat endpoint returned non-JSON response (${response.status}).`);
+    throw new Error('The assistant response could not be displayed safely. Please try again.');
   }
 
   if (!response.ok) {

@@ -259,7 +259,7 @@ test('text-mode greetings return intro without parser fallback', async () => {
       assert.notEqual((result.providerMetadata as { providerFallback?: boolean }).providerFallback, true);
       assert.equal(
         (result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy,
-        'text_mode_plain_text'
+        'plain_text_wrapped'
       );
     }
   } finally {
@@ -294,7 +294,7 @@ test('text-mode plain text output is wrapped safely', async () => {
       capability: 'assistant_intro',
     });
     assert.ok(result.assistant.summary.toLowerCase().includes('help'));
-    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'text_mode_plain_text');
+    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'plain_text_wrapped');
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
@@ -343,7 +343,7 @@ test('text-mode raw JSON output is parsed into structured assistant fields', asy
     });
     assert.equal(result.assistant.summary, 'I can help with tasks and work orders.');
     assert.ok((result.assistant.actions ?? []).includes('Check your assigned queue.'));
-    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'text_mode_json_candidate');
+    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'json_candidate');
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
@@ -381,7 +381,7 @@ test('text-mode fenced JSON output is parsed and fences are not shown in summary
     });
     assert.equal(result.assistant.summary, 'Structured intro from fenced JSON.');
     assert.equal(result.assistant.summary.includes('```'), false);
-    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'text_mode_json_candidate');
+    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'json_candidate');
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
@@ -414,8 +414,8 @@ test('text-mode malformed JSON falls back to safe plain text summary', async () 
       capability: 'assistant_intro',
     });
     assert.ok(result.assistant.summary.length > 0);
-    assert.equal(result.assistant.title, 'BMERMS Assistant');
-    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'text_mode_plain_text');
+    assert.equal(result.assistant.title, 'Response formatting issue');
+    assert.equal((result.providerMetadata as { parser?: { parserStrategy?: string } }).parser?.parserStrategy, 'format_recovery');
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;

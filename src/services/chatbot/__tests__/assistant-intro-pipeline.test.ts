@@ -24,10 +24,10 @@ test('assistant_intro deterministic payload is clean and local', () => {
 });
 
 test('provider is skipped for assistant_intro/help-like fallback text', () => {
-  assert.equal(shouldUseProvider({ capability: 'assistant_intro', message: 'hi' }), false);
+  assert.equal(shouldUseProvider({ capability: 'assistant_intro', message: 'hi', responseMode: 'local' }), false);
   assert.equal(
-    shouldUseProvider({ capability: 'general_system_fallback', message: 'what can you do' }),
-    false
+    shouldUseProvider({ capability: 'general_system_fallback', message: 'what can you do', responseMode: 'text' }),
+    true
   );
-  assert.equal(shouldUseProvider({ capability: 'my_tasks', message: "what's on my to-do?" }), true);
+  assert.equal(shouldUseProvider({ capability: 'my_tasks', message: "what's on my to-do?", responseMode: 'structured' }), true);
 });

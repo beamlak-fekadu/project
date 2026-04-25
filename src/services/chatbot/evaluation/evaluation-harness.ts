@@ -21,7 +21,7 @@ export function runCapabilityEvaluation(): EvaluationSummary {
     const isMatch = classified.capability === sample.capability;
     if (isMatch) matchedCapability += 1;
     if (classified.confidenceLabel === 'low') lowConfidenceCount += 1;
-    if (classified.capability === 'general_system_fallback' || classified.capability === 'general_fallback') fallbackCount += 1;
+    if (classified.capability === 'general_system_fallback') fallbackCount += 1;
 
     const bucket = byCapability[sample.capability] ?? { total: 0, matched: 0, lowConfidence: 0 };
     bucket.total += 1;

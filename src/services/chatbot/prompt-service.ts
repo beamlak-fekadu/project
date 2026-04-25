@@ -10,6 +10,7 @@ import type {
   SafetyMode,
   UserChatProfile,
   ChatModuleContext,
+  ResponseMode,
 } from '@/types/chatbot';
 import { buildRoutingExplanation } from './classifier-service';
 
@@ -24,6 +25,17 @@ For safe first-line operational troubleshooting, prefer limited safe guidance ov
 Use check-manual or escalation for exact unsupported technical specifics or unsafe requests.
 Keep responses concise, operational, and professional.
 Return JSON only.
+`.trim();
+
+const JSON_OUTPUT_HARDENING_RULES = `
+- Return ONLY a valid JSON object.
+- Do not use markdown fences.
+- Do not include explanations outside JSON.
+- Keep array fields short and practical.
+- Limit proactive_signals to at most 3 items.
+- Do not include routing metadata in JSON.
+- Do not include toolTrace in JSON.
+- If data is missing, state that clearly in summary.
 `.trim();
 
 const ASSISTANT_INTRO_SYSTEM_PROMPT = `
@@ -62,10 +74,10 @@ function compactContextBlocks(blocks: Record<string, unknown> | undefined) {
 function capabilityAddendum(capability: CapabilityId): string {
   switch (capability) {
     case 'assistant_intro':
-      return `Describe BMERMS copilot: work orders, PM, equipment status, decision support, logistics, alerts, and safe first-line troubleshooting.
-Use only toolTrace and identity in contextBlocks; do not fabricate work assignments.
-Prefer returning a structured JSON object matching outputContract keys (summary/actions/insights/recommendations/follow_up_suggestions) even in intro mode.
-Set follow_up_suggestions to practical prompts like "What is on my to-do list?", "Summarize the selected work order" (if context applies), and "What alerts are open?".`;
+      return 'Describe BMERMS copilot capabilities briefly and operationally.';
+    case 'general_conversation':
+    case 'off_topic_safe':
+      return 'Give a short, harmless general response, then redirect to BMERMS help in one sentence. Do not invent system data.';
     case 'my_tasks':
       return 'Focus on commitments visible in contextBlocks (work orders, approvals, PM signals). Do not invent assignments. Prefer toolTrace.getMyTasks when present.';
     case 'prioritize_tasks':
@@ -75,12 +87,11 @@ Set follow_up_suggestions to practical prompts like "What is on my to-do list?",
       return 'Anchor on evidence + toolTrace (getEquipmentSummary / getWorkOrderSummary) and focusedAssetAnalytics; cite concrete fields (dates, statuses, metrics).';
     case 'safe_troubleshooting':
       return 'Follow tier1Troubleshooting (checklist + message_hints) order. troubleshooting_steps must be safe verification checks, not internal repair. Map hypotheses only to evidence; otherwise state unknown.';
-    case 'alerts_and_escalations':
+    case 'summarize_alerts':
       return 'Use alertSynthesis.countsBySeverity and getAlertsSummary from toolTrace; group by severity and asset where possible.';
     case 'logistics_status':
     case 'procurement_status':
       return 'Use getInventoryLogisticsStatus / getProcurementStatus in toolTrace; do not invent SKUs or delivery dates.';
-    case 'decision_support_analysis':
     case 'summarize_department_readiness':
       return 'Use getDepartmentReadiness and decision-support blocks; stay role-scoped.';
     default:
@@ -103,6 +114,7 @@ export function buildPromptPayload(params: {
   classified?: ClassifiedRequest;
   moduleContext?: ChatModuleContext;
   profile?: UserChatProfile;
+  responseMode?: ResponseMode;
 }) {
   const {
     message,
@@ -119,6 +131,7 @@ export function buildPromptPayload(params: {
     classified,
     moduleContext,
     profile,
+    responseMode,
   } = params;
 
   const routingExplanation = classified ? buildRoutingExplanation(classified) : [];
@@ -197,7 +210,8 @@ export function buildPromptPayload(params: {
       required_tools_or_parts: 'string[]',
       escalation_recommendation: 'string | optional',
       reason_for_limit: 'string | optional',
-      answer_basis: 'system_data | manual_or_sop | general_safe_guidance | insufficient_data',
+      answer_basis:
+        'system_data | system_capabilities | manual_or_sop | general_safe_guidance | insufficient_data | model_output | format_recovery',
       confidence: 'high | medium | low',
       escalation_required: 'boolean',
       entities_referenced: 'string[]',
@@ -207,14 +221,15 @@ export function buildPromptPayload(params: {
     },
   };
 
-  const userPrompt = `
-User request:
-${message}
-
-Grounding context (JSON):
-${JSON.stringify(groundingContext)}
-
-Instructions:
+  const responseInstruction =
+    responseMode === 'text'
+      ? `Instructions:
+- Provide a concise, plain-language response.
+- Do not output JSON unless explicitly requested.
+- Keep it short and safe.
+- For harmless off-topic prompts, answer briefly and add one line inviting BMERMS operational questions.
+- Never include toolTrace, routing, telemetry, or provider metadata in the response text.`
+      : `Instructions:
 - Respect requiredDecision.
 - Do not add unsupported technical details.
 - Preserve capability focus and avoid drifting into unrelated domains.
@@ -227,8 +242,19 @@ Instructions:
 - Set escalation_guidance when escalation_required is true.
 - Keep proactive_signals concise and sparse (max 3) and never include them in summary.
 - Do not include routing metadata, matcher confidence, toolTrace, or telemetry details in summary/actions/insights/recommendations.
-- Set intelligence_mode to troubleshooting when capability is safe_troubleshooting; prioritization for prioritize_tasks; synthesis for alerts_and_escalations; otherwise standard.
+- Set intelligence_mode to troubleshooting when capability is safe_troubleshooting; prioritization for prioritize_tasks; synthesis for summarize_alerts; otherwise standard.
 - Return JSON only and match outputContract keys exactly.
+- Follow strict output contract:
+${JSON_OUTPUT_HARDENING_RULES}`;
+
+  const userPrompt = `
+User request:
+${message}
+
+Grounding context (JSON):
+${JSON.stringify(groundingContext)}
+
+${responseInstruction}
 `.trim();
 
   return {

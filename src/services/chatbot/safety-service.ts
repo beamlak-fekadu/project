@@ -24,7 +24,7 @@ const ROLE_INTENT_BLOCKS: Record<string, ChatIntent[]> = {
 };
 
 const ROLE_CAPABILITY_BLOCKS: Record<string, CapabilityId[]> = {
-  viewer: ['approval_tasks', 'pending_approvals'],
+  viewer: ['procurement_status'],
   store_user: ['safe_troubleshooting'],
 };
 
@@ -103,13 +103,26 @@ export function evaluateSafetyDecision(
     };
   }
 
+  if (intent === 'general_conversation' || intent === 'off_topic_safe') {
+    return {
+      decision: 'answer',
+      blocked: false,
+      answerBasis: 'general_safe_guidance',
+      confidence: 'medium',
+      reason: 'Harmless non-operational prompt; provide brief safe response and redirect to BMERMS support.',
+      escalationRequired: false,
+      evidenceTier: 'low',
+      policyCategory: 'general_operational',
+    };
+  }
+
   if (intent === 'out_of_scope') {
     return {
-      decision: 'refuse',
-      blocked: true,
+      decision: 'limited_answer',
+      blocked: false,
       answerBasis: 'insufficient_data',
       confidence: 'low',
-      reason: STANDARD_RESPONSES.outOfScope,
+      reason: `${STANDARD_RESPONSES.outOfScope} I can still provide short general guidance if helpful.`,
       escalationRequired: false,
       evidenceTier: 'low',
       policyCategory: 'unsafe_or_out_of_scope',

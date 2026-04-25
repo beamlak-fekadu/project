@@ -158,6 +158,9 @@ function selectCapabilityBlocks(
 ) {
   switch (capability) {
     case 'assistant_intro':
+    case 'general_conversation':
+    case 'off_topic_safe':
+    case 'unsafe_or_restricted':
       return { ...shared, ...riskAnalytics, introPreview: { openWos: (shared.assignedWorkOrders as unknown[]).length } };
     case 'my_tasks':
     case 'prioritize_tasks':
@@ -174,22 +177,14 @@ function selectCapabilityBlocks(
         rankedOperationalQueue: buildRankedOperationalQueue(shared, riskAnalytics),
       };
     case 'summarize_work_order':
-    case 'maintenance_guidance':
       return { ...shared, ...riskAnalytics };
     case 'summarize_equipment':
     case 'maintenance_tips':
       return { ...shared, ...riskAnalytics };
-    case 'explain_replacement_priority':
-      return {
-        replacementPriority: riskAnalytics.replacementPriority,
-        recommendationFlags: riskAnalytics.recommendationFlags,
-        reliabilityMetrics: riskAnalytics.reliabilityMetrics,
-      };
     case 'explain_equipment_risk':
-    case 'decision_support_analysis':
     case 'summarize_department_readiness':
       return { ...riskAnalytics, ...shared, ...decisionSupport };
-    case 'alerts_and_escalations':
+    case 'summarize_alerts':
       return {
         ...riskAnalytics,
         ...shared,
@@ -200,9 +195,6 @@ function selectCapabilityBlocks(
       return { overduePm: shared.overduePm, pmSignals: riskAnalytics.reliabilityMetrics };
     case 'logistics_status':
     case 'procurement_status':
-      return { ...shared, ...logistics };
-    case 'pending_approvals':
-    case 'approval_tasks':
       return { ...shared, ...logistics };
     case 'training_status':
       return { trainingRequests: shared.trainingRequests, workloadSnapshot: decisionSupport.workloadSnapshot };
@@ -261,20 +253,49 @@ async function collectToolResults(params: {
 export async function buildTaskContext(params: TaskContextParams): Promise<TaskContextBundle> {
   const { supabase, capability, profile, contextRefs, message, moduleContext, classified } = params;
 
+  if (
+    capability === 'assistant_intro' ||
+    capability === 'general_conversation' ||
+    capability === 'off_topic_safe' ||
+    capability === 'unsafe_or_restricted'
+  ) {
+    return {
+      capability,
+      blocks: {
+        toolTrace: [],
+        retrievalSkipped: true,
+      },
+      evidence: {
+        equipment: null,
+        workOrder: null,
+        department: null,
+        maintenanceHistory: [],
+        pmSnapshot: null,
+        calibrationStatus: null,
+        logisticsSnapshot: null,
+        analyticsSnapshot: null,
+        manualOrSopTexts: [],
+        documentRetrieval: {
+          notImplemented: true,
+          searchDocuments: [],
+          forEquipment: [],
+          forCategory: [],
+        },
+        evidenceSignals: [],
+        deniedContextRefs: [],
+        accessDenied: false,
+      },
+    };
+  }
+
   const intentForEvidence =
-    capability === 'assistant_intro'
-      ? 'assistant_intro'
-      : capability === 'logistics_status'
+    capability === 'logistics_status'
         ? 'calibration_or_logistics'
         : capability === 'procurement_status'
           ? 'calibration_or_logistics'
           : capability === 'safe_troubleshooting'
             ? 'troubleshooting'
-            : capability === 'decision_support_analysis' ||
-                capability === 'explain_equipment_risk' ||
-                capability === 'alerts_and_escalations' ||
-                capability === 'explain_replacement_priority' ||
-                capability === 'summarize_department_readiness'
+            : capability === 'explain_equipment_risk' || capability === 'summarize_alerts' || capability === 'summarize_department_readiness'
               ? 'analytics_explanation'
               : capability === 'summarize_work_order'
                 ? 'work_order_help'
@@ -294,7 +315,7 @@ export async function buildTaskContext(params: TaskContextParams): Promise<TaskC
     loadDecisionSupportSnapshot(supabase),
   ]);
 
-  const selectedTools = planToolRetrieval(classified, message);
+  const selectedTools = planToolRetrieval(classified);
   const assetFocus = resolveContextAssetId(contextRefs, evidence);
   const wo = evidence.workOrder as { asset_id?: string; status?: string } | null;
   const woStatus = String(wo?.status ?? '');

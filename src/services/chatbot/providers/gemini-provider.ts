@@ -23,7 +23,8 @@ import {
   type LlmGenerateParams,
   type LlmProviderResult,
 } from '@/types/chatbot';
-import { buildAiUnavailableAssistant, normalizeProviderOutput, normalizeTextModeProviderOutput } from './normalize-provider-output';
+import { normalizeAssistantResponse } from '../assistant-response-pipeline';
+import { buildAiUnavailableAssistant } from './normalize-provider-output';
 
 interface GeminiResponse {
   id?: string;
@@ -45,6 +46,14 @@ function readNumberEnv(name: string, fallback: number) {
 
 function debugRawProviderLogs() {
   return (process.env.CHAT_DEBUG_RAW_PROVIDER ?? '').toLowerCase() === 'true';
+}
+
+function looksLikeUsableAssistantText(value: string) {
+  const text = value.trim();
+  if (!text) return false;
+  if (/^<!doctype html>|^<html|^<\?xml/i.test(text)) return false;
+  if (/"error"\s*:|provider_unavailable|gemini request failed/i.test(text)) return false;
+  return true;
 }
 
 export function resolveGeminiBaseUrl(): string {
@@ -316,7 +325,7 @@ export const geminiProvider: ChatLlmProvider = {
         body: {
           model,
           temperature,
-          ...(params.responseMode === 'json' || !params.responseMode ? { response_format: { type: 'json_object' } } : {}),
+          ...(params.responseMode === 'structured' || !params.responseMode ? { response_format: { type: 'json_object' } } : {}),
           max_completion_tokens: maxCompletionTokens,
           messages: toOpenAiMessages(params.messages),
         },
@@ -333,13 +342,16 @@ export const geminiProvider: ChatLlmProvider = {
       })();
       const choiceContent = parsedPayload?.choices?.[0]?.message?.content;
       const primaryText = typeof choiceContent === 'string' ? choiceContent : '';
-      const fallbackText = !primaryText.trim() && rawResponseText.trim() ? rawResponseText : '';
+      const fallbackText = !primaryText.trim() && looksLikeUsableAssistantText(rawResponseText) ? rawResponseText : '';
       const modelTextForParser = primaryText.trim() ? primaryText : fallbackText;
-      const responseMode = params.responseMode ?? 'json';
-      const normalized =
-        responseMode === 'text'
-          ? normalizeTextModeProviderOutput(modelTextForParser.trim() ? modelTextForParser : '', params.requiredDecision)
-          : normalizeProviderOutput(modelTextForParser.trim() ? modelTextForParser : '', params.requiredDecision);
+      const responseMode = params.responseMode ?? 'structured';
+      const normalized = normalizeAssistantResponse({
+        rawProviderContent: modelTextForParser.trim() ? modelTextForParser : '',
+        capability: params.capability ?? 'general_system_fallback',
+        responseMode,
+        providerStatus: 'success',
+        requiredDecision: params.requiredDecision,
+      });
 
       if (shouldDebugRaw) {
         console.info('[chatbot][gemini][raw-response]', {

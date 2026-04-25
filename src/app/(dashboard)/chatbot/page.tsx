@@ -32,6 +32,7 @@ import type { AssistantContent, ChatContextRefs } from '@/types/chatbot';
 import { normalizeAssistantPayloadForUi } from '@/services/chatbot/chat-response-normalizer';
 import { buildAiUnavailableAssistant } from '@/services/chatbot/providers/normalize-provider-output';
 import { CHATBOT_NAME, ASSISTANT_NAME } from '@/constants';
+import { buildAssistantCopyText, displayableAssistantSummary } from '@/components/assistant/assistant-ui-display';
 
 type UIMessage = {
   id: string;
@@ -74,43 +75,6 @@ function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
     createdAt: row.created_at,
     assistant,
   };
-}
-
-function sanitizeSummaryForRender(value: string | undefined) {
-  const raw = (value ?? '').trim();
-  if (!raw) return 'No summary available.';
-  if (/^```|^\{/.test(raw)) return 'I generated a response but it could not be displayed reliably. Please try again.';
-  return raw;
-}
-
-function buildCopyText(assistant: AssistantContent) {
-  const kf = assistant.key_findings ?? [];
-  const ra = assistant.recommended_actions ?? [];
-  const pr = assistant.priority_reasoning ?? [];
-  const lc = assistant.likely_causes ?? [];
-  const ts = assistant.troubleshooting_steps ?? [];
-  const mt = assistant.maintenance_tips ?? [];
-  const rtp = assistant.required_tools_or_parts ?? [];
-  const sections = [
-    assistant.title ? `Title: ${assistant.title}` : '',
-    `Summary: ${assistant.summary}`,
-    kf.length ? `Key findings:\n- ${kf.join('\n- ')}` : '',
-    ra.length ? `Recommended actions:\n- ${ra.join('\n- ')}` : '',
-    pr.length ? `Priority reasoning:\n- ${pr.join('\n- ')}` : '',
-    lc.length ? `Likely causes:\n- ${lc.join('\n- ')}` : '',
-    ts.length ? `Troubleshooting steps:\n- ${ts.join('\n- ')}` : '',
-    mt.length ? `Maintenance tips:\n- ${mt.join('\n- ')}` : '',
-    rtp.length ? `Required tools or parts:\n- ${rtp.join('\n- ')}` : '',
-    assistant.escalation_recommendation ? `Escalation recommendation: ${assistant.escalation_recommendation}` : '',
-    assistant.intelligence_mode ? `Intelligence mode: ${assistant.intelligence_mode}` : '',
-    assistant.proactive_signals?.length
-      ? `Proactive signals:\n- ${assistant.proactive_signals.join('\n- ')}`
-      : '',
-    assistant.routing_explanation?.length
-      ? `Routing:\n- ${assistant.routing_explanation.join('\n- ')}`
-      : '',
-  ].filter(Boolean);
-  return sections.join('\n\n');
 }
 
 export default function ChatbotPage() {
@@ -337,7 +301,7 @@ export default function ChatbotPage() {
                       {message.assistant ? (
                         <div className="space-y-3 text-sm">
                           {message.assistant.title && <p className="font-semibold">{message.assistant.title}</p>}
-                          <p>{sanitizeSummaryForRender(message.assistant.summary) || message.content || 'No summary available.'}</p>
+                          <p>{displayableAssistantSummary(message.assistant.summary) || message.content || 'No summary available.'}</p>
 
                           {message.assistant.intelligence_mode && (
                             <Badge variant="info" className="text-xs capitalize">
@@ -459,7 +423,7 @@ export default function ChatbotPage() {
                               size="sm"
                               onClick={async () => {
                                 if (!message.assistant) return;
-                                await navigator.clipboard.writeText(buildCopyText(message.assistant));
+                                await navigator.clipboard.writeText(buildAssistantCopyText(message.assistant));
                                 toast('success', 'Response copied');
                               }}
                             >

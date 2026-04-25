@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const CHAT_INTENTS = [
   'assistant_intro',
+  'general_conversation',
+  'off_topic_safe',
   'maintenance_tip',
   'troubleshooting',
   'work_order_help',
@@ -15,26 +17,23 @@ export const CHAT_INTENTS = [
 
 export const CHAT_CAPABILITIES = [
   'assistant_intro',
+  'general_conversation',
+  'off_topic_safe',
   'my_tasks',
   'prioritize_tasks',
   'summarize_work_order',
   'summarize_equipment',
   'explain_equipment_risk',
   'explain_pm_status',
-  'explain_replacement_priority',
+  'summarize_alerts',
   'safe_troubleshooting',
   'maintenance_tips',
-  'maintenance_guidance',
   'logistics_status',
   'procurement_status',
-  'pending_approvals',
-  'approval_tasks',
-  'alerts_and_escalations',
-  'decision_support_analysis',
   'summarize_department_readiness',
   'training_status',
   'disposal_status',
-  'general_fallback',
+  'unsafe_or_restricted',
   'general_system_fallback',
 ] as const;
 
@@ -45,11 +44,13 @@ export const ANSWER_BASIS = [
   'manual_or_sop',
   'general_safe_guidance',
   'insufficient_data',
+  'model_output',
+  'format_recovery',
 ] as const;
 export const CONFIDENCE_LEVELS = ['high', 'medium', 'low'] as const;
 export const CHAT_PROVIDERS = ['gemini'] as const;
 export const SAFETY_MODES = ['normal', 'strict', 'fallback'] as const;
-export const RESPONSE_MODES = ['json', 'text'] as const;
+export const RESPONSE_MODES = ['local', 'text', 'structured'] as const;
 export const RESOLUTION_SOURCES = ['explicit_context', 'module_context', 'memory_context', 'text_match', 'none'] as const;
 export const ENTITY_TYPES = ['equipment', 'work_order', 'department', 'part'] as const;
 export const FALLBACK_REASONS = [

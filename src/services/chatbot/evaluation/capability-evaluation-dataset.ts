@@ -119,7 +119,7 @@ const PROMPT_SEEDS: PromptSeed[] = [
     ],
   },
   {
-    capability: 'maintenance_guidance',
+    capability: 'maintenance_tips',
     role: 'department_user',
     module: 'maintenance',
     prompts: [
@@ -153,7 +153,7 @@ const PROMPT_SEEDS: PromptSeed[] = [
     ],
   },
   {
-    capability: 'approval_tasks',
+    capability: 'my_tasks',
     role: 'admin',
     module: 'operations',
     prompts: [
@@ -170,7 +170,7 @@ const PROMPT_SEEDS: PromptSeed[] = [
     ],
   },
   {
-    capability: 'alerts_and_escalations',
+    capability: 'summarize_alerts',
     role: 'admin',
     module: 'dashboard',
     prompts: [
@@ -187,7 +187,7 @@ const PROMPT_SEEDS: PromptSeed[] = [
     ],
   },
   {
-    capability: 'decision_support_analysis',
+    capability: 'summarize_department_readiness',
     role: 'admin',
     module: 'decision-support',
     prompts: [

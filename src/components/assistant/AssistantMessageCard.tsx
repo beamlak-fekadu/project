@@ -6,6 +6,7 @@ import type { AssistantUiMessage } from './AssistantProvider';
 import type { AssistantContent } from '@/types/chatbot';
 import { useToast } from '@/components/ui/Toast';
 import { ASSISTANT_NAME } from '@/constants';
+import { buildAssistantCopyText, displayableAssistantSummary } from './assistant-ui-display';
 
 const BASIS_BADGE_VARIANT: Record<string, 'default' | 'info' | 'purple' | 'warning'> = {
   system_data: 'info',
@@ -20,38 +21,9 @@ const CONFIDENCE_BADGE_VARIANT: Record<string, 'success' | 'warning' | 'error'> 
   low: 'error',
 };
 
-function buildCopyText(assistant: AssistantContent) {
-  const ps = assistant.proactive_signals ?? [];
-  const rt = assistant.routing_explanation ?? [];
-  const kf = assistant.key_findings ?? [];
-  const ra = assistant.recommended_actions ?? [];
-  const pr = assistant.priority_reasoning ?? [];
-  const lc = assistant.likely_causes ?? [];
-  const ts = assistant.troubleshooting_steps ?? [];
-  const mt = assistant.maintenance_tips ?? [];
-  const rtp = assistant.required_tools_or_parts ?? [];
-  const sections = [
-    assistant.title ? `Title: ${assistant.title}` : '',
-    `Summary: ${assistant.summary ?? ''}`,
-    kf.length ? `Key findings:\n- ${kf.join('\n- ')}` : '',
-    ra.length ? `Recommended actions:\n- ${ra.join('\n- ')}` : '',
-    pr.length ? `Priority reasoning:\n- ${pr.join('\n- ')}` : '',
-    lc.length ? `Likely causes:\n- ${lc.join('\n- ')}` : '',
-    ts.length ? `Troubleshooting steps:\n- ${ts.join('\n- ')}` : '',
-    mt.length ? `Maintenance tips:\n- ${mt.join('\n- ')}` : '',
-    rtp.length ? `Required tools or parts:\n- ${rtp.join('\n- ')}` : '',
-    assistant.escalation_recommendation ? `Escalation recommendation: ${assistant.escalation_recommendation}` : '',
-    assistant.intelligence_mode ? `Intelligence mode: ${assistant.intelligence_mode}` : '',
-    ps.length ? `Proactive signals:\n- ${ps.join('\n- ')}` : '',
-    rt.length ? `Routing:\n- ${rt.join('\n- ')}` : '',
-  ].filter(Boolean);
-  return sections.join('\n\n');
-}
-
 export function AssistantMessageCard({ message }: { message: AssistantUiMessage }) {
   const { toast } = useToast();
   const isUser = message.role === 'user';
-  const summaryLooksJson = Boolean(message.assistant?.summary && /^```|^\s*\{/.test(message.assistant.summary.trim()));
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -84,11 +56,9 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
               </div>
             )}
             <p>
-              {summaryLooksJson
-                ? 'I generated a response but it could not be displayed reliably. Please try again.'
-                : message.assistant.summary?.trim() ||
-                  message.content?.trim() ||
-                  'The assistant could not return text. Please retry or escalate via standard channels.'}
+              {displayableAssistantSummary(message.assistant.summary) ||
+                message.content?.trim() ||
+                'The assistant could not return text. Please retry or escalate via standard channels.'}
             </p>
 
             {message.assistant.intelligence_mode && (
@@ -221,7 +191,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
                 variant="ghost"
                 size="sm"
                 onClick={async () => {
-                  await navigator.clipboard.writeText(buildCopyText(message.assistant as AssistantContent));
+                  await navigator.clipboard.writeText(buildAssistantCopyText(message.assistant as AssistantContent));
                   toast('success', 'Assistant response copied');
                 }}
               >
