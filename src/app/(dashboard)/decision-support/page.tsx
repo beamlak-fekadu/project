@@ -39,10 +39,10 @@ export default function DecisionSupportPage() {
   }, [load]);
 
   const avgHealth = snapshot.healthScores.length
-    ? Math.round(snapshot.healthScores.reduce((acc, item) => acc + item.score, 0) / snapshot.healthScores.length)
+    ? snapshot.healthScores.reduce((acc, item) => acc + item.score, 0) / snapshot.healthScores.length
     : 0;
   const avgReadiness = snapshot.readiness.length
-    ? Math.round(snapshot.readiness.reduce((acc, item) => acc + item.readiness_score, 0) / snapshot.readiness.length)
+    ? snapshot.readiness.reduce((acc, item) => acc + item.readiness_score, 0) / snapshot.readiness.length
     : 0;
   const highPriority = snapshot.triage.filter((item) => item.priority_score >= 75).length;
   const overloaded = snapshot.workload.filter((item) => item.open_assignments >= 6).length;
@@ -141,8 +141,8 @@ export default function DecisionSupportPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Average Health Score" value={avgHealth} icon={<HeartPulse className="h-6 w-6" />} color="purple" />
-        <StatCard label="Avg Clinical Readiness" value={`${avgReadiness}%`} icon={<Stethoscope className="h-6 w-6" />} color="green" />
+        <StatCard label="Average Health Score" value={avgHealth.toFixed(1)} icon={<HeartPulse className="h-6 w-6" />} color="purple" />
+        <StatCard label="Avg Clinical Readiness" value={`${avgReadiness.toFixed(1)}%`} icon={<Stethoscope className="h-6 w-6" />} color="green" />
         <StatCard label="High-Priority Triage Items" value={highPriority} icon={<Siren className="h-6 w-6" />} color="red" />
         <StatCard label="Overloaded Staff" value={overloaded} icon={<Users className="h-6 w-6" />} color="orange" />
       </div>

@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { cookies } from 'next/headers';
 import './globals.css';
 import { APP_NAME_SHORT, APP_NAME_FULL, HOSPITAL_NAME } from '@/constants';
-import { ThemeProvider, ThemeScript } from '@/components/theme/ThemeProvider';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import ThemeScript from '@/components/theme/ThemeScript';
 import { getServerThemeFromPreference, isThemePreference, THEME_COOKIE_KEY } from '@/components/theme/theme-contract';
 
 const geistSans = Geist({

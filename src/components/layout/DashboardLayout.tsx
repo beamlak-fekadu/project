@@ -39,7 +39,7 @@ export default function DashboardLayout({ children, userName, userRole, userRole
           onMenuToggle={() => setMobileMenuOpen(true)}
           onLogout={onLogout}
         />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 pb-28 lg:p-6 lg:pb-24">{children}</main>
       </div>
       <AssistantLauncher />
       <AssistantPanel />

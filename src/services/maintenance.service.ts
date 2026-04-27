@@ -20,7 +20,7 @@ export interface WorkOrderFilters {
 const REQUEST_SELECT = `
   id, request_number, asset_id, requested_by, department_id,
   fault_description, urgency, status, resolved_at, notes, created_at, updated_at,
-  equipment_assets(id, asset_code, name),
+  equipment_assets(id, asset_code, name, serial_number),
   departments(id, name, code)
 `;
 

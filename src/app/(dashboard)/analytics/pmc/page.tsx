@@ -21,6 +21,7 @@ interface PMCRow {
   completed_count: number;
   pmc_percentage: number;
   computed_at: string;
+  departments?: { name?: string | null; code?: string | null } | Array<{ name?: string | null; code?: string | null }> | null;
   [key: string]: unknown;
 }
 
@@ -48,6 +49,15 @@ function formatPeriod(start: string): string {
   return `${months[s.getMonth()]} ${s.getFullYear()}`;
 }
 
+function formatPct(value: number): string {
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function getDepartmentLabel(row: PMCRow): string {
+  const department = Array.isArray(row.departments) ? row.departments[0] : row.departments;
+  return department?.name ?? department?.code ?? 'Unknown department';
+}
+
 export default function PMCPage() {
   const [data, setData] = useState<PMCRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,10 +80,10 @@ export default function PMCPage() {
   const totalCompleted = data.reduce((s, d) => s + d.completed_count, 0);
   const overallPMC = totalScheduled > 0 ? (totalCompleted / totalScheduled) * 100 : 0;
 
-  // Aggregate by department_id
+  // Aggregate by department display label.
   const deptMap = new Map<string, { scheduled: number; completed: number }>();
   data.forEach((d) => {
-    const key = d.department_id ?? 'Unknown';
+    const key = getDepartmentLabel(d);
     const prev = deptMap.get(key) ?? { scheduled: 0, completed: 0 };
     deptMap.set(key, {
       scheduled: prev.scheduled + d.scheduled_count,
@@ -87,20 +97,22 @@ export default function PMCPage() {
     completed: val.completed,
   }));
 
-  // Monthly trend — aggregate by period
-  const monthMap = new Map<string, { scheduled: number; completed: number }>();
+  // Monthly trend — aggregate by machine-sortable period key.
+  const monthMap = new Map<string, { label: string; scheduled: number; completed: number }>();
   data.forEach((d) => {
-    const key = formatPeriod(d.period_start);
-    const prev = monthMap.get(key) ?? { scheduled: 0, completed: 0 };
+    const periodDate = new Date(d.period_start);
+    const key = Number.isNaN(periodDate.getTime()) ? d.period_start : periodDate.toISOString().slice(0, 7);
+    const prev = monthMap.get(key) ?? { label: formatPeriod(d.period_start), scheduled: 0, completed: 0 };
     monthMap.set(key, {
+      label: prev.label,
       scheduled: prev.scheduled + d.scheduled_count,
       completed: prev.completed + d.completed_count,
     });
   });
   const monthEntries = Array.from(monthMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([month, val]) => ({
-      month,
+    .map(([, val]) => ({
+      month: val.label,
       pmc: val.scheduled > 0 ? (val.completed / val.scheduled) * 100 : 0,
     }));
 
@@ -109,7 +121,7 @@ export default function PMCPage() {
       key: 'department_id',
       header: 'Department',
       sortable: true,
-      render: (row: PMCRow) => row.department_id ?? 'All',
+      render: (row: PMCRow) => getDepartmentLabel(row),
     },
     {
       key: 'period',
@@ -133,7 +145,7 @@ export default function PMCPage() {
       sortable: true,
       render: (row: PMCRow) => (
         <span className={`inline-block rounded px-2 py-0.5 text-sm font-semibold ${pmcColor(row.pmc_percentage)} ${pmcBg(row.pmc_percentage)}`}>
-          {row.pmc_percentage.toFixed(1)}%
+          {formatPct(row.pmc_percentage)}
         </span>
       ),
     },
@@ -174,7 +186,7 @@ export default function PMCPage() {
         />
         <StatCard
           label="Overall PMC"
-          value={`${overallPMC.toFixed(1)}%`}
+          value={formatPct(overallPMC)}
           icon={<Percent className="h-6 w-6" />}
           color={overallPMC >= 80 ? 'green' : overallPMC >= 60 ? 'yellow' : 'red'}
         />
@@ -188,7 +200,7 @@ export default function PMCPage() {
               datasets={[
                 {
                   label: 'PMC %',
-                  data: deptEntries.map((d) => d.pmc),
+                  data: deptEntries.map((d) => Number(d.pmc.toFixed(1))),
                   backgroundColor: deptEntries.map((d) => pmcBarColor(d.pmc)),
                 },
               ]}
@@ -206,7 +218,7 @@ export default function PMCPage() {
               datasets={[
                 {
                   label: 'PMC %',
-                  data: monthEntries.map((d) => d.pmc),
+                  data: monthEntries.map((d) => Number(d.pmc.toFixed(1))),
                   borderColor: '#3b82f6',
                   tension: 0.3,
                 },

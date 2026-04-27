@@ -84,20 +84,20 @@ export default function ReportsPage() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {reports.map((report) => (
           <Link key={report.type} href={`/reports/${report.type}`}>
-            <Card className="group h-full transition-shadow hover:shadow-md">
+            <Card className="group h-full border border-[var(--border-subtle)] bg-[var(--surface-1)] transition-shadow hover:shadow-md">
               <div className="flex flex-col items-start gap-4">
                 <div className={`rounded-xl p-3 ${report.color}`}>
                   {report.icon}
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
+                  <h3 className="text-lg font-semibold text-[var(--foreground)] group-hover:text-[var(--brand)]">
                     {report.title}
                   </h3>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
                     {report.description}
                   </p>
                 </div>
-                <span className="mt-auto text-sm font-medium text-blue-600 group-hover:underline dark:text-blue-400">
+                <span className="mt-auto text-sm font-medium text-[var(--brand)] group-hover:underline">
                   Generate Report →
                 </span>
               </div>

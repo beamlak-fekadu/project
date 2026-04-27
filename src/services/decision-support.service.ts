@@ -231,6 +231,7 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
 
 export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnapshot> {
   const supabase = createClient();
+  const snapshotDate = new Date().toISOString().slice(0, 10);
 
   const [triageRes, healthRes, readinessRes, workloadRes] = await Promise.all([
     supabase
@@ -242,18 +243,18 @@ export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnaps
     supabase
       .from('equipment_health_snapshots')
       .select('asset_id, health_score, explanation, equipment_assets(asset_code, name)')
-      .eq('snapshot_date', new Date().toISOString().slice(0, 10))
+      .eq('snapshot_date', snapshotDate)
       .order('health_score', { ascending: false })
       .limit(100),
     supabase
       .from('clinical_readiness_snapshots')
       .select('department_id, readiness_score, essential_total, essential_functional, departments(name)')
-      .eq('snapshot_date', new Date().toISOString().slice(0, 10))
+      .eq('snapshot_date', snapshotDate)
       .order('readiness_score', { ascending: false }),
     supabase
       .from('workload_capacity_snapshots')
       .select('assignee_id, open_assignments, overdue_assignments, estimated_hours, profiles(full_name)')
-      .eq('snapshot_date', new Date().toISOString().slice(0, 10))
+      .eq('snapshot_date', snapshotDate)
       .order('open_assignments', { ascending: false }),
   ]);
 
@@ -307,6 +308,22 @@ export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnaps
     overdue_assignments: Number(row.overdue_assignments ?? 0),
     estimated_hours: Number(row.estimated_hours ?? 0),
   }));
+  const fromSnapshots: DecisionSupportSnapshot = { triage, healthScores, readiness, workload };
+  const missingSections =
+    fromSnapshots.triage.length === 0
+    || fromSnapshots.healthScores.length === 0
+    || fromSnapshots.readiness.length === 0
+    || fromSnapshots.workload.length === 0;
 
-  return { triage, healthScores, readiness, workload };
+  if (!missingSections) {
+    return fromSnapshots;
+  }
+
+  const fallback = await computeFromOperationalData();
+  return {
+    triage: fromSnapshots.triage.length > 0 ? fromSnapshots.triage : fallback.triage,
+    healthScores: fromSnapshots.healthScores.length > 0 ? fromSnapshots.healthScores : fallback.healthScores,
+    readiness: fromSnapshots.readiness.length > 0 ? fromSnapshots.readiness : fallback.readiness,
+    workload: fromSnapshots.workload.length > 0 ? fromSnapshots.workload : fallback.workload,
+  };
 }

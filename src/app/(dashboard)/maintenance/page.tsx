@@ -11,16 +11,26 @@ import { useToast } from '@/components/ui/Toast';
 import type { MaintenanceRequest, WorkOrder } from '@/types/database';
 
 type RequestRow = MaintenanceRequest & {
-  equipment_assets?: Array<{ id: string; asset_code: string; name: string }> | null;
-  departments?: Array<{ id: string; name: string; code: string }> | null;
+  equipment_assets?: { id: string; asset_code?: string | null; name?: string | null; serial_number?: string | null } | Array<{ id: string; asset_code?: string | null; name?: string | null; serial_number?: string | null }> | null;
+  departments?: { id: string; name?: string | null; code?: string | null } | Array<{ id: string; name?: string | null; code?: string | null }> | null;
   [key: string]: unknown;
 };
 
 type WorkOrderRow = WorkOrder & {
-  equipment_assets?: Array<{ id: string; asset_code: string; name: string }> | null;
-  profiles?: Array<{ id: string; full_name: string; email: string }> | null;
+  equipment_assets?: { id: string; asset_code?: string | null; name?: string | null } | Array<{ id: string; asset_code?: string | null; name?: string | null }> | null;
+  profiles?: { id: string; full_name?: string | null; email?: string | null } | Array<{ id: string; full_name?: string | null; email?: string | null }> | null;
   [key: string]: unknown;
 };
+
+function firstRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+function safeDisplay(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return /^[0-9a-f-]{32,36}$/i.test(value) ? null : value;
+}
 
 export default function MaintenancePage() {
   const router = useRouter();
@@ -51,12 +61,23 @@ export default function MaintenancePage() {
       key: 'asset_name',
       header: 'Asset',
       sortable: true,
-      render: (row: RequestRow) => row.equipment_assets?.[0]?.name ?? '—',
+      render: (row: RequestRow) => {
+        const asset = firstRelation(row.equipment_assets);
+        return (
+          safeDisplay(asset?.name)
+          ?? safeDisplay(asset?.asset_code)
+          ?? safeDisplay(asset?.serial_number)
+          ?? '—'
+        );
+      },
     },
     {
       key: 'department_name',
       header: 'Department',
-      render: (row: RequestRow) => row.departments?.[0]?.name ?? '—',
+      render: (row: RequestRow) => {
+        const department = firstRelation(row.departments);
+        return safeDisplay(department?.name) ?? safeDisplay(department?.code) ?? '—';
+      },
     },
     {
       key: 'fault_description',
@@ -93,12 +114,15 @@ export default function MaintenancePage() {
       key: 'asset_name',
       header: 'Asset',
       sortable: true,
-      render: (row: WorkOrderRow) => row.equipment_assets?.[0]?.name ?? '—',
+      render: (row: WorkOrderRow) => {
+        const asset = firstRelation(row.equipment_assets);
+        return safeDisplay(asset?.name) ?? safeDisplay(asset?.asset_code) ?? '—';
+      },
     },
     {
       key: 'assigned_to_name',
       header: 'Assigned To',
-      render: (row: WorkOrderRow) => row.profiles?.[0]?.full_name ?? 'Unassigned',
+      render: (row: WorkOrderRow) => firstRelation(row.profiles)?.full_name ?? 'Unassigned',
     },
     {
       key: 'priority',

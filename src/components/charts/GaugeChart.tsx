@@ -25,6 +25,7 @@ export default function GaugeChart({
 }: GaugeChartProps) {
   const chartTheme = useChartTheme();
   const clamped = Math.min(100, Math.max(0, value));
+  const formattedValue = Number(clamped).toFixed(1);
   const remainder = 100 - clamped;
 
   const data = {
@@ -58,7 +59,7 @@ export default function GaugeChart({
       <Doughnut data={data} options={options} />
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-3xl font-bold text-[var(--foreground)]">
-          {clamped}%
+          {formattedValue}%
         </span>
         {label && (
           <span className="mt-1 text-sm text-[var(--text-muted)]">

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { AlertTriangle, Bot, ClipboardCopy, MessageSquareText, Send, UserCircle2 } from 'lucide-react';
+import { AlertTriangle, Bot, ClipboardCopy, MessageSquareText, Send, Trash2, UserCircle2 } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -19,6 +19,8 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import {
   getDepartmentSelectorOptions,
+  deleteAllChatSessions,
+  deleteChatSession,
   getEquipmentSelectorOptions,
   getWorkOrderSelectorOptions,
   listChatMessages,
@@ -86,6 +88,9 @@ export default function ChatbotPage() {
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [clearingAllSessions, setClearingAllSessions] = useState(false);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 
   const [equipmentOptions, setEquipmentOptions] = useState<SelectorOption[]>([]);
   const [workOrderOptions, setWorkOrderOptions] = useState<SelectorOption[]>([]);
@@ -105,9 +110,9 @@ export default function ChatbotPage() {
     };
   }, [selectedDepartmentId, selectedEquipmentId, selectedWorkOrderId]);
 
-  useEffect(() => {
-    async function bootstrap() {
+  const loadSessionsAndSelectors = useCallback(async () => {
       setLoadingSessions(true);
+      setSessionLoadError(null);
       const [sessionRes, equipmentRes, workOrderRes, departmentRes] = await Promise.all([
         listChatSessions(),
         getEquipmentSelectorOptions(),
@@ -116,21 +121,29 @@ export default function ChatbotPage() {
       ]);
 
       if (sessionRes.error) {
-        toast('error', 'Unable to load chat sessions');
+        setSessionLoadError('Unable to load chat sessions');
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('[chatbot] Unable to load chat sessions', sessionRes.error);
+        }
       } else {
         const nextSessions = (sessionRes.data ?? []) as ChatSessionListItem[];
         setSessions(nextSessions);
         if (nextSessions.length > 0) setActiveSessionId(nextSessions[0].id);
+        if (nextSessions.length === 0) setActiveSessionId(undefined);
       }
 
       setEquipmentOptions(equipmentRes.data);
       setWorkOrderOptions(workOrderRes.data);
       setDepartmentOptions(departmentRes.data);
       setLoadingSessions(false);
-    }
+  }, []);
 
+  useEffect(() => {
+    async function bootstrap() {
+      await loadSessionsAndSelectors();
+    }
     void bootstrap();
-  }, [toast]);
+  }, [loadSessionsAndSelectors]);
 
   useEffect(() => {
     async function loadMessages(sessionId: string) {
@@ -203,6 +216,7 @@ export default function ChatbotPage() {
       const sessionsRes = await listChatSessions();
       if (!sessionsRes.error) {
         setSessions((sessionsRes.data ?? []) as ChatSessionListItem[]);
+        setSessionLoadError(null);
       }
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Unable to process chatbot request');
@@ -218,6 +232,50 @@ export default function ChatbotPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (deletingSessionId || clearingAllSessions) return;
+    const target = sessions.find((item) => item.id === sessionId);
+    const confirmed = window.confirm(`Delete "${target?.title ?? 'this chat session'}" and all its messages?`);
+    if (!confirmed) return;
+
+    setDeletingSessionId(sessionId);
+    const { error } = await deleteChatSession(sessionId);
+    if (error) {
+      toast('error', 'Unable to delete chat session');
+      setDeletingSessionId(null);
+      return;
+    }
+
+    const nextSessions = sessions.filter((item) => item.id !== sessionId);
+    setSessions(nextSessions);
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(nextSessions[0]?.id);
+      if (nextSessions.length === 0) setMessages([]);
+    }
+    toast('success', 'Chat session deleted');
+    setDeletingSessionId(null);
+  };
+
+  const handleDeleteAllSessions = async () => {
+    if (clearingAllSessions || deletingSessionId) return;
+    const confirmed = window.confirm('Delete all chat sessions and full message history? This cannot be undone.');
+    if (!confirmed) return;
+
+    setClearingAllSessions(true);
+    const { error, count } = await deleteAllChatSessions();
+    if (error) {
+      toast('error', 'Unable to delete all chat sessions');
+      setClearingAllSessions(false);
+      return;
+    }
+
+    setSessions([]);
+    setActiveSessionId(undefined);
+    setMessages([]);
+    toast('success', count > 0 ? `Deleted ${count} chat session${count === 1 ? '' : 's'}` : 'No chat sessions to delete');
+    setClearingAllSessions(false);
   };
 
   const handleInputKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = async (event) => {
@@ -236,30 +294,69 @@ export default function ChatbotPage() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px,1fr,340px]">
         <Card className="h-[calc(100vh-220px)] overflow-hidden" padding={false}>
           <CardHeader className="border-b border-[var(--border-subtle)] p-4">
-            <CardTitle className="text-base">Recent Sessions</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">Recent Sessions</CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={loadingSessions || sessions.length === 0 || clearingAllSessions || !!deletingSessionId}
+                loading={clearingAllSessions}
+                onClick={handleDeleteAllSessions}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear all
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="h-full overflow-y-auto p-2">
             {loadingSessions ? (
               <div className="flex justify-center py-8">
                 <Spinner />
               </div>
+            ) : sessionLoadError ? (
+              <div className="space-y-3 px-3 py-6">
+                <p className="text-sm text-[var(--text-muted)]">{sessionLoadError}</p>
+                <Button size="sm" variant="outline" onClick={() => void loadSessionsAndSelectors()}>
+                  Retry
+                </Button>
+              </div>
             ) : sessions.length === 0 ? (
-              <p className="px-3 py-6 text-sm text-[var(--text-muted)]">No prior chats yet.</p>
+              <p className="px-3 py-6 text-sm text-[var(--text-muted)]">No chat sessions yet. Start a new conversation.</p>
             ) : (
               <div className="space-y-1">
                 {sessions.map((session) => (
-                  <button
+                  <div
                     key={session.id}
-                    onClick={() => setActiveSessionId(session.id)}
-                    className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
+                    className={`group rounded-xl ${
                       activeSessionId === session.id
                         ? 'bg-[var(--brand)]/20 text-[var(--foreground)]'
                         : 'text-[var(--text-muted)] hover:bg-[var(--surface-2)]'
                     }`}
                   >
-                    <div className="line-clamp-2 font-medium">{session.title}</div>
-                    <div className="mt-1 text-xs opacity-80">{new Date(session.created_at).toLocaleString()}</div>
-                  </button>
+                    <button
+                      onClick={() => setActiveSessionId(session.id)}
+                      className="w-full px-3 py-2 text-left text-sm"
+                    >
+                      <div className="line-clamp-2 pr-8 font-medium">{session.title}</div>
+                      <div className="mt-1 text-xs opacity-80">
+                        {new Date(session.last_message_at ?? session.updated_at ?? session.created_at).toLocaleString()}
+                      </div>
+                    </button>
+                    <div className="mt-[-34px] flex justify-end pr-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDeleteSession(session.id);
+                        }}
+                        className="rounded-md p-1 text-[var(--text-muted)] opacity-60 transition hover:bg-[var(--surface-3)] hover:opacity-100"
+                        aria-label={`Delete ${session.title}`}
+                        disabled={clearingAllSessions || deletingSessionId === session.id}
+                      >
+                        {deletingSessionId === session.id ? <Spinner size="sm" /> : <Trash2 className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

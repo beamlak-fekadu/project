@@ -74,7 +74,8 @@ export default function ReplacementPage() {
     .filter((d) => d.replacement_priority_index != null)
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
 
-  const top3 = ranked.slice(0, 3);
+  const recommendedRows = ranked.filter((d) => (d.replacement_priority_index ?? 0) >= 0.7);
+  const top3 = recommendedRows.slice(0, 3);
 
   const columns = [
     {
@@ -178,7 +179,7 @@ export default function ReplacementPage() {
         />
         <StatCard
           label="Recommended for Replacement"
-          value={ranked.filter((d) => (d.replacement_priority_index ?? 0) >= 0.7).length}
+          value={recommendedRows.length}
           icon={<Replace className="h-6 w-6" />}
           color="orange"
         />

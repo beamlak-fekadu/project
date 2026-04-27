@@ -61,7 +61,6 @@ export const NAV_SECTIONS = [
     items: [
       { label: 'Equipment', href: ROUTES.EQUIPMENT, icon: 'Monitor', roles: ['admin', 'technician', 'department_user', 'store_user', 'viewer'] },
       { label: 'Requests', href: ROUTES.REQUESTS, icon: 'ClipboardList', roles: ['admin', 'technician', 'department_user'] },
-      { label: 'Work Orders', href: ROUTES.WORK_ORDERS, icon: 'Wrench', roles: ['admin', 'technician', 'department_user'] },
       { label: 'Maintenance', href: ROUTES.MAINTENANCE, icon: 'Wrench', roles: ['admin', 'technician', 'department_user'] },
       { label: 'Preventive Maintenance', href: ROUTES.PM, icon: 'CalendarCheck', roles: ['admin', 'technician'] },
       { label: 'Calibration', href: ROUTES.CALIBRATION, icon: 'Gauge', roles: ['admin', 'technician'] },

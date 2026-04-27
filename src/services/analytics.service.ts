@@ -22,7 +22,8 @@ const RISK_SELECT = `
 
 const PMC_SELECT = `
   id, department_id, category_id, asset_id, period_start, period_end,
-  scheduled_count, completed_count, pmc_percentage, computed_at
+  scheduled_count, completed_count, pmc_percentage, computed_at,
+  departments(name, code)
 `;
 
 const PERFORMANCE_SELECT = `

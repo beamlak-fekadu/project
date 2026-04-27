@@ -27,8 +27,7 @@ type ReferenceTable =
   | 'failure_codes'
   | 'maintenance_action_codes'
   | 'calibration_types'
-  | 'pm_templates'
-  | 'memis_lookup_values';
+  | 'pm_templates';
 
 interface TabConfig {
   id: ReferenceTable;
@@ -199,22 +198,6 @@ const TAB_CONFIGS: TabConfig[] = [
       { key: 'name', label: 'Name', type: 'text', required: true },
       { key: 'description', label: 'Description', type: 'text' },
       { key: 'frequency_days', label: 'Frequency (days)', type: 'number', required: true },
-    ],
-  },
-  {
-    id: 'memis_lookup_values',
-    label: 'MEMIS Lookups',
-    columns: [
-      { key: 'lookup_group', header: 'Group', sortable: true, searchable: true },
-      { key: 'code', header: 'Code', sortable: true, searchable: true },
-      { key: 'label', header: 'Label', sortable: true, searchable: true },
-      { key: 'description', header: 'Description' },
-    ],
-    formFields: [
-      { key: 'lookup_group', label: 'Lookup Group', type: 'text', required: true },
-      { key: 'code', label: 'Code', type: 'text', required: true },
-      { key: 'label', label: 'Label', type: 'text', required: true },
-      { key: 'description', label: 'Description', type: 'text' },
     ],
   },
 ];
