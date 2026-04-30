@@ -53,7 +53,7 @@ export async function getRecentAlerts() {
   const supabase = createClient();
   return supabase
     .from('recommendation_flags')
-    .select('id, asset_id, flag_type, severity, message, is_acknowledged, generated_at, equipment_assets(asset_code, name)')
+    .select('id, asset_id, flag_type, severity, message, details, is_acknowledged, generated_at, equipment_assets(asset_code, name)')
     .eq('is_acknowledged', false)
     .order('generated_at', { ascending: false })
     .limit(10) as unknown as { data: (RecommendationFlag & { equipment_assets: { asset_code: string; name: string } })[] | null; error: unknown };

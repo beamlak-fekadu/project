@@ -12,6 +12,7 @@ import { PageHeader, StatCard, DataTable, Badge } from '@/components/ui';
 import { PageLoader } from '@/components/ui/Spinner';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ChartCard, HorizontalBarChart } from '@/components/charts';
+import { generateReplacementDriver } from '@/utils/decision-support/explanations';
 
 interface AssetInfo {
   id: string;
@@ -144,10 +145,10 @@ export default function ReplacementPage() {
     },
     {
       key: 'justification',
-      header: 'Justification',
+      header: 'Key Driver',
       render: (row: ReplacementRow) => (
         <span className="max-w-[250px] truncate text-sm text-gray-600 dark:text-gray-400">
-          {row.justification ?? '—'}
+          {generateReplacementDriver(row)}
         </span>
       ),
     },
@@ -215,7 +216,7 @@ export default function ReplacementPage() {
                     {item.equipment_assets?.name ?? 'Unknown Asset'}
                   </p>
                   <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                    {item.justification ?? 'No justification provided'}
+                    {generateReplacementDriver(item)}
                   </p>
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="text-gray-500">RPI</span>

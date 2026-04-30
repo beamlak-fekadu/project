@@ -9,6 +9,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/c
 import { RefreshButton } from './_components/RefreshButton';
 import { AcknowledgeButton } from './_components/AcknowledgeButton';
 import { RiskBandDrilldown, type RiskBand } from './_components/RiskBandDrilldown';
+import { generateReplacementDriver, generateTriageReason } from '@/utils/decision-support/explanations';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,13 @@ interface ReplacementRow {
   asset_name: string;
   asset_code: string;
   department_name: string;
+  age_score: number | null;
+  failure_score: number | null;
+  availability_score: number | null;
+  maintenance_burden_score: number | null;
+  spare_part_score: number | null;
+  risk_score: number | null;
+  cost_score: number | null;
   priority_index: number;
   rank: number;
   justification: string | null;
@@ -216,7 +224,11 @@ async function fetchTriageData(
       asset_code: asset?.asset_code ?? 'N/A',
       department_id: asset?.department_id ?? asset?.departments?.id ?? null,
       department_name: asset?.departments?.name ?? 'Unknown',
-      recommendation: row.recommendation as string,
+      recommendation: generateTriageReason({
+        flagType: (flag?.flag_type as string | undefined) ?? null,
+        rationale: normalizeRationale(row.rationale),
+        fallbackRecommendation: (row.recommendation as string | undefined) ?? null,
+      }),
       rationale: normalizeRationale(row.rationale),
       score: Number(row.priority_score ?? 0),
     };
@@ -336,7 +348,7 @@ async function fetchReplacementData(supabase: Awaited<ReturnType<typeof createCl
   // Fetch full table ordered by priority, slice to top 5 for display.
   const { data, error } = await supabase
     .from('replacement_priority_scores')
-    .select('asset_id, replacement_priority_index, rank, justification, equipment_assets(asset_code, name, departments(name))')
+    .select('asset_id, age_score, failure_score, availability_score, maintenance_burden_score, spare_part_score, risk_score, cost_score, replacement_priority_index, rank, justification, equipment_assets(asset_code, name, departments(name))')
     .order('replacement_priority_index', { ascending: false })
     .limit(500); // performance guard; returns all candidates for total count
 
@@ -352,6 +364,13 @@ async function fetchReplacementData(supabase: Awaited<ReturnType<typeof createCl
       asset_name: asset?.name ?? 'Unknown',
       asset_code: asset?.asset_code ?? 'N/A',
       department_name: asset?.departments?.name ?? 'Unknown',
+      age_score: row.age_score as number | null,
+      failure_score: row.failure_score as number | null,
+      availability_score: row.availability_score as number | null,
+      maintenance_burden_score: row.maintenance_burden_score as number | null,
+      spare_part_score: row.spare_part_score as number | null,
+      risk_score: row.risk_score as number | null,
+      cost_score: row.cost_score as number | null,
       priority_index: Number(row.replacement_priority_index ?? 0),
       rank: Number(row.rank ?? 0),
       justification: (row.justification as string | null) ?? null,
@@ -724,7 +743,7 @@ export default async function CommandCenterPage() {
                         </td>
                         <td className="max-w-md py-3">
                           <p className="line-clamp-2 text-xs text-[var(--text-muted)]">
-                            {row.justification ?? 'Multi-factor scoring'}
+                            {generateReplacementDriver(row)}
                           </p>
                         </td>
                       </tr>

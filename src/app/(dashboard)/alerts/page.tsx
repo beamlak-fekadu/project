@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast';
 import { UrgencyBadge } from '@/components/ui/StatusBadge';
 import Card, { CardContent } from '@/components/ui/Card';
 import type { Urgency, RecommendationFlagType } from '@/types/database';
+import { generateAlertSummary } from '@/utils/decision-support/explanations';
 
 interface AssetInfo {
   id: string;
@@ -175,7 +176,13 @@ export default function AlertsPage() {
                       </Link>
                     )}
                   </div>
-                  <p className="mt-2 text-sm text-gray-800 dark:text-gray-200">{alert.message}</p>
+                  <p className="mt-2 text-sm text-gray-800 dark:text-gray-200">
+                    {generateAlertSummary({
+                      assetName: alert.equipment_assets?.name,
+                      flagType: alert.flag_type,
+                      details: alert.details,
+                    })}
+                  </p>
                   {alert.details && Object.keys(alert.details).length > 0 && (
                     <div className="mt-2 rounded-md bg-gray-50 p-2 dark:bg-gray-800/50">
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">

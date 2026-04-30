@@ -10,6 +10,7 @@ import { getMaintenanceRequests, getWorkOrders } from '@/services/maintenance.se
 import { getRecommendationFlags } from '@/services/analytics.service';
 import { useToast } from '@/components/ui/Toast';
 import type { MaintenanceRequest, WorkOrder } from '@/types/database';
+import { generateAlertSummary } from '@/utils/decision-support/explanations';
 
 type RequestRow = MaintenanceRequest & {
   equipment_assets?: { id: string; asset_code?: string | null; name?: string | null; serial_number?: string | null } | Array<{ id: string; asset_code?: string | null; name?: string | null; serial_number?: string | null }> | null;
@@ -29,6 +30,7 @@ interface RecurringFailureFlag {
   message: string;
   severity: string;
   generated_at: string;
+  details?: Record<string, unknown>;
   equipment_assets?: { id?: string; asset_code?: string; name?: string } | null;
 }
 
@@ -40,6 +42,31 @@ function firstRelation<T>(value: T | T[] | null | undefined): T | null {
 function safeDisplay(value: string | null | undefined): string | null {
   if (!value) return null;
   return /^[0-9a-f-]{32,36}$/i.test(value) ? null : value;
+}
+
+function FaultDescriptionCell({ description }: { description: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = description.length > 120;
+
+  return (
+    <div className="max-w-[22rem] whitespace-normal">
+      <p className={`text-sm text-[var(--foreground)] ${expanded ? '' : 'line-clamp-2'}`}>
+        {description}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          className="mt-1 text-xs font-medium text-[var(--brand)] hover:text-[var(--brand-strong)]"
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded((current) => !current);
+          }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function MaintenancePage() {
@@ -98,11 +125,8 @@ export default function MaintenancePage() {
     {
       key: 'fault_description',
       header: 'Fault Description',
-      render: (row: RequestRow) =>
-        row.fault_description.length > 60
-          ? `${row.fault_description.slice(0, 60)}…`
-          : row.fault_description,
-      className: 'max-w-[280px]',
+      render: (row: RequestRow) => <FaultDescriptionCell description={row.fault_description} />,
+      className: 'max-w-[360px] whitespace-normal align-top',
     },
     {
       key: 'urgency',
@@ -209,7 +233,13 @@ export default function MaintenancePage() {
                       {asset?.name ?? 'Unknown asset'}
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">{asset?.asset_code ?? flag.asset_id}</p>
-                    <p className="truncate text-xs text-[var(--text-muted)]">{flag.message}</p>
+                    <p className="truncate text-xs text-[var(--text-muted)]">
+                      {generateAlertSummary({
+                        assetName: asset?.name,
+                        flagType: 'recurring_failure',
+                        details: flag.details ?? null,
+                      })}
+                    </p>
                   </div>
                   <Link
                     href={`/inventory/${assetId}?tab=history`}

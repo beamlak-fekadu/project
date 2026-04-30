@@ -30,6 +30,7 @@ import { ChartCard, BarChart, DoughnutChart } from '@/components/charts';
 import { UrgencyBadge, WorkOrderStatusBadge } from '@/components/ui/StatusBadge';
 import type { DashboardStats } from '@/types/database';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
+import { generateAlertSummary } from '@/utils/decision-support/explanations';
 
 interface DeptData {
   department_name: string;
@@ -68,6 +69,7 @@ interface AlertRow {
   flag_type: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   message: string;
+  details?: Record<string, unknown>;
   generated_at: string;
   equipment_assets: { asset_code: string; name: string };
 }
@@ -302,7 +304,13 @@ export default function DashboardPage() {
                       {alert.equipment_assets?.asset_code} — {alert.equipment_assets?.name}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{alert.message}</p>
+                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                    {generateAlertSummary({
+                      assetName: alert.equipment_assets?.name,
+                      flagType: alert.flag_type,
+                      details: alert.details ?? null,
+                    })}
+                  </p>
                   <p className="mt-0.5 text-xs text-gray-400">
                     {new Date(alert.generated_at).toLocaleString()}
                   </p>
