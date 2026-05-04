@@ -6,6 +6,7 @@ import { recomputeAllAnalytics } from './analytics.actions';
 
 export type ActionResult = { success: boolean; error?: string };
 type DataResult<T> = ActionResult & { data?: T };
+type CommandProfile = Record<string, unknown> & { id: string; roleNames: string[] };
 
 type TriageAssetDetail = {
   queue_id: string;
@@ -74,28 +75,52 @@ async function getCurrentProfile() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, department_id, user_roles(roles(name))')
+    .select('id, full_name, department_id')
     .eq('user_id', user.id)
-    .single();
+    .maybeSingle();
 
-  return { supabase, profile, authUserId: user.id };
+  if (!profile) {
+    return { supabase, profile: null, authUserId: user.id };
+  }
+
+  const { data: userRoles } = await supabase
+    .from('user_roles')
+    .select('roles(name)')
+    .eq('user_id', profile.id as string);
+
+  const roleNames = ((userRoles ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ((row.roles as { name?: string } | null)?.name ?? null))
+    .filter(Boolean);
+
+  return {
+    supabase,
+    profile: {
+      ...(profile as Record<string, unknown>),
+      roleNames,
+    } as CommandProfile,
+    authUserId: user.id,
+  };
 }
 
-function canMutateCommandCenter(profile: Record<string, unknown> | null): boolean {
+function canMutateCommandCenter(profile: CommandProfile | null): boolean {
   if (!profile) return false;
-  const roles = ((profile.user_roles as Array<Record<string, unknown>> | null) ?? [])
-    .map((row) => (row.roles as { name?: string } | null)?.name)
-    .filter(Boolean);
+  const roles = profile.roleNames.filter(Boolean);
   return roles.some((role) => role !== 'viewer');
+}
+
+function authErrorMessage(profile: CommandProfile | null, authUserId: string | null): string {
+  if (!authUserId) return 'Not authenticated';
+  if (!profile) return 'Authenticated user is missing profile linkage';
+  return 'Not authenticated';
 }
 
 export async function acknowledgeTriageItem(queueId: string): Promise<ActionResult> {
   if (!queueId) return { success: false, error: 'queueId is required' };
 
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -148,9 +173,9 @@ export async function acknowledgeAssetFlags(assetId: string): Promise<ActionResu
   if (!assetId) return { success: false, error: 'assetId is required' };
 
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -177,9 +202,9 @@ export async function acknowledgeAssetFlags(assetId: string): Promise<ActionResu
 
 export async function refreshCommandCenter(): Promise<ActionResult> {
   try {
-    const { profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -221,9 +246,9 @@ function computeAgeYears(installationDate: string | null, purchaseDate: string |
 export async function getTriageAssetDetail(assetId: string, queueId: string): Promise<DataResult<TriageAssetDetail>> {
   if (!assetId || !queueId) return { success: false, error: 'assetId and queueId are required' };
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -337,9 +362,9 @@ export async function createDiagnosticMaintenanceRequest(payload: {
     return { success: false, error: 'asset_id, department_id, and issue_description are required' };
   }
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -376,9 +401,9 @@ export async function createReplacementDisposalRequest(payload: {
     return { success: false, error: 'asset_id and issue_description are required' };
   }
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -412,9 +437,9 @@ export async function createCommandPMSchedule(payload: {
     return { success: false, error: 'asset_id, issue_description, and scheduled_date are required' };
   }
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -459,9 +484,9 @@ export async function createCommandPMSchedule(payload: {
 export async function getDepartmentReadinessDetail(departmentId: string): Promise<DataResult<DepartmentReadinessDetail>> {
   if (!departmentId) return { success: false, error: 'departmentId is required' };
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
@@ -586,9 +611,9 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
 
 export async function getWorkInProgressDetail(kind: WorkInProgressKind): Promise<DataResult<WorkInProgressDetail>> {
   try {
-    const { supabase, profile } = await getCurrentProfile();
-    if (!profile) return { success: false, error: 'Not authenticated' };
-    if (!canMutateCommandCenter(profile as Record<string, unknown>)) {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 

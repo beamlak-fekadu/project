@@ -2,7 +2,7 @@ import Link from 'next/link';
 import {
   ArrowUpDown, Info, ShieldAlert,
 } from 'lucide-react';
-import { getServerProfile } from '@/lib/auth/helpers';
+import { requireRole } from '@/lib/auth/helpers';
 import { createClient } from '@/lib/supabase/server';
 import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/components/ui';
 import ExpandableText from '@/components/ui/ExpandableText';
@@ -325,10 +325,10 @@ async function fetchReplacementData(supabase: Awaited<ReturnType<typeof createCl
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default async function CommandCenterPage() {
-  const profile = await getServerProfile();
-  const primaryRole = profile?.roleNames?.[0] ?? 'viewer';
-  const profileId = profile ? ((profile as unknown as Record<string, unknown>).id as string ?? null) : null;
-  const departmentId = profile ? ((profile as unknown as Record<string, unknown>).department_id as string ?? null) : null;
+  const profile = await requireRole(['developer', 'admin', 'technician', 'department_user', 'store_user', 'viewer']);
+  const primaryRole = profile.roleNames?.[0] ?? 'viewer';
+  const profileId = ((profile as unknown as Record<string, unknown>).id as string | undefined) ?? null;
+  const departmentId = ((profile as unknown as Record<string, unknown>).department_id as string | undefined) ?? null;
   const canMutate = primaryRole !== 'viewer';
 
   const supabase = await createClient();
