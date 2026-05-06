@@ -242,12 +242,38 @@ BEGIN
       FROM replacement_priority_scores
       ORDER BY asset_id, computed_at DESC
   ),
-  active_flags AS (
-      SELECT asset_id,
-             COUNT(*)::INT AS cnt,
-             SUM(CASE WHEN severity = 'critical' THEN 45 WHEN severity = 'high' THEN 25 WHEN severity = 'medium' THEN 10 ELSE 4 END)::NUMERIC AS sev_score
+  ranked_flags AS (
+      SELECT
+          asset_id,
+          flag_type,
+          CASE WHEN severity = 'critical' THEN 45 WHEN severity = 'high' THEN 25 WHEN severity = 'medium' THEN 10 ELSE 4 END::NUMERIC AS severity_score,
+          ROW_NUMBER() OVER (
+              PARTITION BY asset_id
+              ORDER BY
+                  CASE WHEN severity = 'critical' THEN 45 WHEN severity = 'high' THEN 25 WHEN severity = 'medium' THEN 10 ELSE 4 END DESC,
+                  CASE flag_type
+                      WHEN 'urgent_maintenance' THEN 1
+                      WHEN 'recurring_failure' THEN 2
+                      WHEN 'replacement_candidate' THEN 3
+                      WHEN 'high_risk' THEN 4
+                      WHEN 'low_availability' THEN 5
+                      WHEN 'overdue_pm' THEN 6
+                      WHEN 'calibrate_soon' THEN 7
+                      WHEN 'part_shortage' THEN 8
+                      WHEN 'prioritize_pm' THEN 9
+                      ELSE 99
+                  END ASC
+          ) AS rn
       FROM recommendation_flags
       WHERE is_acknowledged = false
+  ),
+  active_flags AS (
+      SELECT
+          asset_id,
+          COUNT(*)::INT AS cnt,
+          SUM(severity_score)::NUMERIC AS sev_score,
+          COALESCE(MAX(flag_type) FILTER (WHERE rn = 1), 'none') AS top_flag
+      FROM ranked_flags
       GROUP BY asset_id
   ),
   triage AS (
@@ -259,8 +285,13 @@ BEGIN
             + GREATEST(0, (80 - COALESCE(p.pmc_percentage, 80)) / 2.0)
             + GREATEST(0, 20 - COALESCE(rep.rank, 999))
           , 2) AS priority_score,
+          COALESCE(f.top_flag, 'none') AS top_flag,
+          COALESCE(rep.rank, 999) AS replacement_rank,
+          COALESCE(r.rpn, 120) AS rpn,
+          COALESCE(p.pmc_percentage, 80) AS pmc_percentage,
           jsonb_build_array(
             CONCAT('open_flags=', COALESCE(f.cnt, 0)),
+            CONCAT('top_flag=', COALESCE(f.top_flag, 'none')),
             CONCAT('rpn=', COALESCE(r.rpn, 120)),
             CONCAT('pmc=', ROUND(COALESCE(p.pmc_percentage, 80)::NUMERIC, 1)),
             CONCAT('replacement_rank=', COALESCE(rep.rank, 999))
@@ -277,6 +308,15 @@ BEGIN
       t.asset_id,
       t.priority_score,
       CASE
+          WHEN t.top_flag = 'urgent_maintenance' THEN 'Create urgent corrective work order'
+          WHEN t.top_flag = 'recurring_failure' THEN 'Schedule diagnostic for recurring failures'
+          WHEN t.top_flag = 'replacement_candidate' OR t.replacement_rank <= 5 THEN 'Review replacement priority plan'
+          WHEN t.top_flag = 'calibrate_soon' THEN 'Schedule calibration or QA'
+          WHEN t.top_flag = 'overdue_pm' THEN 'Schedule overdue preventive maintenance'
+          WHEN t.top_flag = 'part_shortage' THEN 'Expedite spare part or procurement action'
+          WHEN t.top_flag = 'high_risk' OR t.rpn >= 200 THEN 'Schedule risk mitigation'
+          WHEN t.top_flag = 'low_availability' THEN 'Investigate availability loss'
+          WHEN t.top_flag IN ('warranty_expiring', 'contract_expiring') THEN 'Review service coverage and renewal plan'
           WHEN t.priority_score >= 75 THEN 'Immediate intervention and escalation'
           WHEN t.priority_score >= 45 THEN 'Schedule within 24-48 hours'
           ELSE 'Monitor and plan preventive action'

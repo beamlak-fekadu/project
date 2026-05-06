@@ -38,6 +38,7 @@ export default function MaintenancePage() {
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedRequestIds, setExpandedRequestIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function load() {
@@ -54,6 +55,18 @@ export default function MaintenancePage() {
     }
     load();
   }, [toast]);
+
+  const toggleFaultDescription = (requestId: string) => {
+    setExpandedRequestIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(requestId)) {
+        next.delete(requestId);
+      } else {
+        next.add(requestId);
+      }
+      return next;
+    });
+  };
 
   const requestColumns = [
     { key: 'request_number', header: 'Request #', sortable: true },
@@ -82,11 +95,32 @@ export default function MaintenancePage() {
     {
       key: 'fault_description',
       header: 'Fault Description',
-      render: (row: RequestRow) =>
-        row.fault_description.length > 60
-          ? `${row.fault_description.slice(0, 60)}…`
-          : row.fault_description,
-      className: 'max-w-[280px]',
+      render: (row: RequestRow) => {
+        const isExpanded = expandedRequestIds.has(row.id);
+        const canExpand = row.fault_description.length > 90;
+        const text = isExpanded || !canExpand
+          ? row.fault_description
+          : `${row.fault_description.slice(0, 90)}…`;
+
+        return (
+          <div className="max-w-[340px]">
+            <p className="whitespace-normal break-words">{text}</p>
+            {canExpand && (
+              <button
+                type="button"
+                className="mt-1 text-xs font-medium text-[var(--brand)] hover:underline"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleFaultDescription(row.id);
+                }}
+              >
+                {isExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
+        );
+      },
+      className: 'max-w-[340px] align-top whitespace-normal',
     },
     {
       key: 'urgency',

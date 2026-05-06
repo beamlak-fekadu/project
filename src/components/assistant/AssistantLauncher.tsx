@@ -12,7 +12,7 @@ export function AssistantLauncher() {
   return (
     <button
       onClick={() => openAssistant()}
-      className="assistant-launcher fixed bottom-20 right-4 z-[70] inline-flex items-center gap-2 rounded-full border border-[var(--assistant-accent-soft)] px-4 py-3 text-sm font-semibold text-[var(--foreground)] sm:bottom-6 sm:right-6"
+      className="assistant-launcher inline-flex items-center gap-2 rounded-xl border border-[var(--assistant-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--foreground)] transition-colors hover:bg-[var(--surface-2)]"
       aria-label={`Open ${ASSISTANT_NAME}`}
     >
       <Bot className="h-4 w-4 text-[var(--assistant-accent)]" />

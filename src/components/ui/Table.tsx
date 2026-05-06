@@ -24,7 +24,7 @@ interface TableProps<T> {
 }
 
 export default function Table<T extends Record<string, unknown> = Record<string, unknown>>({
-  columns, data, keyField = 'id', sortKey, sortDir, onSort, onRowClick, emptyMessage = 'No data found', loading,
+  columns, data, keyField = 'id', sortKey, sortDir, onSort, onRowClick, emptyMessage = 'No records available for the selected filters', loading,
 }: TableProps<T>) {
   return (
     <div className="panel-surface-muted overflow-x-auto rounded-2xl">
@@ -47,7 +47,7 @@ export default function Table<T extends Record<string, unknown> = Record<string,
         </thead>
         <tbody className="divide-y divide-[var(--border-subtle)] bg-transparent">
           {loading ? (
-            <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-[var(--text-muted)]">Loading...</td></tr>
+            <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-[var(--text-muted)]">Loading records...</td></tr>
           ) : data.length === 0 ? (
             <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-[var(--text-muted)]">{emptyMessage}</td></tr>
           ) : (

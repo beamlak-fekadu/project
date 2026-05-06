@@ -148,45 +148,45 @@ export default function PMScheduleDetailPage() {
             <CardContent>
               <dl className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Plan</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Plan</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {schedule.pm_plans?.name ?? '—'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Asset</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Asset</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {schedule.equipment_assets
                       ? `${schedule.equipment_assets.asset_code} — ${schedule.equipment_assets.name}`
                       : '—'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Scheduled Date</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Scheduled Date</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {new Date(schedule.scheduled_date).toLocaleDateString()}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Status</dt>
                   <dd className="mt-1"><PMStatusBadge status={schedule.status} /></dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Assigned To</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Assigned To</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {schedule.profiles?.full_name ?? 'Unassigned'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Frequency</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Frequency</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {schedule.pm_plans ? `Every ${schedule.pm_plans.frequency_days} days` : '—'}
                   </dd>
                 </div>
                 {schedule.notes && (
                   <div className="sm:col-span-2">
-                    <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Notes</dt>
-                    <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-white">
+                    <dt className="text-sm font-medium text-[var(--text-muted)]">Notes</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--foreground)]">
                       {schedule.notes}
                     </dd>
                   </div>
@@ -212,12 +212,12 @@ export default function PMScheduleDetailPage() {
             <CardContent>
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Created</span>
-                  <span className="text-gray-900 dark:text-white">{new Date(schedule.created_at).toLocaleDateString()}</span>
+                  <span className="text-[var(--text-muted)]">Created</span>
+                  <span className="text-[var(--foreground)]">{new Date(schedule.created_at).toLocaleDateString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Last Updated</span>
-                  <span className="text-gray-900 dark:text-white">{new Date(schedule.updated_at).toLocaleDateString()}</span>
+                  <span className="text-[var(--text-muted)]">Last Updated</span>
+                  <span className="text-[var(--foreground)]">{new Date(schedule.updated_at).toLocaleDateString()}</span>
                 </div>
                 {schedule.status === 'overdue' && (
                   <div className="mt-4 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
@@ -272,8 +272,8 @@ export default function PMScheduleDetailPage() {
 
           {checklist.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Checklist</h4>
-              <div className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <h4 className="mb-2 text-sm font-medium text-[var(--foreground)]">Checklist</h4>
+              <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] p-3">
                 {checklist.map((item, idx) => (
                   <label key={idx} className="flex items-start gap-3">
                     <input
@@ -287,7 +287,7 @@ export default function PMScheduleDetailPage() {
                       className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <span className="text-sm text-gray-900 dark:text-white">{item.task}</span>
+                      <span className="text-sm text-[var(--foreground)]">{item.task}</span>
                       {item.required && (
                         <span className="ml-1 text-xs text-red-500">*</span>
                       )}

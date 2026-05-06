@@ -125,51 +125,51 @@ export default function RequestDetailPage() {
             <CardContent>
               <dl className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Asset</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Asset</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {request.equipment_assets
                       ? `${request.equipment_assets.asset_code} — ${request.equipment_assets.name}`
                       : '—'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Department</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Department</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {request.departments?.name ?? '—'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Urgency</dt>
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Urgency</dt>
                   <dd className="mt-1"><UrgencyBadge urgency={request.urgency} /></dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Status</dt>
                   <dd className="mt-1"><RequestStatusBadge status={request.status} /></dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Created</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Created</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {new Date(request.created_at).toLocaleString()}
                   </dd>
                 </div>
                 {request.resolved_at && (
                   <div>
-                    <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Resolved</dt>
-                    <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                    <dt className="text-sm font-medium text-[var(--text-muted)]">Resolved</dt>
+                    <dd className="mt-1 text-sm text-[var(--foreground)]">
                       {new Date(request.resolved_at).toLocaleString()}
                     </dd>
                   </div>
                 )}
                 <div className="sm:col-span-2">
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Fault Description</dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Fault Description</dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--foreground)]">
                     {request.fault_description}
                   </dd>
                 </div>
                 {request.notes && (
                   <div className="sm:col-span-2">
-                    <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Notes</dt>
-                    <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-white">
+                    <dt className="text-sm font-medium text-[var(--text-muted)]">Notes</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--foreground)]">
                       {request.notes}
                     </dd>
                   </div>
@@ -224,16 +224,16 @@ export default function RequestDetailPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-blue-500" />
-                  <span className="text-gray-500 dark:text-gray-400">Created</span>
-                  <span className="ml-auto text-gray-700 dark:text-gray-300">
+                  <span className="text-[var(--text-muted)]">Created</span>
+                  <span className="ml-auto text-[var(--foreground)]">
                     {new Date(request.created_at).toLocaleDateString()}
                   </span>
                 </div>
                 {request.updated_at !== request.created_at && (
                   <div className="flex items-center gap-2">
                     <div className="h-2 w-2 rounded-full bg-yellow-500" />
-                    <span className="text-gray-500 dark:text-gray-400">Updated</span>
-                    <span className="ml-auto text-gray-700 dark:text-gray-300">
+                    <span className="text-[var(--text-muted)]">Updated</span>
+                    <span className="ml-auto text-[var(--foreground)]">
                       {new Date(request.updated_at).toLocaleDateString()}
                     </span>
                   </div>
@@ -241,8 +241,8 @@ export default function RequestDetailPage() {
                 {request.resolved_at && (
                   <div className="flex items-center gap-2">
                     <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-gray-500 dark:text-gray-400">Resolved</span>
-                    <span className="ml-auto text-gray-700 dark:text-gray-300">
+                    <span className="text-[var(--text-muted)]">Resolved</span>
+                    <span className="ml-auto text-[var(--foreground)]">
                       {new Date(request.resolved_at).toLocaleDateString()}
                     </span>
                   </div>

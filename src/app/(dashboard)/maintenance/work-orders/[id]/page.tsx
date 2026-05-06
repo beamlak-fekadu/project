@@ -341,85 +341,85 @@ export default function WorkOrderDetailPage() {
           <CardContent>
             <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Asset</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Asset</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.equipment_assets
                     ? `${wo.equipment_assets.asset_code} — ${wo.equipment_assets.name}`
                     : '—'}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Assigned To</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Assigned To</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.profiles?.full_name ?? 'Unassigned'}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Priority</dt>
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Priority</dt>
                 <dd className="mt-1"><UrgencyBadge urgency={wo.priority} /></dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</dt>
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Status</dt>
                 <dd className="mt-1"><WorkOrderStatusBadge status={wo.status} /></dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Work Type</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Work Type</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.work_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">External Vendor</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">External Vendor</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.external_vendor ? wo.external_vendor_name || 'Yes' : 'No'}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Estimated Hours</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Estimated Hours</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.estimated_hours ?? '—'}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Actual Hours</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Actual Hours</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {wo.actual_hours ?? '—'}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Created</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dt className="text-sm font-medium text-[var(--text-muted)]">Created</dt>
+                <dd className="mt-1 text-sm text-[var(--foreground)]">
                   {new Date(wo.created_at).toLocaleString()}
                 </dd>
               </div>
               {wo.started_at && (
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Started</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Started</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {new Date(wo.started_at).toLocaleString()}
                   </dd>
                 </div>
               )}
               {wo.completed_at && (
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Completed</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Completed</dt>
+                  <dd className="mt-1 text-sm text-[var(--foreground)]">
                     {new Date(wo.completed_at).toLocaleString()}
                   </dd>
                 </div>
               )}
               {wo.root_cause && (
                 <div className="sm:col-span-2 lg:col-span-3">
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Root Cause</dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Root Cause</dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--foreground)]">
                     {wo.root_cause}
                   </dd>
                 </div>
               )}
               {wo.closure_notes && (
                 <div className="sm:col-span-2 lg:col-span-3">
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Closure Notes</dt>
-                  <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900 dark:text-white">
+                  <dt className="text-sm font-medium text-[var(--text-muted)]">Closure Notes</dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm text-[var(--foreground)]">
                     {wo.closure_notes}
                   </dd>
                 </div>

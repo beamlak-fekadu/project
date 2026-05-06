@@ -61,7 +61,6 @@ export async function getReliabilityMetrics(filters: AnalyticsFilters = {}) {
 
   if (filters.asset_id) query = query.eq('asset_id', filters.asset_id);
   query = applyPeriodFilters(query, filters);
-
   return query.order('computed_at', { ascending: false });
 }
 
@@ -109,8 +108,26 @@ export async function getReplacementPriorities(filters: AnalyticsFilters = {}) {
 
   if (filters.asset_id) query = query.eq('asset_id', filters.asset_id);
   query = applyPeriodFilters(query, filters);
+  const result = await query.order('computed_at', { ascending: false });
+  if (result.error || !result.data) return result;
 
-  return query.order('rank', { ascending: true });
+  const latestByAsset = new Map<string, (typeof result.data)[number]>();
+  for (const row of result.data) {
+    if (!latestByAsset.has(row.asset_id)) {
+      latestByAsset.set(row.asset_id, row);
+    }
+  }
+
+  const normalized = Array.from(latestByAsset.values()).sort((a, b) => {
+    const rankA = a.rank ?? Number.MAX_SAFE_INTEGER;
+    const rankB = b.rank ?? Number.MAX_SAFE_INTEGER;
+    if (rankA !== rankB) return rankA - rankB;
+    const timeA = new Date(a.computed_at ?? 0).getTime();
+    const timeB = new Date(b.computed_at ?? 0).getTime();
+    return timeB - timeA;
+  });
+
+  return { ...result, data: normalized };
 }
 
 export async function getRecommendationFlags(filters: AnalyticsFilters = {}) {

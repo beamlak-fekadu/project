@@ -12,6 +12,7 @@ import { PageHeader, StatCard, DataTable, Badge } from '@/components/ui';
 import { PageLoader } from '@/components/ui/Spinner';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { ChartCard, HorizontalBarChart } from '@/components/charts';
+import { formatCount, formatScore } from '@/utils/format';
 
 interface AssetInfo {
   id: string;
@@ -42,9 +43,12 @@ const SCORE_CRITERIA = [
   { key: 'failure_score', label: 'Failure', color: '#ef4444' },
   { key: 'availability_score', label: 'Availability', color: '#f97316' },
   { key: 'maintenance_burden_score', label: 'Maint. Burden', color: '#eab308' },
+  { key: 'spare_part_score', label: 'Spare Parts', color: '#06b6d4' },
   { key: 'risk_score', label: 'Risk', color: '#dc2626' },
   { key: 'cost_score', label: 'Cost', color: '#8b5cf6' },
 ] as const;
+
+const REPLACEMENT_THRESHOLD = 0.7;
 
 function rpiColor(index: number): string {
   if (index >= 0.7) return '#ef4444';
@@ -74,7 +78,7 @@ export default function ReplacementPage() {
     .filter((d) => d.replacement_priority_index != null)
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
 
-  const recommendedRows = ranked.filter((d) => (d.replacement_priority_index ?? 0) >= 0.7);
+  const recommendedRows = ranked.filter((d) => (d.replacement_priority_index ?? 0) >= REPLACEMENT_THRESHOLD);
   const top3 = recommendedRows.slice(0, 3);
 
   const columns = [
@@ -83,7 +87,7 @@ export default function ReplacementPage() {
       header: '#',
       sortable: true,
       render: (row: ReplacementRow) => (
-        <span className="font-bold text-gray-700 dark:text-gray-300">{row.rank ?? '—'}</span>
+        <span className="font-bold text-[var(--foreground)]">{row.rank ?? '—'}</span>
       ),
     },
     {
@@ -123,6 +127,12 @@ export default function ReplacementPage() {
       render: (row: ReplacementRow) => row.maintenance_burden_score?.toFixed(2) ?? '—',
     },
     {
+      key: 'spare_part_score',
+      header: 'Spare Parts',
+      sortable: true,
+      render: (row: ReplacementRow) => row.spare_part_score?.toFixed(2) ?? '—',
+    },
+    {
       key: 'risk_score',
       header: 'Risk',
       sortable: true,
@@ -136,7 +146,7 @@ export default function ReplacementPage() {
         if (row.replacement_priority_index == null) return '—';
         const rpi = row.replacement_priority_index;
         return (
-          <Badge variant={rpi >= 0.7 ? 'error' : rpi >= 0.4 ? 'warning' : 'success'}>
+          <Badge variant={rpi >= REPLACEMENT_THRESHOLD ? 'error' : rpi >= 0.4 ? 'warning' : 'success'}>
             {rpi.toFixed(3)}
           </Badge>
         );
@@ -146,7 +156,7 @@ export default function ReplacementPage() {
       key: 'justification',
       header: 'Justification',
       render: (row: ReplacementRow) => (
-        <span className="max-w-[250px] truncate text-sm text-gray-600 dark:text-gray-400">
+        <span className="max-w-[250px] truncate text-sm text-[var(--text-muted)]">
           {row.justification ?? '—'}
         </span>
       ),
@@ -157,35 +167,38 @@ export default function ReplacementPage() {
     <div className="space-y-6">
       <PageHeader
         title="Replacement Priority Ranking"
-        description="Multi-criteria replacement model: RPI = Σ(wᵢ × criterionᵢ) based on age, failures, availability, maintenance burden, risk, and cost"
+        description="Ranks equipment that may require replacement based on age, failure history, availability, maintenance burden, spare-parts pressure, and risk."
         breadcrumbs={[
           { label: 'Dashboard', href: '/' },
           { label: 'Replacement' },
         ]}
       />
+      <p className="text-sm text-[var(--text-muted)]">
+        Recommended for replacement uses threshold: RPI {'>='} {REPLACEMENT_THRESHOLD.toFixed(1)}.
+      </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Assets Ranked"
-          value={ranked.length}
+          value={formatCount(ranked.length)}
           icon={<ListOrdered className="h-6 w-6" />}
           color="blue"
         />
         <StatCard
           label="Top Priority RPI"
-          value={ranked[0]?.replacement_priority_index?.toFixed(3) ?? '—'}
+          value={formatScore(ranked[0]?.replacement_priority_index, 3)}
           icon={<AlertTriangle className="h-6 w-6" />}
           color="red"
         />
         <StatCard
           label="Recommended for Replacement"
-          value={recommendedRows.length}
+          value={formatCount(recommendedRows.length)}
           icon={<Replace className="h-6 w-6" />}
           color="orange"
         />
         <StatCard
           label="Lowest RPI"
-          value={ranked[ranked.length - 1]?.replacement_priority_index?.toFixed(3) ?? '—'}
+          value={formatScore(ranked[ranked.length - 1]?.replacement_priority_index, 3)}
           icon={<Trophy className="h-6 w-6" />}
           color="green"
         />
@@ -193,7 +206,7 @@ export default function ReplacementPage() {
 
       {top3.length > 0 && (
         <div>
-          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-red-700 dark:text-red-400">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
             <Replace className="h-5 w-5" />
             Recommended for Replacement
           </h2>
@@ -206,19 +219,19 @@ export default function ReplacementPage() {
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-100 text-sm font-bold text-red-700 dark:bg-red-900/30 dark:text-red-400">
                         {idx + 1}
                       </span>
-                      {item.equipment_assets?.asset_code ?? item.asset_id}
+                      {item.equipment_assets?.asset_code ?? 'Unknown asset'}
                     </span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
+                  <p className="mb-2 text-sm font-medium text-[var(--foreground)]">
                     {item.equipment_assets?.name ?? 'Unknown Asset'}
                   </p>
-                  <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mb-3 text-xs text-[var(--text-muted)]">
                     {item.justification ?? 'No justification provided'}
                   </p>
                   <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-gray-500">RPI</span>
+                    <span className="text-[var(--text-muted)]">RPI</span>
                     <Badge variant="error">
                       {item.replacement_priority_index?.toFixed(3) ?? '—'}
                     </Badge>
@@ -228,8 +241,8 @@ export default function ReplacementPage() {
                       const val = item[c.key as keyof ReplacementRow] as number | null;
                       return (
                         <div key={c.key} className="flex items-center gap-2">
-                          <span className="w-20 text-xs text-gray-500">{c.label}</span>
-                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                          <span className="w-20 text-xs text-[var(--text-muted)]">{c.label}</span>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-3)]">
                             <div
                               className="h-full rounded-full transition-all"
                               style={{
@@ -238,7 +251,7 @@ export default function ReplacementPage() {
                               }}
                             />
                           </div>
-                          <span className="w-10 text-right text-xs font-medium text-gray-700 dark:text-gray-300">
+                          <span className="w-10 text-right text-xs font-medium text-[var(--foreground)]">
                             {val?.toFixed(2) ?? '—'}
                           </span>
                         </div>
@@ -264,7 +277,7 @@ export default function ReplacementPage() {
             height={Math.max(300, ranked.length * 28)}
           />
         ) : (
-          <p className="py-12 text-center text-sm text-gray-500">No replacement data</p>
+          <p className="py-12 text-center text-sm text-[var(--text-muted)]">No replacement-priority records available yet.</p>
         )}
       </ChartCard>
 
@@ -273,7 +286,7 @@ export default function ReplacementPage() {
         data={ranked}
         keyField="id"
         searchPlaceholder="Search assets..."
-        emptyMessage="No replacement priorities found"
+        emptyMessage="No replacement priorities found for the selected data."
         pageSize={15}
       />
     </div>

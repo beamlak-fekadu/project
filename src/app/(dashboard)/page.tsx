@@ -179,8 +179,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="Hospital equipment management overview"
+        title="Analytical Dashboard"
+        description="Summarizes reliability and maintenance performance indicators such as MTTR, MTBF, availability, PM compliance, backlog, and active alerts."
         actions={
           <AskAiButton
             moduleLabel="Dashboard"
@@ -213,7 +213,7 @@ export default function DashboardPage() {
               height={320}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No department data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No department equipment records available yet.</p>
           )}
         </ChartCard>
 
@@ -226,7 +226,7 @@ export default function DashboardPage() {
               height={320}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No condition data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No equipment condition records available yet.</p>
           )}
         </ChartCard>
       </div>
@@ -276,9 +276,9 @@ export default function DashboardPage() {
           </CardTitle>
         </CardHeader>
         {alerts.length === 0 ? (
-          <p className="py-8 text-center text-sm text-gray-500">No active alerts</p>
+          <p className="py-8 text-center text-sm text-[var(--text-muted)]">No active alerts or recommendations at this time.</p>
         ) : (
-          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+          <div className="divide-y divide-[var(--border-subtle)]">
             {alerts.map((alert) => (
               <div
                 key={alert.id}
@@ -290,7 +290,7 @@ export default function DashboardPage() {
                   ) : alert.severity === 'medium' ? (
                     <Clock className="h-5 w-5 text-yellow-500" />
                   ) : (
-                    <MoreHorizontal className="h-5 w-5 text-gray-400" />
+                    <MoreHorizontal className="h-5 w-5 text-[var(--text-muted)]" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -298,12 +298,12 @@ export default function DashboardPage() {
                     <Badge variant={severityVariant[alert.severity] ?? 'default'}>
                       {alert.severity}
                     </Badge>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[var(--text-muted)]">
                       {alert.equipment_assets?.asset_code} — {alert.equipment_assets?.name}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{alert.message}</p>
-                  <p className="mt-0.5 text-xs text-gray-400">
+                  <p className="mt-1 text-sm text-[var(--foreground)]">{alert.message}</p>
+                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                     {new Date(alert.generated_at).toLocaleString()}
                   </p>
                 </div>

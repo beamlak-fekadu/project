@@ -100,10 +100,10 @@ function formatCurrency(val: number | null): string {
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 py-2">
-      <dt className="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+      <dt className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </dt>
-      <dd className="text-sm text-gray-900 dark:text-white">{value || '—'}</dd>
+      <dd className="text-sm text-[var(--foreground)]">{value || '—'}</dd>
     </div>
   );
 }
@@ -312,7 +312,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
     <div className="space-y-6">
       {reliability ? (
         <>
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             Reliability Metrics
           </h3>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -339,7 +339,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
       ) : (
         <Card>
           <CardContent>
-            <p className="py-4 text-center text-sm text-gray-500">
+            <p className="py-4 text-center text-sm text-[var(--text-muted)]">
               No reliability metrics available for this equipment.
             </p>
           </CardContent>
@@ -348,30 +348,30 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
 
       {risk ? (
         <>
-          <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+          <h3 className="mt-6 text-sm font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             Risk Assessment
           </h3>
           <Card>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-5">
                 <div className="text-center">
-                  <p className="text-xs font-medium text-gray-500">Severity (S)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{risk.severity}</p>
+                  <p className="text-xs font-medium text-[var(--text-muted)]">Severity (S)</p>
+                  <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{risk.severity}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-medium text-gray-500">Occurrence (O)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{risk.occurrence}</p>
+                  <p className="text-xs font-medium text-[var(--text-muted)]">Occurrence (O)</p>
+                  <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{risk.occurrence}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-medium text-gray-500">Detectability (D)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{risk.detectability}</p>
+                  <p className="text-xs font-medium text-[var(--text-muted)]">Detectability (D)</p>
+                  <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{risk.detectability}</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-xs font-medium text-gray-500">RPN</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{risk.rpn}</p>
+                  <p className="text-xs font-medium text-[var(--text-muted)]">RPN</p>
+                  <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{risk.rpn}</p>
                 </div>
                 <div className="flex flex-col items-center justify-center">
-                  <p className="text-xs font-medium text-gray-500">Risk Level</p>
+                  <p className="text-xs font-medium text-[var(--text-muted)]">Risk Level</p>
                   <div className="mt-1">
                     <RiskBadge level={risk.risk_level} />
                   </div>
@@ -383,7 +383,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
       ) : (
         <Card>
           <CardContent>
-            <p className="py-4 text-center text-sm text-gray-500">
+            <p className="py-4 text-center text-sm text-[var(--text-muted)]">
               No risk assessment data available for this equipment.
             </p>
           </CardContent>

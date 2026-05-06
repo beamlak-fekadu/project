@@ -11,6 +11,7 @@ import { getReliabilityMetrics } from '@/services/analytics.service';
 import { PageHeader, StatCard, DataTable } from '@/components/ui';
 import { PageLoader } from '@/components/ui/Spinner';
 import { ChartCard, BarChart } from '@/components/charts';
+import { formatCount, formatPercentage, formatScore } from '@/utils/format';
 
 interface AssetInfo {
   id: string;
@@ -62,29 +63,38 @@ export default function ReliabilityPage() {
 
   if (loading) return <PageLoader />;
 
-  const validMttr = data.filter((d) => d.mttr_hours != null);
-  const validMtbf = data.filter((d) => d.mtbf_hours != null);
-  const validAvail = data.filter((d) => d.availability_ratio != null);
+  const hasMeaningfulReliability = (row: ReliabilityRow) =>
+    row.mttr_hours != null
+    || row.mtbf_hours != null
+    || row.availability_ratio != null
+    || row.failure_count > 0
+    || (row.total_downtime_hours ?? 0) > 0;
+
+  const meaningfulData = data.filter(hasMeaningfulReliability);
+
+  const validMttr = meaningfulData.filter((d) => d.mttr_hours != null);
+  const validMtbf = meaningfulData.filter((d) => d.mtbf_hours != null);
+  const validAvail = meaningfulData.filter((d) => d.availability_ratio != null);
 
   const avgMttr =
     validMttr.length > 0
       ? validMttr.reduce((s, d) => s + d.mttr_hours!, 0) / validMttr.length
-      : 0;
+      : null;
   const avgMtbf =
     validMtbf.length > 0
       ? validMtbf.reduce((s, d) => s + d.mtbf_hours!, 0) / validMtbf.length
-      : 0;
+      : null;
   const avgAvail =
     validAvail.length > 0
       ? (validAvail.reduce((s, d) => s + d.availability_ratio!, 0) / validAvail.length) * 100
-      : 0;
+      : null;
 
-  const topMttr = [...data]
+  const topMttr = [...meaningfulData]
     .filter((d) => d.mttr_hours != null)
     .sort((a, b) => b.mttr_hours! - a.mttr_hours!)
     .slice(0, 15);
 
-  const bottomAvail = [...data]
+  const bottomAvail = [...meaningfulData]
     .filter((d) => d.availability_ratio != null)
     .sort((a, b) => a.availability_ratio! - b.availability_ratio!)
     .slice(0, 15);
@@ -157,25 +167,25 @@ export default function ReliabilityPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Average MTTR"
-          value={`${avgMttr.toFixed(1)} hrs`}
+          value={avgMttr == null ? 'No metrics yet' : `${formatScore(avgMttr)} hrs`}
           icon={<Clock className="h-6 w-6" />}
           color="red"
         />
         <StatCard
           label="Average MTBF"
-          value={`${avgMtbf.toFixed(1)} hrs`}
+          value={avgMtbf == null ? 'No metrics yet' : `${formatScore(avgMtbf)} hrs`}
           icon={<RefreshCw className="h-6 w-6" />}
           color="blue"
         />
         <StatCard
           label="Average Availability"
-          value={`${avgAvail.toFixed(1)}%`}
+          value={formatPercentage(avgAvail)}
           icon={<TrendingUp className="h-6 w-6" />}
-          color={avgAvail >= 95 ? 'green' : avgAvail >= 90 ? 'yellow' : 'red'}
+          color={(avgAvail ?? 0) >= 95 ? 'green' : (avgAvail ?? 0) >= 90 ? 'yellow' : 'red'}
         />
         <StatCard
           label="Assets Assessed"
-          value={data.length}
+          value={formatCount(meaningfulData.length)}
           icon={<Activity className="h-6 w-6" />}
           color="purple"
         />
@@ -196,7 +206,7 @@ export default function ReliabilityPage() {
               height={350}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No MTTR data available</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No MTTR records available yet.</p>
           )}
         </ChartCard>
 
@@ -219,17 +229,17 @@ export default function ReliabilityPage() {
               height={350}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No availability data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No availability records available yet.</p>
           )}
         </ChartCard>
       </div>
 
       <DataTable<ReliabilityRow>
         columns={columns}
-        data={data}
+        data={meaningfulData}
         keyField="id"
         searchPlaceholder="Search assets..."
-        emptyMessage="No reliability metrics found"
+        emptyMessage="No reliability metrics available. Run analytics seed or refresh reliability calculations."
         pageSize={15}
       />
     </div>

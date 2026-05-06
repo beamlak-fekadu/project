@@ -131,7 +131,7 @@ export default function RiskPage() {
       key: 'notes',
       header: 'Notes',
       render: (row: RiskRow) => (
-        <span className="max-w-[200px] truncate text-sm text-gray-500">{row.notes ?? '—'}</span>
+        <span className="max-w-[200px] truncate text-sm text-[var(--text-muted)]">{row.notes ?? '—'}</span>
       ),
     },
   ];
@@ -191,12 +191,12 @@ export default function RiskPage() {
             height={380}
           />
         ) : (
-          <p className="py-12 text-center text-sm text-gray-500">No risk data available</p>
+          <p className="py-12 text-center text-sm text-[var(--text-muted)]">No risk data available for the selected period.</p>
         )}
       </ChartCard>
 
       <div>
-        <h2 className="mb-3 text-lg font-semibold text-gray-900 dark:text-white">Full RPN Ranking</h2>
+        <h2 className="mb-3 text-lg font-semibold text-[var(--foreground)]">Full RPN Ranking</h2>
         <DataTable<RiskRow>
           columns={columns}
           data={sorted}
@@ -209,7 +209,7 @@ export default function RiskPage() {
 
       {highCritical.length > 0 && (
         <div>
-          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-red-700 dark:text-red-400">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
             <ShieldAlert className="h-5 w-5" />
             High-Risk Watchlist
           </h2>

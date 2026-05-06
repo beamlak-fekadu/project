@@ -150,7 +150,7 @@ export default function AlertsPage() {
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <CheckCircle className="mb-3 h-10 w-10 text-green-400" />
-          <p className="text-sm text-gray-500">No alerts in this category</p>
+          <p className="text-sm text-[var(--text-muted)]">No alerts in this category</p>
         </div>
       );
     }
@@ -175,10 +175,10 @@ export default function AlertsPage() {
                       </Link>
                     )}
                   </div>
-                  <p className="mt-2 text-sm text-gray-800 dark:text-gray-200">{alert.message}</p>
+                  <p className="mt-2 text-sm text-[var(--foreground)]">{alert.message}</p>
                   {alert.details && Object.keys(alert.details).length > 0 && (
-                    <div className="mt-2 rounded-md bg-gray-50 p-2 dark:bg-gray-800/50">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+                    <div className="mt-2 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] p-2">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-muted)]">
                         {Object.entries(alert.details).map(([k, v]) => (
                           <span key={k}>
                             <span className="font-medium">{k.replace(/_/g, ' ')}:</span>{' '}
@@ -189,7 +189,7 @@ export default function AlertsPage() {
                     </div>
                   )}
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-[var(--text-muted)]">
                       {new Date(alert.generated_at).toLocaleString()}
                     </span>
                     <Button

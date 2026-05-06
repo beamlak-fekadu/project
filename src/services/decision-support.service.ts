@@ -45,6 +45,27 @@ export async function refreshDecisionSupportSnapshots() {
   return supabase.rpc('refresh_decision_support_snapshots');
 }
 
+function getSystemRecommendation(options: {
+  topFlag?: string;
+  priorityScore: number;
+  replacementRank?: number | null;
+  rpn?: number | null;
+}): string {
+  const topFlag = options.topFlag ?? 'none';
+  if (topFlag === 'urgent_maintenance') return 'Create urgent corrective work order';
+  if (topFlag === 'recurring_failure') return 'Schedule diagnostic for recurring failures';
+  if (topFlag === 'replacement_candidate' || (options.replacementRank ?? 999) <= 5) return 'Review replacement priority plan';
+  if (topFlag === 'calibrate_soon') return 'Schedule calibration or QA';
+  if (topFlag === 'overdue_pm') return 'Schedule overdue preventive maintenance';
+  if (topFlag === 'part_shortage') return 'Expedite spare part or procurement action';
+  if (topFlag === 'high_risk' || (options.rpn ?? 0) >= 200) return 'Schedule risk mitigation';
+  if (topFlag === 'low_availability') return 'Investigate availability loss';
+  if (topFlag === 'warranty_expiring' || topFlag === 'contract_expiring') return 'Review service coverage and renewal plan';
+  if (options.priorityScore >= 75) return 'Immediate intervention and escalation';
+  if (options.priorityScore >= 45) return 'Schedule within 24-48 hours';
+  return 'Review priority drivers';
+}
+
 async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
   const supabase = createClient();
   const [assetsRes, flagsRes, replacementRes, reliabilityRes, riskRes, pmRes, workloadRes] = await Promise.all([
@@ -122,6 +143,20 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
     flagsByAsset.set(assetId, list);
   }
 
+  const topFlagByAsset = new Map<string, string>();
+  for (const [assetId, list] of flagsByAsset.entries()) {
+    const highest = [...list].sort((a, b) => {
+      const severityRank = (severity: string | undefined) => {
+        if (severity === 'critical') return 4;
+        if (severity === 'high') return 3;
+        if (severity === 'medium') return 2;
+        return 1;
+      };
+      return severityRank((b.severity as string | undefined)) - severityRank((a.severity as string | undefined));
+    })[0];
+    topFlagByAsset.set(assetId, (highest?.flag_type as string | undefined) ?? 'none');
+  }
+
   const healthScores: AssetHealthScore[] = assets.map((asset) => {
     const assetId = asset.id as string;
     const r = reliabilityByAsset.get(assetId);
@@ -129,14 +164,23 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
     const p = pmByAsset.get(assetId);
     const criticalFlags = (flagsByAsset.get(assetId) ?? []).filter((f) => ['high', 'critical'].includes((f.severity as string) ?? ''));
 
-    const availability = typeof r?.availability_ratio === 'number' ? (r.availability_ratio as number) : 0.92;
-    const pmc = typeof p?.pmc_percentage === 'number' ? (p.pmc_percentage as number) / 100 : 0.8;
-    const rpn = typeof rk?.rpn === 'number' ? (rk.rpn as number) : 120;
+    const availability = typeof r?.availability_ratio === 'number' ? (r.availability_ratio as number) : null;
+    const pmc = typeof p?.pmc_percentage === 'number' ? (p.pmc_percentage as number) / 100 : null;
+    const rpn = typeof rk?.rpn === 'number' ? (rk.rpn as number) : null;
     const flagPenalty = Math.min(0.25, criticalFlags.length * 0.05);
-    const riskPenalty = Math.min(0.35, rpn / 1000);
+    const riskPenalty = rpn == null ? null : Math.min(0.35, rpn / 1000);
     const condition = (asset.condition as string) ?? 'functional';
     const conditionPenalty = condition === 'functional' ? 0 : condition === 'needs_repair' ? 0.15 : 0.3;
-    const score = Math.max(1, Math.round((availability * 0.35 + pmc * 0.25 + (1 - riskPenalty) * 0.25 + (1 - conditionPenalty - flagPenalty) * 0.15) * 100));
+
+    const weightedComponents: Array<{ value: number; weight: number }> = [];
+    if (availability != null) weightedComponents.push({ value: availability, weight: 0.35 });
+    if (pmc != null) weightedComponents.push({ value: pmc, weight: 0.25 });
+    if (riskPenalty != null) weightedComponents.push({ value: 1 - riskPenalty, weight: 0.25 });
+    weightedComponents.push({ value: Math.max(0, 1 - conditionPenalty - flagPenalty), weight: 0.15 });
+
+    const totalWeight = weightedComponents.reduce((acc, item) => acc + item.weight, 0);
+    const weightedScore = weightedComponents.reduce((acc, item) => acc + item.value * item.weight, 0);
+    const score = Math.max(1, Math.round((weightedScore / totalWeight) * 100));
 
     return {
       asset_id: assetId,
@@ -144,9 +188,9 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
       asset_name: asset.name as string,
       score,
       drivers: [
-        { label: 'Availability', value: `${Math.round(availability * 100)}%`, impact: availability >= 0.95 ? 'positive' : 'negative' },
-        { label: 'PM Compliance', value: `${Math.round(pmc * 100)}%`, impact: pmc >= 0.8 ? 'positive' : 'negative' },
-        { label: 'Risk (RPN)', value: `${rpn}`, impact: rpn > 300 ? 'negative' : 'neutral' },
+        { label: 'Availability', value: availability == null ? 'No snapshot yet' : `${Math.round(availability * 100)}%`, impact: availability == null ? 'neutral' : availability >= 0.95 ? 'positive' : 'negative' },
+        { label: 'PM Compliance', value: pmc == null ? 'No snapshot yet' : `${Math.round(pmc * 100)}%`, impact: pmc == null ? 'neutral' : pmc >= 0.8 ? 'positive' : 'negative' },
+        { label: 'Risk (RPN)', value: rpn == null ? 'No snapshot yet' : `${rpn}`, impact: rpn == null ? 'neutral' : rpn > 300 ? 'negative' : 'neutral' },
         { label: 'Open Critical Flags', value: `${criticalFlags.length}`, impact: criticalFlags.length > 0 ? 'negative' : 'neutral' },
       ],
     };
@@ -158,6 +202,7 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
     const rep = replacementByAsset.get(assetId);
     const rk = riskByAsset.get(assetId);
     const p = pmByAsset.get(assetId);
+    const topFlag = topFlagByAsset.get(assetId);
 
     const severityScore = assetFlags.reduce((acc, flag) => {
       const sev = flag.severity as string;
@@ -183,7 +228,12 @@ async function computeFromOperationalData(): Promise<DecisionSupportSnapshot> {
       department_name: ((asset.departments as { name?: string } | null)?.name ?? 'Unknown'),
       priority_score: priorityScore,
       rationale,
-      recommended_action: priorityScore > 75 ? 'Immediate intervention and escalation' : priorityScore > 45 ? 'Schedule within 24-48h' : 'Monitor and plan',
+      recommended_action: getSystemRecommendation({
+        topFlag,
+        priorityScore,
+        replacementRank: typeof rep?.rank === 'number' ? (rep.rank as number) : null,
+        rpn: typeof rk?.rpn === 'number' ? (rk.rpn as number) : null,
+      }),
     };
   }).sort((a, b) => b.priority_score - a.priority_score).slice(0, 20);
 
@@ -275,7 +325,7 @@ export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnaps
     department_name: ((row.equipment_assets as { departments?: { name?: string } } | null)?.departments?.name ?? 'Unknown'),
     priority_score: Number(row.priority_score ?? 0),
     rationale: Array.isArray(row.rationale) ? (row.rationale as string[]) : [],
-    recommended_action: (row.recommendation as string) ?? 'Review',
+    recommended_action: (row.recommendation as string) ?? 'Review priority drivers',
   }));
 
   const healthScores: AssetHealthScore[] = (healthRes.data ?? []).map((row) => {
@@ -284,12 +334,28 @@ export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnaps
       asset_id: row.asset_id as string,
       asset_code: ((row.equipment_assets as { asset_code?: string } | null)?.asset_code ?? 'N/A'),
       asset_name: ((row.equipment_assets as { name?: string } | null)?.name ?? 'Unknown asset'),
-      score: Math.round(Number(row.health_score ?? 0)),
+      score: Number(Number(row.health_score ?? 0).toFixed(1)),
       drivers: [
-        { label: 'Availability', value: `${Math.round(Number(explanation.availability ?? 0))}%`, impact: Number(explanation.availability ?? 0) >= 95 ? 'positive' : 'negative' },
-        { label: 'PM Compliance', value: `${Math.round(Number(explanation.pmc_percentage ?? 0))}%`, impact: Number(explanation.pmc_percentage ?? 0) >= 80 ? 'positive' : 'negative' },
-        { label: 'Risk (RPN)', value: `${Math.round(Number(explanation.rpn ?? 0))}`, impact: Number(explanation.rpn ?? 0) > 300 ? 'negative' : 'neutral' },
-        { label: 'Open Flags', value: `${Math.round(Number(explanation.open_flags ?? 0))}`, impact: Number(explanation.open_flags ?? 0) > 0 ? 'negative' : 'neutral' },
+        {
+          label: 'Availability',
+          value: explanation.availability == null ? 'No snapshot yet' : `${Math.round(Number(explanation.availability))}%`,
+          impact: explanation.availability == null ? 'neutral' : Number(explanation.availability) >= 95 ? 'positive' : 'negative',
+        },
+        {
+          label: 'PM Compliance',
+          value: explanation.pmc_percentage == null ? 'No snapshot yet' : `${Math.round(Number(explanation.pmc_percentage))}%`,
+          impact: explanation.pmc_percentage == null ? 'neutral' : Number(explanation.pmc_percentage) >= 80 ? 'positive' : 'negative',
+        },
+        {
+          label: 'Risk (RPN)',
+          value: explanation.rpn == null ? 'No snapshot yet' : `${Math.round(Number(explanation.rpn))}`,
+          impact: explanation.rpn == null ? 'neutral' : Number(explanation.rpn) > 300 ? 'negative' : 'neutral',
+        },
+        {
+          label: 'Open Flags',
+          value: explanation.open_flags == null ? 'No snapshot yet' : `${Math.round(Number(explanation.open_flags))}`,
+          impact: explanation.open_flags == null ? 'neutral' : Number(explanation.open_flags) > 0 ? 'negative' : 'neutral',
+        },
       ],
     };
   });
@@ -299,7 +365,7 @@ export async function getDecisionSupportSnapshot(): Promise<DecisionSupportSnaps
     department_name: ((row.departments as { name?: string } | null)?.name ?? 'Unknown department'),
     essential_total: Number(row.essential_total ?? 0),
     essential_functional: Number(row.essential_functional ?? 0),
-    readiness_score: Math.round(Number(row.readiness_score ?? 0)),
+    readiness_score: Number(Number(row.readiness_score ?? 0).toFixed(1)),
   }));
 
   const workload: WorkloadSnapshot[] = (workloadRes.data ?? []).map((row) => ({

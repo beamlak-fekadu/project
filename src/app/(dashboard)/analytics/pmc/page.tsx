@@ -10,6 +10,7 @@ import { getPMComplianceMetrics } from '@/services/analytics.service';
 import { PageHeader, StatCard, DataTable } from '@/components/ui';
 import { PageLoader } from '@/components/ui/Spinner';
 import { ChartCard, BarChart, LineChart, GaugeChart } from '@/components/charts';
+import { formatPercentage } from '@/utils/format';
 
 interface PMCRow {
   id: string;
@@ -50,7 +51,7 @@ function formatPeriod(start: string): string {
 }
 
 function formatPct(value: number): string {
-  return `${Number(value).toFixed(1)}%`;
+  return formatPercentage(Number(value), 1);
 }
 
 function getDepartmentLabel(row: PMCRow): string {
@@ -164,7 +165,7 @@ export default function PMCPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="panel-surface flex items-center justify-center rounded-xl p-6 shadow-sm">
           <GaugeChart
             value={overallPMC}
             label="Overall PMC"
@@ -207,7 +208,7 @@ export default function PMCPage() {
               height={320}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No department data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No department data available for the selected period.</p>
           )}
         </ChartCard>
 
@@ -226,7 +227,7 @@ export default function PMCPage() {
               height={320}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No trend data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No trend data available for the selected period.</p>
           )}
         </ChartCard>
       </div>

@@ -18,14 +18,21 @@ export default function Pagination({ page, totalPages, onPageChange, totalItems,
   const end = Math.min(page * pageSize, totalItems || page * pageSize);
 
   return (
-    <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+    <div className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-3">
       {totalItems !== undefined && (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-[var(--text-muted)]">
           Showing {start}–{end} of {totalItems}
         </p>
       )}
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="Go to previous page"
+        >
           <ChevronLeft className="h-4 w-4" />
         </Button>
         {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
@@ -45,12 +52,21 @@ export default function Pagination({ page, totalPages, onPageChange, totalItems,
               variant={page === pageNum ? 'primary' : 'ghost'}
               size="sm"
               onClick={() => onPageChange(pageNum)}
+              aria-label={`Go to page ${pageNum}`}
+              aria-current={page === pageNum ? 'page' : undefined}
             >
               {pageNum}
             </Button>
           );
         })}
-        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label="Go to next page"
+        >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>

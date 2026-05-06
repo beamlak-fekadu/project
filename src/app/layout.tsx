@@ -38,6 +38,7 @@ export default async function RootLayout({
       lang="en"
       data-theme={initialTheme}
       className={htmlClassName}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
         <ThemeScript />

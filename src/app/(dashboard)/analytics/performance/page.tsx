@@ -95,7 +95,7 @@ export default function PerformancePage() {
       key: 'rank',
       header: '#',
       render: (row: PerformanceRow) => (
-        <span className="font-semibold text-gray-500">{rankMap.get(row.id) ?? '—'}</span>
+        <span className="font-semibold text-[var(--text-muted)]">{rankMap.get(row.id) ?? '—'}</span>
       ),
     },
     {
@@ -200,7 +200,7 @@ export default function PerformancePage() {
               height={350}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No performance data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No performance score records available yet.</p>
           )}
         </ChartCard>
 
@@ -218,7 +218,7 @@ export default function PerformancePage() {
               height={350}
             />
           ) : (
-            <p className="py-12 text-center text-sm text-gray-500">No performance data</p>
+            <p className="py-12 text-center text-sm text-[var(--text-muted)]">No performance score records available yet.</p>
           )}
         </ChartCard>
       </div>
@@ -235,9 +235,9 @@ export default function PerformancePage() {
         <CardContent>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
             {DEFAULT_WEIGHTS.map((w) => (
-              <div key={w.criterion} className="rounded-lg border border-gray-200 p-3 text-center dark:border-gray-700">
-                <p className="text-xs text-gray-500 dark:text-gray-400">{w.criterion}</p>
-                <p className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+              <div key={w.criterion} className="rounded-lg border border-[var(--border-subtle)] p-3 text-center">
+                <p className="text-xs text-[var(--text-muted)]">{w.criterion}</p>
+                <p className="mt-1 text-lg font-bold text-[var(--foreground)]">
                   {(w.weight * 100).toFixed(0)}%
                 </p>
               </div>

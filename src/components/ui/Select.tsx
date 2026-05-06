@@ -20,17 +20,17 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="w-full">
         {label && (
-          <label htmlFor={selectId} className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label htmlFor={selectId} className="mb-1 block text-sm font-medium text-[var(--foreground)]">
             {label}
           </label>
         )}
         <select
           ref={ref}
           id={selectId}
-          className={`block w-full appearance-none rounded-lg border bg-white px-3 py-2 text-sm text-gray-900 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-900 dark:text-gray-100 ${
+          className={`block w-full appearance-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--foreground)] shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 ${
             error
               ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-              : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600'
+              : 'focus:border-blue-500 focus:ring-blue-500'
           } ${className}`}
           {...props}
         >

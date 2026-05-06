@@ -106,6 +106,14 @@ body {
   color: var(--text-muted);
 }
 
+.text-foreground {
+  color: var(--foreground);
+}
+
+.border-subtle {
+  border-color: var(--border-subtle);
+}
+
 .assistant-launcher {
   background:
     radial-gradient(80px 60px at 75% -20%, var(--assistant-glow), transparent 75%),

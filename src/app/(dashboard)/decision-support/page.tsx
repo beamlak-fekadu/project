@@ -6,6 +6,7 @@ import { Badge, Button, Card, CardHeader, CardTitle, DataTable, PageHeader, Stat
 import { useToast } from '@/components/ui/Toast';
 import { getDecisionSupportSnapshot, refreshDecisionSupportSnapshots, type DecisionSupportSnapshot } from '@/services/decision-support.service';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
+import { formatCount, formatPercentage, formatScore } from '@/utils/format';
 
 const EMPTY_SNAPSHOT: DecisionSupportSnapshot = {
   triage: [],
@@ -40,12 +41,12 @@ export default function DecisionSupportPage() {
 
   const avgHealth = snapshot.healthScores.length
     ? snapshot.healthScores.reduce((acc, item) => acc + item.score, 0) / snapshot.healthScores.length
-    : 0;
+    : null;
   const avgReadiness = snapshot.readiness.length
     ? snapshot.readiness.reduce((acc, item) => acc + item.readiness_score, 0) / snapshot.readiness.length
-    : 0;
-  const highPriority = snapshot.triage.filter((item) => item.priority_score >= 75).length;
-  const overloaded = snapshot.workload.filter((item) => item.open_assignments >= 6).length;
+    : null;
+  const highPriority = snapshot.triage.length > 0 ? snapshot.triage.filter((item) => item.priority_score >= 75).length : null;
+  const overloaded = snapshot.workload.length > 0 ? snapshot.workload.filter((item) => item.open_assignments >= 6).length : null;
 
   const triageColumns = [
     { key: 'asset_code', header: 'Asset Code' },
@@ -62,7 +63,13 @@ export default function DecisionSupportPage() {
     },
     {
       key: 'recommended_action',
-      header: 'Action',
+      header: 'System Recommendation',
+      render: (row: TriageRow) => row.recommended_action ?? 'Review priority drivers',
+    },
+    {
+      key: 'rationale',
+      header: 'Drivers',
+      render: (row: TriageRow) => row.rationale.length > 0 ? row.rationale.join(' | ') : 'Review priority drivers',
     },
   ];
 
@@ -73,7 +80,7 @@ export default function DecisionSupportPage() {
       key: 'score',
       header: 'Health Score',
       render: (row: HealthRow) => (
-        <Badge variant={row.score >= 80 ? 'success' : row.score >= 60 ? 'warning' : 'error'}>{row.score}</Badge>
+        <Badge variant={row.score >= 80 ? 'success' : row.score >= 60 ? 'warning' : 'error'}>{formatScore(row.score)}</Badge>
       ),
     },
     {
@@ -92,7 +99,7 @@ export default function DecisionSupportPage() {
       header: 'Readiness',
       render: (row: ReadinessRow) => (
         <Badge variant={row.readiness_score >= 90 ? 'success' : row.readiness_score >= 75 ? 'warning' : 'error'}>
-          {row.readiness_score}%
+          {formatPercentage(row.readiness_score)}
         </Badge>
       ),
     },
@@ -109,7 +116,7 @@ export default function DecisionSupportPage() {
     <div className="space-y-6">
       <PageHeader
         title="Decision Support Center"
-        description="Unified triage, explainable health scoring, clinical readiness, escalation pressure, and workload balancing."
+        description="Prioritizes equipment using risk, availability, PM compliance, active alerts, and replacement urgency."
         actions={
           <div className="flex items-center gap-2">
             <AskAiButton
@@ -134,25 +141,33 @@ export default function DecisionSupportPage() {
               }}
             >
               <RefreshCcw className="h-4 w-4" />
-              Refresh Snapshots
+              Refresh Decision Support
             </Button>
           </div>
         }
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Average Health Score" value={avgHealth.toFixed(1)} icon={<HeartPulse className="h-6 w-6" />} color="purple" />
-        <StatCard label="Avg Clinical Readiness" value={`${avgReadiness.toFixed(1)}%`} icon={<Stethoscope className="h-6 w-6" />} color="green" />
-        <StatCard label="High-Priority Triage Items" value={highPriority} icon={<Siren className="h-6 w-6" />} color="red" />
-        <StatCard label="Overloaded Staff" value={overloaded} icon={<Users className="h-6 w-6" />} color="orange" />
+        <StatCard label="Average Health Score" value={formatScore(avgHealth)} icon={<HeartPulse className="h-6 w-6" />} color="purple" />
+        <StatCard label="Avg Clinical Readiness" value={formatPercentage(avgReadiness)} icon={<Stethoscope className="h-6 w-6" />} color="green" />
+        <StatCard label="High-Priority Triage Items" value={formatCount(highPriority)} icon={<Siren className="h-6 w-6" />} color="red" />
+        <StatCard label="Overloaded Staff" value={formatCount(overloaded)} icon={<Users className="h-6 w-6" />} color="orange" />
       </div>
+
+      {(snapshot.healthScores.length === 0 || snapshot.readiness.length === 0) && !loading && (
+        <Card>
+          <CardHeader>
+            <CardTitle>No decision-support snapshot available yet. Use &quot;Refresh Decision Support&quot; to generate the latest recommendations.</CardTitle>
+          </CardHeader>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>
             <span className="inline-flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-violet-300" />
-              What to Fix Next
+              Recommended Next Actions
             </span>
           </CardTitle>
         </CardHeader>
