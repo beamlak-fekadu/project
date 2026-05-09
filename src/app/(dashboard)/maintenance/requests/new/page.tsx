@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
 import { PageHeader, Card, CardHeader, CardTitle, CardContent, Button, Select, Textarea } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
@@ -12,14 +12,22 @@ import { maintenanceRequestSchema } from '@/utils/validation/operations';
 
 export default function NewMaintenanceRequestPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    asset_id: '',
-    urgency: 'medium' as Urgency,
-    fault_description: '',
-    notes: '',
+  const [form, setForm] = useState(() => {
+    const source = searchParams.get('source');
+    const type = searchParams.get('type');
+    const urgency = searchParams.get('urgency') as Urgency | null;
+    return {
+      asset_id: searchParams.get('assetId') ?? searchParams.get('asset_id') ?? '',
+      urgency: urgency && ['low', 'medium', 'high', 'critical'].includes(urgency) ? urgency : 'medium' as Urgency,
+      fault_description: searchParams.get('description') ?? '',
+      notes: source === 'command-center'
+        ? ['Source: Command Center', type ? `Request type: ${type}` : null].filter(Boolean).join('\n')
+        : '',
+    };
   });
 
   useEffect(() => {

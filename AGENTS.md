@@ -1,7 +1,7 @@
 # AGENTS.md — BMERMS Codebase Reference for AI Agents
 
-Last updated: 2026-05-05 (session 5, reliability dedup)
-Branch: BMERMS_V_3
+Last updated: 2026-05-09 (session 8, Command Center action accuracy)
+Branch: BMERMS_V4
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
 This file is the canonical technical reference for any AI agent working in this repo.
@@ -145,7 +145,8 @@ supabase.rpc('refresh_decision_support_snapshots')
 ### Server actions — src/actions/
 - _shared.ts — server-action helpers: getActionContext(), logServerAuditEvent(), revalidateMany()
 - analytics.actions.ts — recomputeAssetAnalytics(), recomputeAllAnalytics()
-- command.actions.ts — acknowledgeTriageItem(), acknowledgeAssetFlags(), refreshCommandCenter()
+- command.actions.ts — acknowledgeTriageItem(), acknowledgeAssetFlags(), acknowledgeCommandCenterItem(),
+  snoozeCommandCenterItem(), refreshCommandCenter()
 - equipment.actions.ts, maintenance.actions.ts, pm.actions.ts, calibration.actions.ts,
   spare-parts.actions.ts, procurement.actions.ts, training.actions.ts,
   disposal.actions.ts, documents.actions.ts, users.actions.ts, settings.actions.ts,
@@ -175,6 +176,63 @@ supabase.rpc('refresh_decision_support_snapshots')
 
 ### Decision support utils — src/utils/decision-support/
 - explanations.ts — human-readable explanations for metrics, triage, alerts, and replacement criteria
+- command-center-reasons.ts — deterministic reason builders for the Command Center redesign:
+  formatFmeaExplanation(), summarizeRiskDrivers(), buildCorrectiveReason(), buildCalibrationReason(),
+  buildPMReason(), buildStockBlockerReason(), buildInstallationReason(), buildLifecycleReason(),
+  buildReplacementReason(), buildProcurementReason(), buildTrainingReason()
+  Availability/spare-part scores are INVERSE-normalized (higher = worse). No LLM calls.
+
+### Command Center data lib — src/app/(dashboard)/command/_lib/
+- command-center-data.ts — typed server-side data fetchers and types for the redesigned Command Center.
+  Exports (types): EquipmentSummary, CriticalActionItem, ScoreExplanation, CorrectiveMaintenanceItem,
+  NeedsRequestItem, ProactiveRiskItem, WorkOrderSummary, WorkQueueItem, CalibrationTriageItem,
+  PMTriageItem, StockBlockerItem, InstallationTriageItem,
+  ProcurementTriageItem, TrainingTriageItem, TechnicianWorkloadItem, CorrectiveTriageRow (legacy),
+  ReplacementTriageRow, TriageCategories.
+  Exports (functions): fetchEquipmentSummary(), fetchCorrectiveMaintenanceTriage()
+  (work_orders work_type='corrective' + maintenance_requests, NOT v_command_center_triage),
+  fetchNeedsRequestTriage() (condition-problem assets without open corrective work),
+  fetchProactiveRiskWatch() (recommendation_flags + risk_scores for assets without open corrective
+  and hidden when command_center_acknowledgements has the same signal_hash),
+  fetchCalibrationTriage(), fetchPMTriage(), fetchStockBlockers(), fetchInstallationTriage(),
+  fetchProcurementTriage() (uses title column, not description), fetchTrainingTriage(),
+  fetchTechnicianWorkload() (work_orders only — no profiles.role filter bug),
+  fetchWorkOrderSummary(), fetchWorkQueue(), buildCriticalActions().
+  All fetchers wrap in try/catch with graceful empty fallbacks for missing tables.
+
+### Command Center action and count semantics
+- BME Head decision principle: the system recommends, ranks, scores, and explains; the BME Head makes the final decision.
+- Row-level action rule: if a row represents an existing record, open that exact record
+  (`/maintenance/work-orders/[id]`, `/maintenance/requests/[id]`, `/pm/schedules/[id]`,
+  `/command/drilldown/procurement/[id]`, or exact evidence route). Generic module routes are
+  allowed only for "View all" links.
+- Creation rule: if no record exists, open a prefilled creation flow with asset/part/work-order
+  context and `source=command-center`; do not open empty forms from Command Center rows.
+- Informational signal rule: Risk Watch items should be acknowledged/snoozed or converted into a real
+  workflow item. Risk Watch acknowledgement stores item_type, item_key, asset_id, signal_hash,
+  acknowledged_at, and optional snoozed_until in `command_center_acknowledgements`; a changed signal_hash reappears.
+- Count consistency rule: summary card, triage tab, drilldown, and critical actions must share the
+  same fetcher/source for the same metric. PM uses `fetchPMTriage()`, calibration uses
+  `fetchCalibrationTriage()`, stock uses `fetchStockBlockers()`, and work queue uses
+  `fetchWorkQueue()`/`fetchWorkOrderSummary()`.
+- Triage meanings: Corrective = active corrective work only. Needs Request = condition-problem assets
+  without open corrective work. Risk Watch = proactive risk signals without active corrective work.
+  PM, Calibration, Stock, Replacement, and Procurement use their workflow-specific sources.
+- Score explainability rule: every composite score shown in Command Center must use the reusable
+  score explanation affordance and expose formula, criteria/weights, raw/normalized values where
+  available, generated reason, timestamp/history if available, assignment method, and action suggestion.
+- Role notes: developer = BME Head plus thesis/testing controls; bme_head gets the operational
+  Command Center; viewer is read-only and must not see mutation labels. Training triage is hidden
+  from the BME Head Command Center for now and reserved for a later Department Head workflow.
+
+### Command Center Action Semantics
+1. Exact record rule: row-level actions must open exact records when records exist.
+2. Prefilled creation rule: if no record exists, open a prefilled creation flow with context.
+3. Informational signal rule: informational signals use acknowledge/snooze or convert-to-workflow.
+4. Count consistency rule: summary card, triage tab, drilldown, Work Queue & Assignment, and critical action count must share the same fetcher/source for the same metric.
+5. State-aware action labels: Assign for unassigned work, Reassign for assigned work, View Progress for in-progress work, Resolve Blocker for on-hold work.
+6. Future triage categories: new triage categories must define record IDs, exact routes, and prefilled fallback flows before being shown in the Command Center.
+7. BME Head principle: the system recommends/explains; the BME Head decides.
 
 ### Components
 - Reusable UI: src/components/ui/
@@ -184,6 +242,17 @@ supabase.rpc('refresh_decision_support_snapshots')
 - Theme: src/components/theme/
 - Page-specific: src/app/(dashboard)/[route]/_components/
 - Always check src/components/ui/ before building a new component
+
+### Command Center components (session 6-8 redesign/action accuracy)
+- AutoRefreshStatus.tsx — client component; router.refresh() every 10s, "Updated Xs ago" display, pauses when tab hidden
+- SummaryActionCards.tsx — 10 summary cards (total/functional/non-functional/WOs/critical/PM/calibration/stock/replacement/reports); operational cards link to `/command/drilldown/[type]`
+- CriticalActionStrip.tsx — top 6 critical action items with category/urgency badges and exact record or prefilled action links
+- ScoreExplanation.tsx — reusable score details drawer for RPN, RPI, readiness, triage/critical scores, PM/calibration/stock scores, and workload suggestions
+- TriageCenterTabs.tsx — 9-category BME triage (corrective, needs request, risk watch, calibration, PM, stock, installation, replacement, procurement); training is hidden for BME Head for now. Store user sees logistics-focused subset.
+- TechnicianWorkload.tsx — original standalone component (no longer used in page.tsx; replaced by WorkloadAssignment.tsx)
+- WorkloadAssignment.tsx — integrated Work Queue & Assignment section with open/unassigned/assigned/in-progress/on-hold/critical counts, exact work-order row actions, technician availability cards, and explainable workload-only suggested assignee. Accepts WorkOrderSummary + WorkQueueItem[] + TechnicianWorkloadItem[].
+- CommandCenterInteractive.tsx — existing component; added `showTriage?: boolean` prop (default true) so triage section can be hidden when TriageCenterTabs is shown instead. Department readiness cards now show "N essential unavailable" label and detail panel shows essential/total/non-essential reconciliation.
+- TriageCenterTabs.tsx — updated: corrective tab uses CorrectiveMaintenanceItem[] (open work_orders + maintenance_requests, not v_command_center_triage). Needs Request uses condition-problem assets without open corrective work. Risk Watch uses ProactiveRiskItem[] and acknowledge action. RPI shown as X/100. Row actions are exact records or prefilled creation flows.
 
 ---
 
@@ -298,6 +367,7 @@ flag_type enum: urgent_maintenance / monitor_closely / prioritize_pm / calibrate
 | workload_capacity_snapshots      | id, assignee_id(FK profiles), snapshot_date, open_assignments, overdue_assignments, estimated_hours |
 | decision_support_refresh_log     | id, started_at, finished_at, status(running/success/error), error_message, triggered_by(FK profiles), scope(asset/all), asset_id(FK) — created in 00021 |
 | procurement_requests             | id, request_number(UQ), title, justification, status(enum), priority, requested_by(FK), department_id(FK) |
+| command_center_acknowledgements  | id, profile_id(FK), item_type, item_key, asset_id(FK), signal_hash, acknowledged_at, snoozed_until, reason — migration 00037 |
 
 procurement status enum: requested / approved / ordered / in_transit / delivered / canceled
 NEVER use 'under_review' — it is not a valid value.

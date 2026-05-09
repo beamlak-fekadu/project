@@ -15,6 +15,7 @@ import { getMaintenanceEvents } from '@/services/maintenance.service';
 import { getPMSchedules } from '@/services/pm.service';
 import { getCalibrationRecords } from '@/services/calibration.service';
 import { getReliabilityMetrics, getRiskScores, getPMComplianceMetrics, getReplacementPriorities } from '@/services/analytics.service';
+import { explainRiskScore, type RiskExplanation } from '@/services/risk-assessment.service';
 import { ROUTES } from '@/constants';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
 import type {
@@ -84,6 +85,11 @@ interface RiskRow {
   detectability: number;
   rpn: number;
   risk_level: RiskLevel;
+  assessed_at: string;
+  computed_at?: string | null;
+  assignment_method?: 'computed' | 'manual_override' | 'seeded_demo';
+  override_reason?: string | null;
+  explanation?: RiskExplanation | null;
   [key: string]: unknown;
 }
 
@@ -153,6 +159,18 @@ function MetricLine({ label, value }: { label: string; value: React.ReactNode })
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-[var(--text-muted)]">{label}</span>
       <span className="font-semibold text-[var(--foreground)]">{value}</span>
+    </div>
+  );
+}
+
+function RiskReasonLine({ label, score, reason }: { label: string; score: number; reason: string }) {
+  return (
+    <div className="space-y-1 rounded-md bg-[var(--surface-2)]/60 p-2 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-[var(--text-muted)]">{label}</span>
+        <span className="font-semibold text-[var(--foreground)]">{score}</span>
+      </div>
+      <p className="text-xs leading-5 text-[var(--text-muted)]">{reason}</p>
     </div>
   );
 }
@@ -403,6 +421,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
   const hasRisk = Boolean(risk && risk.rpn != null && risk.risk_level && risk.severity != null && risk.occurrence != null && risk.detectability != null);
   const hasPmCompliance = Boolean(pmCompliance && pmCompliance.scheduled_count > 0 && pmCompliance.pmc_percentage != null);
   const hasReplacement = Boolean(replacement && replacement.rank != null && replacement.replacement_priority_index != null);
+  const riskReasons = explainRiskScore(risk);
 
   return (
     <div>
@@ -440,7 +459,33 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
         <HealthMetricCard title="Risk" icon={<ShieldAlert className="h-4 w-4" />} hasData={hasRisk}>
           <MetricLine label="RPN" value={risk?.rpn} />
           <MetricLine label="Band" value={risk ? <RiskBadge level={risk.risk_level} /> : null} />
-          <MetricLine label="S / O / D" value={risk ? `${risk.severity} / ${risk.occurrence} / ${risk.detectability}` : null} />
+          {risk && (
+            <>
+              <MetricLine label="Formula" value={`${risk.severity} × ${risk.occurrence} × ${risk.detectability}`} />
+              <RiskReasonLine label="Severity" score={risk.severity} reason={riskReasons.severity} />
+              <RiskReasonLine label="Occurrence" score={risk.occurrence} reason={riskReasons.occurrence} />
+              <RiskReasonLine label="Detectability" score={risk.detectability} reason={riskReasons.detectability} />
+              <MetricLine label="Last computed" value={formatDate(risk.computed_at ?? risk.assessed_at)} />
+              <MetricLine
+                label="Method"
+                value={
+                  <span className={risk.assignment_method === 'manual_override' ? 'text-amber-400' : undefined}>
+                    {(risk.assignment_method ?? 'computed').replace(/_/g, ' ')}
+                  </span>
+                }
+              />
+              {risk.assignment_method === 'manual_override' && (
+                <p className="rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-xs leading-5 text-amber-200">
+                  Override reason: {risk.override_reason ?? 'No reason recorded'}
+                </p>
+              )}
+              {/* TODO: wire a Developer/BME Head edit modal to fn_set_fmea_risk_manual_override. */}
+              <p className="text-xs leading-5 text-[var(--text-muted)]">
+                Methodology: FMEA Risk Priority Number uses Severity × Occurrence × Detectability.
+                Severity reflects clinical/service impact, occurrence reflects failure history, and higher detectability means weaker PM, calibration, or inspection controls.
+              </p>
+            </>
+          )}
         </HealthMetricCard>
 
         <HealthMetricCard title="PM Compliance" icon={<CalendarCheck className="h-4 w-4" />} hasData={hasPmCompliance}>

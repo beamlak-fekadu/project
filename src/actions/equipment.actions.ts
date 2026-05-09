@@ -1,6 +1,7 @@
 'use server';
 
 import { z } from 'zod';
+import { recomputeAssetAnalytics } from './analytics.actions';
 import { getActionContext, logServerAuditEvent, revalidateMany, actionError, nullIfEmpty, type ActionResult } from './_shared';
 
 const equipmentSchema = z.object({
@@ -74,6 +75,8 @@ export async function createEquipmentAction(payload: Record<string, unknown>): P
       entityId: (result.data as { id?: string }).id ?? null,
       newValues: result.data as Record<string, unknown>,
     });
+    const assetId = (result.data as { id?: string }).id;
+    if (assetId) await recomputeAssetAnalytics(assetId).catch(() => undefined);
     revalidateMany(equipmentRevalidatePaths);
     return { success: true, data: result.data };
   } catch (err) {
@@ -99,6 +102,7 @@ export async function updateEquipmentAction(id: string, payload: Record<string, 
       oldValues: oldRow.data as Record<string, unknown> | null,
       newValues: result.data as Record<string, unknown>,
     });
+    await recomputeAssetAnalytics(id).catch(() => undefined);
     revalidateMany([...equipmentRevalidatePaths, `/equipment/${id}`, `/inventory/${id}`]);
     return { success: true, data: result.data };
   } catch (err) {

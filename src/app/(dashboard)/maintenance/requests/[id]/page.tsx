@@ -13,7 +13,7 @@ import {
 import { UrgencyBadge, RequestStatusBadge } from '@/components/ui/StatusBadge';
 import { getRequestById } from '@/services/maintenance.service';
 import { updateRequestStatusAction } from '@/actions/maintenance.actions';
-import { getProfiles } from '@/services/users.service';
+import { getActiveTechnicians } from '@/services/users.service';
 import { useToast } from '@/components/ui/Toast';
 import type { MaintenanceRequest, MaintenanceRequestStatus, Profile } from '@/types/database';
 
@@ -66,7 +66,7 @@ export default function RequestDetailPage() {
 
   async function openAssignModal() {
     if (technicians.length === 0) {
-      const { data } = await getProfiles();
+      const { data } = await getActiveTechnicians();
       if (data) setTechnicians(data as unknown as Profile[]);
     }
     setAssignModalOpen(true);
@@ -270,7 +270,7 @@ export default function RequestDetailPage() {
           placeholder="Select a technician"
           value={selectedTechnician}
           onChange={(e) => setSelectedTechnician(e.target.value)}
-          options={technicians.map((t) => ({ value: t.id, label: t.full_name }))}
+          options={technicians.map((t) => ({ value: t.id, label: `${t.full_name}${t.email ? ` · ${t.email}` : ''}` }))}
         />
       </Modal>
     </div>

@@ -163,6 +163,60 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
   }
 }
 
+async function setWorkOrderAssignee(id: string, technicianProfileId: string, action: 'assign' | 'reassign'): Promise<ActionResult> {
+  try {
+    const { supabase, profile, error } = await getActionContext(['admin', 'bme_head']);
+    if (error || !profile) return { success: false, error };
+    const parsedId = z.string().min(1).parse(technicianProfileId);
+
+    const technician = await supabase
+      .from('profiles')
+      .select('id, full_name, is_active, user_roles!inner(roles!inner(name))')
+      .eq('id', parsedId)
+      .eq('is_active', true)
+      .eq('user_roles.roles.name', 'technician')
+      .maybeSingle();
+    if (technician.error) return { success: false, error: technician.error.message };
+    if (!technician.data) return { success: false, error: 'Selected user is not an active technician' };
+
+    const oldRow = await supabase.from('work_orders').select('*').eq('id', id).maybeSingle();
+    const currentStatus = (oldRow.data as { status?: string } | null)?.status;
+    if (currentStatus === 'completed' || currentStatus === 'canceled') {
+      return { success: false, error: 'Terminal work orders cannot be reassigned' };
+    }
+
+    const updateData: Record<string, unknown> = { assigned_to: parsedId };
+    if (currentStatus === 'open' || !currentStatus) updateData.status = 'assigned';
+
+    const result = await supabase.from('work_orders').update(updateData as never).eq('id', id).select('*').single();
+    if (result.error) return { success: false, error: result.error.message };
+
+    await logServerAuditEvent({
+      supabase,
+      profileId: profile.id,
+      action: `work_order.${action}`,
+      entityType: 'work_orders',
+      entityId: id,
+      oldValues: oldRow.data as Record<string, unknown> | null,
+      newValues: result.data as Record<string, unknown>,
+      details: { technician_profile_id: parsedId },
+    });
+
+    revalidateMany([...maintenancePaths, `/maintenance/work-orders/${id}`]);
+    return { success: true, data: result.data };
+  } catch (err) {
+    return actionError(err, action === 'assign' ? 'Failed to assign work order' : 'Failed to reassign work order');
+  }
+}
+
+export async function assignWorkOrder(workOrderId: string, technicianProfileId: string): Promise<ActionResult> {
+  return setWorkOrderAssignee(workOrderId, technicianProfileId, 'assign');
+}
+
+export async function reassignWorkOrder(workOrderId: string, technicianProfileId: string): Promise<ActionResult> {
+  return setWorkOrderAssignee(workOrderId, technicianProfileId, 'reassign');
+}
+
 export async function createMaintenanceEventAction(payload: Record<string, unknown>): Promise<ActionResult> {
   try {
     const { supabase, profile, error } = await getActionContext(['admin', 'bme_head', 'technician']);

@@ -10,6 +10,7 @@ import { ROUTES } from '@/constants';
 import { useRole } from '@/hooks/useRole';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
+import { createMaintenanceRequestFromAsset, equipmentDetail, replacementEvidence } from '../_lib/command-center-routes';
 
 const PAGE_SIZE = 25;
 
@@ -38,15 +39,21 @@ function normalizeRationale(value: unknown): string[] {
 
 function actionForFlagType(flagType: string, assetId: string): { label: string; href: string } {
   switch (flagType) {
-    case 'urgent_maintenance': return { label: 'Create work order', href: `/maintenance/work-orders/new?asset=${assetId}` };
-    case 'recurring_failure': return { label: 'Schedule diagnostic', href: `/maintenance?asset=${assetId}` };
-    case 'replacement_candidate': return { label: 'Replacement plan', href: `/replacement?asset=${assetId}` };
-    case 'part_shortage': return { label: 'Open procurement', href: `/procurement?asset=${assetId}` };
-    case 'low_stock': return { label: 'Open spare parts', href: `/spare-parts?asset=${assetId}` };
-    case 'overdue_pm': return { label: 'Schedule PM', href: `/pm?asset=${assetId}` };
-    case 'calibrate_soon': return { label: 'Schedule calibration', href: `/calibration?asset=${assetId}` };
-    case 'prioritize_pm': return { label: 'Reschedule PM', href: `/pm?asset=${assetId}` };
-    default: return { label: 'View asset', href: `/equipment/${assetId}` };
+    case 'urgent_maintenance':
+      return { label: 'Create Request', href: createMaintenanceRequestFromAsset(assetId, { urgency: 'high' }) };
+    case 'recurring_failure':
+      return { label: 'Review Risk', href: `/command/drilldown/risk-watch?assetId=${assetId}` };
+    case 'replacement_candidate':
+      return { label: 'View Evidence', href: replacementEvidence(assetId) };
+    case 'part_shortage':
+    case 'low_stock':
+      return { label: 'Request Procurement', href: `/procurement/requests/new?assetId=${assetId}&source=command-center&reason=Command%20Center%20stock%20risk` };
+    case 'overdue_pm':
+    case 'prioritize_pm':
+      return { label: 'Open PM Queue', href: `/command/drilldown/pm?assetId=${assetId}` };
+    case 'calibrate_soon':
+      return { label: 'Open Calibration Queue', href: `/command/drilldown/calibration?assetId=${assetId}` };
+    default: return { label: 'View asset', href: equipmentDetail(assetId) };
   }
 }
 

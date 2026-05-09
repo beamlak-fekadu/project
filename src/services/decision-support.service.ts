@@ -42,6 +42,7 @@ export interface DecisionSupportSnapshot {
 
 export async function refreshDecisionSupportSnapshots() {
   const supabase = createClient();
+  await (supabase.rpc as never as (fn: string) => Promise<{ error: { message: string } | null }>)('fn_refresh_fmea_risk_scores');
   return supabase.rpc('refresh_decision_support_snapshots');
 }
 

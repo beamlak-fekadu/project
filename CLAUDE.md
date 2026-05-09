@@ -1,7 +1,7 @@
 # CLAUDE.md — BMERMS Project Intelligence
 
-Last updated: 2026-05-05 (session 5)
-Branch: BMERMS_V_3
+Last updated: 2026-05-09 (session 8)
+Branch: BMERMS_V4
 Deployment: https://project-git-bmermsv3-beamlak-fekadus-projects.vercel.app
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
@@ -58,6 +58,8 @@ DONE:
 - Step 14: Supabase TypeScript types generated (src/types/supabase.ts)
 - Step 15: Login page shows "Yekatit-12 Hospital Medical College"
 - Reliability metrics (2026-05-05, migrations 00034–00035): one row per asset in equipment_reliability_metrics; idx_reliability_metrics_asset_unique; recompute upserts on asset_id; Command Center triage detail uses availability_ratio (DB column), not a misnamed percentage field.
+- Command Center redesign (2026-05-09, session 6): Full redesign for developer/admin/bme_head roles. New sections: live header with 10s auto-refresh, 10-card summary strip, critical action strip (top 6 scored cross-category actions), 8-tab categorized triage center (corrective/calibration/PM/stock/installation/replacement/procurement/training), technician workload (green/amber/red), improved risk distribution (summarizeRiskDrivers instead of raw JSON), improved replacement watchlist (buildReplacementReason). Other roles keep existing CommandCenterInteractive layout. No scoring-lab or sensitivity sliders on this page. No DB migrations required. Developer scoring lab deferred to /developer/scoring-lab (future route).
+- Command Center action accuracy (2026-05-09, session 8): Row-level actions now follow exact-record semantics: existing work orders open `/maintenance/work-orders/[id]` with state-aware action queries, existing requests open `/maintenance/requests/[id]`, PM uses `/pm/schedules/[id]`, procurement uses `/command/drilldown/procurement/[id]`, and replacement evidence uses `/command/drilldown/replacement/[assetId]`. Needs Request and stock actions open prefilled creation flows with `source=command-center`. Summary cards use `/command/drilldown/[type]` and counts share the same fetchers as triage/drilldowns. Risk Watch can be acknowledged via `command_center_acknowledgements` signal hashes and reappears when the signal changes. Training triage is hidden from the BME Head control room pending a future Department Head workflow.
 
 - Audit remediation (2026-05-05, migrations 00027–00033): full recompute backfill on deploy; audit performed_by/details + acknowledgeFlag profile FK; constraints (low_stock flag_type, PMC grain unique + dedupe, partial unique asset_code for active rows, non-negative repair/downtime hours); hot-path indexes; read-model views refreshed with deleted_at filters and COALESCE; dropped unused repeat_repair_flags + equipment_locations; chat_sessions column equipment_id → asset_id
 
@@ -78,6 +80,9 @@ NOT STARTED:
   /command                    Unified decision-support home (all roles)
   /command/health             Asset health scores — admin only, not in sidebar
   /command/triage             Full triage queue — confirmed working, real data, 80 assets after dedup
+  /command/drilldown/[type]   Summary-card drilldowns using Command Center shared fetchers
+  /command/drilldown/procurement/[id]  Exact procurement request evidence/status view
+  /command/drilldown/replacement/[assetId]  Exact replacement evidence view
 
 ### Equipment (Biomedical Asset Management)
   /equipment                  Canonical equipment list — canonical URL for biomedical assets
@@ -151,6 +156,17 @@ NOT STARTED:
 ---
 
 ## Known deferred issues
+
+0.  Command Center rules after session 8:
+    - Existing row record actions must open exact records, not generic module routes.
+    - Missing workflow records must open prefilled creation flows with source context.
+    - Informational Risk Watch signals must be acknowledged/snoozed or converted to workflow.
+    - Summary, triage, drilldown, and critical actions must share one fetcher/source for each count.
+    - Every composite score must be clickable/explainable with formula, criteria/weights, raw values,
+      normalized values where available, generated reason, source/method, and history/timestamp if available.
+    - The system recommends and explains; the BME Head makes the final decision.
+    - Viewer remains read-only. Developer is BME Head plus thesis/testing controls.
+    - Training triage is intentionally hidden from the BME Head Command Center for now.
 
 1.  Seed profiles.user_id is NULL for all seed users (except beamlak.work@gmail.com which
     is now linked). RLS auth.uid() checks fail for other seeded profiles until real Supabase
@@ -241,6 +257,18 @@ All 7 required formulas exist in both TypeScript (src/utils/analytics/) and SQL 
 SQL equivalents: fn_compute_mttr, fn_compute_mtbf, fn_compute_availability,
 fn_compute_pmc in migration 00011. Full recomputation orchestrated by
 recompute_equipment_analytics() and recompute_all_equipment_analytics() in migration 00018.
+
+---
+
+## Command Center Action Semantics
+
+1. Exact record rule: row-level Command Center actions must open exact records when records exist, such as `/maintenance/work-orders/[id]`, `/maintenance/requests/[id]`, `/pm/schedules/[id]`, `/command/drilldown/procurement/[id]`, or `/command/drilldown/replacement/[assetId]`.
+2. Prefilled creation rule: if no record exists, open a prefilled creation flow with asset, part, work-order, quantity, reason, and `source=command-center` context.
+3. Informational signal rule: informational signals use acknowledge/snooze or convert-to-workflow actions; they must not route to empty module home pages.
+4. Count consistency rule: summary cards, triage tabs, drilldowns, Work Queue & Assignment, and critical actions must share the same fetcher/source for the same metric.
+5. State-aware action labels: use Assign for unassigned work, Reassign for assigned work, View Progress for in-progress work, and Resolve Blocker for on-hold work.
+6. Future triage categories: new categories must define record IDs, exact routes, and prefilled fallback flows before being shown in the Command Center.
+7. BME Head principle: the system recommends, ranks, scores, and explains; the BME Head makes the final decision.
 
 ---
 

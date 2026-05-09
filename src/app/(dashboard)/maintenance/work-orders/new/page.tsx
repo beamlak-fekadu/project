@@ -9,7 +9,7 @@ import {
 } from '@/components/ui';
 import { createWorkOrderAction } from '@/actions/maintenance.actions';
 import { getEquipmentList } from '@/services/equipment.service';
-import { getProfiles } from '@/services/users.service';
+import { getActiveTechnicians } from '@/services/users.service';
 import { useToast } from '@/components/ui/Toast';
 import type { EquipmentAsset, Profile, WorkType, Urgency } from '@/types/database';
 
@@ -37,7 +37,7 @@ export default function NewWorkOrderPage() {
     async function loadLookups() {
       const [eqRes, profRes] = await Promise.all([
         getEquipmentList(),
-        getProfiles(),
+        getActiveTechnicians(),
       ]);
       if (eqRes.data) setEquipment(eqRes.data as unknown as EquipmentAsset[]);
       if (profRes.data) setTechnicians(profRes.data as unknown as Profile[]);
@@ -127,7 +127,7 @@ export default function NewWorkOrderPage() {
                 placeholder="Unassigned"
                 value={form.assigned_to}
                 onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
-                options={technicians.map((t) => ({ value: t.id, label: t.full_name }))}
+                options={technicians.map((t) => ({ value: t.id, label: `${t.full_name}${t.email ? ` · ${t.email}` : ''}` }))}
               />
               <Select
                 label="Priority"

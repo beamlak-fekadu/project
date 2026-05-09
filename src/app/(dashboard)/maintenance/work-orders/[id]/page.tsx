@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, Play, Pause, CheckCircle, XCircle, UserPlus, Plus, WifiOff, RefreshCcw,
 } from 'lucide-react';
@@ -13,13 +13,14 @@ import { UrgencyBadge, WorkOrderStatusBadge } from '@/components/ui/StatusBadge'
 import {
   getWorkOrderById, getMaintenanceEvents,
 } from '@/services/maintenance.service';
-import { createMaintenanceEventAction, updateWorkOrderAction } from '@/actions/maintenance.actions';
+import { assignWorkOrder, createMaintenanceEventAction, reassignWorkOrder, updateWorkOrderAction } from '@/actions/maintenance.actions';
 import { syncOfflineWorkOrderActionsAction } from '@/actions/offline-sync.actions';
 import { enqueueOfflineAction, getOfflineQueue, markOfflineActionFailed, removeOfflineAction, type OfflineWorkOrderAction } from '@/lib/offline/technician-queue';
 import { getAll } from '@/services/settings.service';
-import { getProfiles } from '@/services/users.service';
+import { getActiveTechnicians } from '@/services/users.service';
 import { useToast } from '@/components/ui/Toast';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
+import { useRole } from '@/hooks/useRole';
 import type {
   WorkOrder, WorkOrderStatus, MaintenanceEvent, FailureCode, MaintenanceActionCode, Profile,
 } from '@/types/database';
@@ -51,7 +52,10 @@ const emptyEventForm = {
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { isDeveloper, isAdmin, isBmeHead } = useRole();
+  const canManageAssignment = isDeveloper || isAdmin || isBmeHead;
 
   const [wo, setWO] = useState<WOWithJoins | null>(null);
   const [events, setEvents] = useState<EventWithJoins[]>([]);
@@ -61,6 +65,7 @@ export default function WorkOrderDetailPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [technicians, setTechnicians] = useState<Profile[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState('');
+  const [assignmentMode, setAssignmentMode] = useState<'assign' | 'reassign'>('assign');
 
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [eventForm, setEventForm] = useState(emptyEventForm);
@@ -156,25 +161,41 @@ export default function WorkOrderDetailPage() {
     setActionLoading(false);
   }
 
-  async function openAssignModal() {
+  const openAssignModal = useCallback(async (mode?: 'assign' | 'reassign') => {
+    if (!canManageAssignment) {
+      toast('warning', 'Only BME Head, admin, or developer roles can assign work orders');
+      return;
+    }
+    const nextMode = mode ?? (wo?.assigned_to ? 'reassign' : 'assign');
+    setAssignmentMode(nextMode);
+    setSelectedTechnician(wo?.assigned_to ?? '');
     if (technicians.length === 0) {
-      const { data } = await getProfiles();
+      const { data } = await getActiveTechnicians();
       if (data) setTechnicians(data as unknown as Profile[]);
     }
     setAssignModalOpen(true);
-  }
+  }, [canManageAssignment, technicians.length, toast, wo?.assigned_to]);
+
+  useEffect(() => {
+    const requestedAction = searchParams.get('action');
+    if (!wo || !canManageAssignment || (requestedAction !== 'assign' && requestedAction !== 'reassign')) return;
+    const timer = setTimeout(() => {
+      void openAssignModal(requestedAction);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [canManageAssignment, openAssignModal, searchParams, wo]);
 
   async function handleAssign() {
     if (!selectedTechnician) return;
+    if (!wo) return;
     setActionLoading(true);
-    const result = await updateWorkOrderAction(id, {
-      assigned_to: selectedTechnician,
-      status: 'assigned',
-    });
+    const result = wo.assigned_to
+      ? await reassignWorkOrder(id, selectedTechnician)
+      : await assignWorkOrder(id, selectedTechnician);
     if (!result.success) {
-      toast('error', result.error ?? 'Failed to assign work order');
+      toast('error', result.error ?? `Failed to ${wo.assigned_to ? 'reassign' : 'assign'} work order`);
     } else {
-      toast('success', 'Work order assigned');
+      toast('success', `Work order ${wo.assigned_to ? 'reassigned' : 'assigned'}`);
       setAssignModalOpen(false);
       await loadWO();
     }
@@ -230,6 +251,7 @@ export default function WorkOrderDetailPage() {
   }
 
   const isTerminal = wo.status === 'completed' || wo.status === 'canceled';
+  const requestedAction = searchParams.get('action');
 
   const eventColumns = [
     {
@@ -400,10 +422,10 @@ export default function WorkOrderDetailPage() {
           {!isTerminal && (
             <CardFooter>
               <div className="flex flex-wrap gap-2">
-                {wo.status === 'open' && (
-                  <Button size="sm" variant="outline" onClick={openAssignModal} loading={actionLoading}>
+                {canManageAssignment && (
+                  <Button size="sm" variant="outline" onClick={() => void openAssignModal(wo.assigned_to ? 'reassign' : 'assign')} loading={actionLoading}>
                     <UserPlus className="h-4 w-4" />
-                    Assign
+                    {wo.assigned_to ? 'Reassign' : 'Assign'}
                   </Button>
                 )}
                 {(wo.status === 'assigned' || wo.status === 'on_hold') && (
@@ -441,6 +463,35 @@ export default function WorkOrderDetailPage() {
               </div>
             </CardFooter>
           )}
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Assignment</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-[var(--foreground)]">
+                  {wo.profiles?.full_name ?? 'Unassigned'}
+                </p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {wo.profiles?.email ?? (wo.assigned_to ? 'Assigned technician profile' : 'No technician assigned yet')}
+                </p>
+                {requestedAction === 'resolve-blocker' && wo.status === 'on_hold' && (
+                  <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                    This work order is on hold. Review blocker notes/events, then start work again when the blocker is resolved.
+                  </p>
+                )}
+              </div>
+              {!isTerminal && canManageAssignment && (
+                <Button size="sm" onClick={() => void openAssignModal(wo.assigned_to ? 'reassign' : 'assign')} loading={actionLoading}>
+                  <UserPlus className="h-4 w-4" />
+                  {wo.assigned_to ? 'Reassign Technician' : 'Assign Technician'}
+                </Button>
+              )}
+            </div>
+          </CardContent>
         </Card>
 
         {queuedActions.length > 0 && (
@@ -493,21 +544,32 @@ export default function WorkOrderDetailPage() {
       <Modal
         open={assignModalOpen}
         onClose={() => setAssignModalOpen(false)}
-        title="Assign Technician"
+        title={assignmentMode === 'reassign' ? 'Reassign Technician' : 'Assign Technician'}
         footer={
           <>
             <Button variant="outline" onClick={() => setAssignModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleAssign} loading={actionLoading} disabled={!selectedTechnician}>Assign</Button>
+            <Button onClick={handleAssign} loading={actionLoading} disabled={!selectedTechnician}>
+              {assignmentMode === 'reassign' ? 'Reassign' : 'Assign'}
+            </Button>
           </>
         }
       >
+        {wo?.assigned_to && (
+          <div className="mb-3 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-2 text-sm">
+            <p className="text-xs text-[var(--text-muted)]">Current technician</p>
+            <p className="font-medium text-[var(--foreground)]">{wo.profiles?.full_name ?? 'Assigned technician'}</p>
+          </div>
+        )}
         <Select
           label="Technician"
           placeholder="Select a technician"
           value={selectedTechnician}
           onChange={(e) => setSelectedTechnician(e.target.value)}
-          options={technicians.map((t) => ({ value: t.id, label: t.full_name }))}
+          options={technicians.map((t) => ({ value: t.id, label: `${t.full_name}${t.email ? ` · ${t.email}` : ''}` }))}
         />
+        {technicians.length === 0 && (
+          <p className="mt-2 text-xs text-amber-300">No active technician profiles were found.</p>
+        )}
       </Modal>
 
       {/* Log Event Modal */}

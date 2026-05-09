@@ -102,3 +102,33 @@ Decisions:
 - [ ] Validate contextual assistant entry points from major modules.
 - [ ] Validate refusal/escalation behavior for unsupported or unsafe prompts.
 - [ ] Validate role-scoped visibility (`department_user`, `technician`, `admin`) and context restrictions.
+
+## Command Center Operating Rules
+
+The `/command` page is the BME Head operational control room. The system may recommend,
+rank, score, and explain, but final operational decisions remain with the BME Head.
+
+- Exact record actions: row-level actions open exact records when they exist, such as
+  work orders, maintenance requests, PM schedules, procurement requests, and replacement evidence.
+- Prefilled creation: when no workflow record exists, Command Center actions open a prefilled
+  creation flow with asset/part/work-order context and `source=command-center`.
+- Informational signals: Risk Watch items are acknowledged/snoozed by signal hash or converted
+  into workflow items; generic module routing is reserved for "View all" links.
+- Count consistency: summary cards, triage tabs, drilldowns, and critical actions must share
+  the same fetcher/source of truth for the same metric.
+- Explainability: every composite score shown in Command Center must be clickable/explainable
+  with formula, criteria/weights, raw inputs, normalized inputs where applicable, source/method,
+  generated reason, and history/timestamp when available.
+- Roles: developer has BME Head plus thesis/testing controls, BME Head gets the operational
+  control room, viewer is read-only, and training triage is hidden from BME Head for now pending
+  a later Department Head workflow.
+
+## Command Center Action Semantics
+
+1. Exact record rule: row-level actions must open exact records when records exist.
+2. Prefilled creation rule: if no record exists, open a prefilled creation flow with context.
+3. Informational signal rule: informational signals use acknowledge/snooze or convert-to-workflow.
+4. Count consistency rule: summary card, triage tab, drilldown, Work Queue & Assignment, and critical action count must share the same fetcher/source for the same metric.
+5. State-aware action labels: Assign for unassigned work, Reassign for assigned work, View Progress for in-progress work, Resolve Blocker for on-hold work.
+6. Future triage categories: new triage categories must define record IDs, exact routes, and prefilled fallback flows before being shown in the Command Center.
+7. BME Head principle: the system recommends/explains; the BME Head decides.

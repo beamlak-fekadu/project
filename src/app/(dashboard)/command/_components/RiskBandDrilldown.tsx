@@ -3,13 +3,20 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ScoreExplanation } from './ScoreExplanation';
 
 export interface RiskBandAsset {
   asset_id: string;
   asset_code: string;
   asset_name: string;
   department_name: string;
+  severity: number;
+  occurrence: number;
+  detectability: number;
   rpn: number;
+  risk_level: string;
+  reason: string;
+  suggested_action: string;
 }
 
 export interface RiskBand {
@@ -76,12 +83,36 @@ export function RiskBandDrilldown({ bands, totalAssessed }: { bands: RiskBand[];
                     <ul className="divide-y divide-[var(--border-subtle)]/60">
                       {(showAll[band.key] ? band.topAssets : band.topAssets.slice(0, 5)).map((asset) => (
                       <li key={asset.asset_id} className="flex items-center justify-between py-2 text-sm">
-                        <div>
+                        <div className="min-w-0 flex-1 pr-4">
                           <p className="font-medium text-[var(--foreground)]">{asset.asset_name}</p>
                           <p className="text-xs text-[var(--text-muted)]">{asset.asset_code} • {asset.department_name}</p>
+                          <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                            S/O/D {asset.severity}/{asset.occurrence}/{asset.detectability} · {asset.reason}
+                          </p>
+                          <p className="text-xs leading-5 text-[var(--text-muted)]">
+                            Suggested action: {asset.suggested_action}
+                          </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-medium text-[var(--foreground)]">RPN {asset.rpn}</span>
+                          <ScoreExplanation details={{
+                            title: `RPN — ${asset.asset_name}`,
+                            scoreLabel: `${asset.rpn}`,
+                            formula: 'RPN = Severity × Occurrence × Detectability',
+                            criteria: ['Severity', 'Occurrence', 'Detectability'],
+                            rawValues: [
+                              { label: 'Severity', value: asset.severity },
+                              { label: 'Occurrence', value: asset.occurrence },
+                              { label: 'Detectability', value: asset.detectability },
+                              { label: 'Risk level', value: asset.risk_level },
+                            ],
+                            calculation: `${asset.severity} × ${asset.occurrence} × ${asset.detectability} = ${asset.rpn}`,
+                            generatedReason: asset.reason,
+                            source: 'equipment_risk_scores',
+                            assignmentMethod: 'Computed FMEA score',
+                            actionSuggestion: asset.suggested_action,
+                          }}>
+                            <span className="text-xs font-medium text-[var(--foreground)]">RPN {asset.rpn}</span>
+                          </ScoreExplanation>
                           <Link
                             href={`/equipment/${asset.asset_id}`}
                             className="text-xs font-medium text-violet-300 hover:text-violet-200"

@@ -1,6 +1,7 @@
 'use server';
 
 import { z } from 'zod';
+import { recomputeAssetAnalytics } from './analytics.actions';
 import { getActionContext, logServerAuditEvent, revalidateMany, actionError, nullIfEmpty, type ActionResult } from './_shared';
 
 const calibrationPaths = ['/calibration', '/command', '/reports/calibration'];
@@ -21,6 +22,7 @@ export async function createCalibrationRequestAction(payload: Record<string, unk
     const result = await supabase.from('calibration_requests').insert(data as never).select('*').single();
     if (result.error) return { success: false, error: result.error.message };
     await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_request.create', entityType: 'calibration_requests', entityId: (result.data as { id?: string }).id ?? null, newValues: result.data as Record<string, unknown> });
+    await recomputeAssetAnalytics(parsed.asset_id).catch(() => undefined);
     revalidateMany(calibrationPaths);
     return { success: true, data: result.data };
   } catch (err) {
@@ -46,6 +48,7 @@ export async function createCalibrationRecordAction(payload: Record<string, unkn
     const result = await supabase.from('calibration_records').insert(data as never).select('*').single();
     if (result.error) return { success: false, error: result.error.message };
     await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_record.create', entityType: 'calibration_records', entityId: (result.data as { id?: string }).id ?? null, newValues: result.data as Record<string, unknown> });
+    await recomputeAssetAnalytics(parsed.asset_id).catch(() => undefined);
     revalidateMany(calibrationPaths);
     return { success: true, data: result.data };
   } catch (err) {

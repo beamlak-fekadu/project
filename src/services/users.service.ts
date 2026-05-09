@@ -23,6 +23,21 @@ export async function getProfiles() {
     .order('full_name', { ascending: true });
 }
 
+export async function getActiveTechnicians() {
+  const supabase = createClient();
+  return supabase
+    .from('profiles')
+    .select(`
+      id, user_id, full_name, email, phone, department_id,
+      avatar_url, job_title, is_active, created_at, updated_at,
+      departments(id, name, code),
+      user_roles!inner(id, role_id, assigned_at, roles!inner(id, name, description, permissions))
+    `)
+    .eq('is_active', true)
+    .eq('user_roles.roles.name', 'technician')
+    .order('full_name', { ascending: true });
+}
+
 export async function getProfileById(id: string) {
   const supabase = createClient();
   return supabase

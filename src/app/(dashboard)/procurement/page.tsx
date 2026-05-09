@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ClipboardCheck, Truck, Timer, CircleDollarSign } from 'lucide-react';
 import { PageHeader, StatCard, Card, CardHeader, CardTitle, DataTable, Badge, Button, Modal, Input, Select, Textarea } from '@/components/ui';
 import { getProcurementPipeline } from '@/services/procurement.service';
@@ -22,16 +23,35 @@ type ProcurementTableRow = ProcurementRow & Record<string, unknown>;
 
 export default function ProcurementPage() {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<ProcurementRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const isCommandCenterPrefill = searchParams.get('source') === 'command-center';
+  const [modalOpen, setModalOpen] = useState(isCommandCenterPrefill);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    title: '',
-    justification: '',
-    status: 'requested',
-    priority: 'medium',
-    expected_delivery_date: '',
+  const [form, setForm] = useState(() => {
+    const itemName = searchParams.get('itemName') ?? 'spare part';
+    const currentStock = searchParams.get('currentStock');
+    const reorderLevel = searchParams.get('reorderLevel');
+    const suggestedQuantity = searchParams.get('suggestedQuantity');
+    const reason = searchParams.get('reason') ?? 'Stock below reorder level';
+    return {
+      title: isCommandCenterPrefill ? `Procure ${itemName}` : '',
+      justification: isCommandCenterPrefill
+        ? [
+            reason,
+            currentStock ? `Current stock: ${currentStock}` : null,
+            reorderLevel ? `Reorder level: ${reorderLevel}` : null,
+            suggestedQuantity ? `Suggested quantity: ${suggestedQuantity}` : null,
+            searchParams.get('workOrderId') ? `Linked work order: ${searchParams.get('workOrderId')}` : null,
+            searchParams.get('assetId') ? `Linked asset: ${searchParams.get('assetId')}` : null,
+            'Source: Command Center',
+          ].filter(Boolean).join('\n')
+        : '',
+      status: 'requested',
+      priority: isCommandCenterPrefill && currentStock === '0' ? 'critical' : isCommandCenterPrefill ? 'high' : 'medium',
+      expected_delivery_date: '',
+    };
   });
 
   useEffect(() => {

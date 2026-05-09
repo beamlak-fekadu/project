@@ -17,7 +17,8 @@ const RELIABILITY_SELECT = `
 
 const RISK_SELECT = `
   id, asset_id, severity, occurrence, detectability, rpn, risk_level,
-  assessed_by, assessed_at, notes,
+  assessed_by, assessed_at, notes, explanation, assignment_method,
+  override_reason, override_by, override_at, computed_at, source_version,
   equipment_assets(id, asset_code, name, department_id)
 `;
 

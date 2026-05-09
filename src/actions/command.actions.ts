@@ -35,11 +35,24 @@ type DepartmentReadinessDetail = {
     asset_name: string;
     asset_code: string;
     health_status: string;
+    is_essential: boolean;
+    criticality_level: string | null;
     health_score: number | null;
     rpn: number | null;
   }>;
+  total_tracked_assets: number;
+  essential_total: number;
+  essential_functional: number;
+  essential_unavailable: number;
+  non_essential_total: number;
+  non_essential_functional: number;
+  non_essential_unavailable: number;
+  missing_criticality_assets: number;
   pm_compliance_percentage: number | null;
   open_work_orders: number;
+  overdue_pm: number;
+  calibration_overdue: number;
+  replacement_candidates: number;
 };
 
 type WorkInProgressKind = 'work_orders' | 'overdue_pm' | 'calibration_due';
@@ -107,6 +120,10 @@ function canMutateCommandCenter(profile: CommandProfile | null): boolean {
   if (!profile) return false;
   const roles = profile.roleNames.filter(Boolean);
   return roles.some((role) => role !== 'viewer');
+}
+
+function canViewCommandCenter(profile: CommandProfile | null): boolean {
+  return Boolean(profile);
 }
 
 function authErrorMessage(profile: CommandProfile | null, authUserId: string | null): string {
@@ -195,6 +212,90 @@ export async function acknowledgeAssetFlags(assetId: string): Promise<ActionResu
     revalidatePath('/command');
     revalidatePath('/command/triage');
     revalidatePath('/command/health');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+}
+
+export async function acknowledgeCommandCenterItem(payload: {
+  item_type: string;
+  item_key: string;
+  asset_id?: string | null;
+  signal_hash: string;
+  reason?: string | null;
+}): Promise<ActionResult> {
+  if (!payload.item_type || !payload.item_key || !payload.signal_hash) {
+    return { success: false, error: 'item_type, item_key, and signal_hash are required' };
+  }
+
+  try {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
+      return { success: false, error: 'Insufficient permissions' };
+    }
+
+    const { error } = await supabase
+      .from('command_center_acknowledgements')
+      .upsert({
+        profile_id: profile.id,
+        item_type: payload.item_type,
+        item_key: payload.item_key,
+        asset_id: payload.asset_id ?? null,
+        signal_hash: payload.signal_hash,
+        acknowledged_at: new Date().toISOString(),
+        snoozed_until: null,
+        reason: payload.reason ?? null,
+      } as never, { onConflict: 'profile_id,item_type,item_key,signal_hash' });
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath('/command');
+    revalidatePath('/command/drilldown/risk-watch');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+}
+
+export async function snoozeCommandCenterItem(payload: {
+  item_type: string;
+  item_key: string;
+  asset_id?: string | null;
+  signal_hash: string;
+  days?: number;
+  reason?: string | null;
+}): Promise<ActionResult> {
+  const days = payload.days ?? 7;
+  const snoozedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  if (!payload.item_type || !payload.item_key || !payload.signal_hash) {
+    return { success: false, error: 'item_type, item_key, and signal_hash are required' };
+  }
+
+  try {
+    const { supabase, profile, authUserId } = await getCurrentProfile();
+    if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
+    if (!canMutateCommandCenter(profile)) {
+      return { success: false, error: 'Insufficient permissions' };
+    }
+
+    const { error } = await supabase
+      .from('command_center_acknowledgements')
+      .upsert({
+        profile_id: profile.id,
+        item_type: payload.item_type,
+        item_key: payload.item_key,
+        asset_id: payload.asset_id ?? null,
+        signal_hash: payload.signal_hash,
+        acknowledged_at: new Date().toISOString(),
+        snoozed_until: snoozedUntil,
+        reason: payload.reason ?? null,
+      } as never, { onConflict: 'profile_id,item_type,item_key,signal_hash' });
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath('/command');
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
@@ -487,13 +588,13 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
   try {
     const { supabase, profile, authUserId } = await getCurrentProfile();
     if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
-    if (!canMutateCommandCenter(profile)) {
+    if (!canViewCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 
     const { data: assets, error: assetsError } = await supabase
       .from('equipment_assets')
-      .select('id, name, asset_code, condition, status')
+      .select('id, name, asset_code, condition, status, category_id, equipment_categories(criticality_level)')
       .eq('department_id', departmentId)
       .is('deleted_at', null)
       .eq('status', 'active')
@@ -509,13 +610,24 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
         data: {
           department_id: departmentId,
           assets: [],
+          total_tracked_assets: 0,
+          essential_total: 0,
+          essential_functional: 0,
+          essential_unavailable: 0,
+          non_essential_total: 0,
+          non_essential_functional: 0,
+          non_essential_unavailable: 0,
+          missing_criticality_assets: 0,
           pm_compliance_percentage: null,
           open_work_orders: 0,
+          overdue_pm: 0,
+          calibration_overdue: 0,
+          replacement_candidates: 0,
         },
       };
     }
 
-    const [riskRes, healthRes, pmRes, woRes] = await Promise.all([
+    const [riskRes, healthRes, pmRes, woRes, overduePmRes, calibrationRes, replacementRes] = await Promise.all([
       supabase
         .from('equipment_risk_scores')
         .select('asset_id, rpn, assessed_at')
@@ -536,6 +648,20 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
         .select('id', { count: 'exact', head: true })
         .in('asset_id', assetIds)
         .in('status', ['open', 'assigned', 'in_progress', 'on_hold']),
+      supabase
+        .from('v_overdue_pm')
+        .select('id', { count: 'exact', head: true })
+        .in('asset_id', assetIds),
+      supabase
+        .from('v_calibration_due')
+        .select('id', { count: 'exact', head: true })
+        .in('asset_id', assetIds)
+        .lt('next_due_date', new Date().toISOString().slice(0, 10)),
+      supabase
+        .from('v_replacement_decision')
+        .select('asset_id', { count: 'exact', head: true })
+        .in('asset_id', assetIds)
+        .gte('replacement_priority_index', 0.5),
     ]);
 
     if (riskRes.error || healthRes.error || pmRes.error || woRes.error) {
@@ -579,6 +705,11 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
       const score = healthByAsset.get(row.id as string) ?? null;
       const condition = (row.condition as string | null) ?? 'functional';
       const status = (row.status as string | null) ?? 'active';
+      const category = Array.isArray(row.equipment_categories)
+        ? (row.equipment_categories as Array<{ criticality_level?: string }>)[0]
+        : row.equipment_categories as { criticality_level?: string } | null;
+      const criticalityLevel = category?.criticality_level ?? null;
+      const isEssential = criticalityLevel === 'high' || criticalityLevel === 'critical';
       const healthStatus = status !== 'active'
         ? 'Inactive'
         : condition === 'functional'
@@ -591,18 +722,33 @@ export async function getDepartmentReadinessDetail(departmentId: string): Promis
         asset_name: (row.name as string | undefined) ?? 'Unknown',
         asset_code: (row.asset_code as string | undefined) ?? 'N/A',
         health_status: healthStatus,
+        is_essential: isEssential,
+        criticality_level: criticalityLevel,
         health_score: score,
         rpn: riskByAsset.get(row.id as string) ?? null,
       };
     });
+    const essentialAssets = detailAssets.filter((asset) => asset.is_essential);
+    const nonEssentialAssets = detailAssets.filter((asset) => !asset.is_essential);
 
     return {
       success: true,
       data: {
         department_id: departmentId,
         assets: detailAssets,
+        total_tracked_assets: detailAssets.length,
+        essential_total: essentialAssets.length,
+        essential_functional: essentialAssets.filter((asset) => asset.health_status === 'Functional').length,
+        essential_unavailable: essentialAssets.filter((asset) => asset.health_status !== 'Functional').length,
+        non_essential_total: nonEssentialAssets.length,
+        non_essential_functional: nonEssentialAssets.filter((asset) => asset.health_status === 'Functional').length,
+        non_essential_unavailable: nonEssentialAssets.filter((asset) => asset.health_status !== 'Functional').length,
+        missing_criticality_assets: detailAssets.filter((asset) => asset.criticality_level == null).length,
         pm_compliance_percentage: pmCompliance,
         open_work_orders: woRes.count ?? 0,
+        overdue_pm: overduePmRes.count ?? 0,
+        calibration_overdue: calibrationRes.count ?? 0,
+        replacement_candidates: replacementRes.count ?? 0,
       },
     };
   } catch (err) {
@@ -614,7 +760,7 @@ export async function getWorkInProgressDetail(kind: WorkInProgressKind): Promise
   try {
     const { supabase, profile, authUserId } = await getCurrentProfile();
     if (!profile) return { success: false, error: authErrorMessage(profile, authUserId) };
-    if (!canMutateCommandCenter(profile)) {
+    if (!canViewCommandCenter(profile)) {
       return { success: false, error: 'Insufficient permissions' };
     }
 

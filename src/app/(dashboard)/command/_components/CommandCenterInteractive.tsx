@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarCheck, CheckCircle2, ClipboardList, Wrench, X } 
 import { Badge, Button, Input, Modal, Textarea } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
 import { AcknowledgeButton } from './AcknowledgeButton';
+import { ScoreExplanation } from './ScoreExplanation';
 import {
   createCommandPMSchedule,
   createDiagnosticMaintenanceRequest,
@@ -38,6 +39,9 @@ type DeptReadiness = {
   essential_total: number;
   essential_functional: number;
   readiness_score: number;
+  total_tracked_assets?: number;
+  non_essential_total?: number;
+  essential_unavailable?: number;
 };
 
 type WorkInProgress = {
@@ -77,11 +81,24 @@ type DepartmentDetail = {
     asset_name: string;
     asset_code: string;
     health_status: string;
+    is_essential: boolean;
+    criticality_level: string | null;
     health_score: number | null;
     rpn: number | null;
   }>;
+  total_tracked_assets: number;
+  essential_total: number;
+  essential_functional: number;
+  essential_unavailable: number;
+  non_essential_total: number;
+  non_essential_functional: number;
+  non_essential_unavailable: number;
+  missing_criticality_assets: number;
   pm_compliance_percentage: number | null;
   open_work_orders: number;
+  overdue_pm: number;
+  calibration_overdue: number;
+  replacement_candidates: number;
 };
 
 type WipKind = 'work_orders' | 'overdue_pm' | 'calibration_due';
@@ -122,6 +139,10 @@ type Props = {
   wip: WorkInProgress;
   primaryRole: string;
   departmentId: string | null;
+  /** When true, omit the triage queue section (shown separately via TriageCenterTabs) */
+  showTriage?: boolean;
+  /** When false, omit legacy WIP cards because WorkloadAssignment owns the merged queue. */
+  showWip?: boolean;
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -168,6 +189,8 @@ export default function CommandCenterInteractive({
   wip,
   primaryRole,
   departmentId,
+  showTriage = true,
+  showWip = true,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -338,11 +361,11 @@ export default function CommandCenterInteractive({
 
   const activeModalRow = modalQueueId ? rowByQueueId.get(modalQueueId) ?? null : null;
   const activeModalDetail = modalQueueId ? detailByQueueId[modalQueueId] : undefined;
-  const wipViewAllHref = wipKind === 'work_orders' ? '/work-orders?status=open' : wipKind === 'overdue_pm' ? '/pm?status=overdue' : '/calibration?due_within=30';
+  const wipViewAllHref = wipKind === 'work_orders' ? '/command/drilldown/open-work-orders' : wipKind === 'overdue_pm' ? '/command/drilldown/pm' : '/command/drilldown/calibration';
 
   return (
     <>
-      <section aria-label="Triage queue">
+      {showTriage && <section aria-label="Triage queue">
         <div className="panel-surface rounded-lg">
           <div className="border-b border-[var(--border-subtle)]/60 px-6 py-4">
             <div className="flex items-center justify-between">
@@ -395,7 +418,24 @@ export default function CommandCenterInteractive({
                               <td className="py-3 pr-4 text-[var(--text-muted)]">{row.department_name}</td>
                               <td className="py-3 pr-4">{generateTriageReason({ flagType: row.flag_type, rationale: row.rationale, fallbackRecommendation: row.recommendation })}</td>
                               <td className="py-3 pr-4">
-                                <Badge variant={row.score >= 75 ? 'error' : row.score >= 45 ? 'warning' : 'info'}>{row.score.toFixed(1)}</Badge>
+                                <ScoreExplanation details={{
+                                  title: `Triage score — ${row.asset_name}`,
+                                  scoreLabel: row.score.toFixed(1),
+                                  formula: 'priority score from triage_action_queue and recommendation flag context',
+                                  criteria: ['Open triage priority', 'Recommendation flag severity', 'Asset context', 'Operational urgency'],
+                                  rawValues: [
+                                    { label: 'Priority score', value: row.score.toFixed(1) },
+                                    { label: 'Flag type', value: row.flag_type },
+                                    { label: 'Flag severity', value: row.flag_severity },
+                                  ],
+                                  calculation: row.score.toFixed(1),
+                                  generatedReason: generateTriageReason({ flagType: row.flag_type, rationale: row.rationale, fallbackRecommendation: row.recommendation }),
+                                  source: 'v_command_center_triage / triage_action_queue',
+                                  assignmentMethod: 'Computed decision-support queue score',
+                                  actionSuggestion: 'Review the row detail before creating work.',
+                                }}>
+                                  <Badge variant={row.score >= 75 ? 'error' : row.score >= 45 ? 'warning' : 'info'}>{row.score.toFixed(1)}</Badge>
+                                </ScoreExplanation>
                                 {isAcknowledged && <Badge className="ml-2">Acknowledged</Badge>}
                               </td>
                               <td className="py-3 pr-4" onClick={(e) => e.stopPropagation()}>
@@ -435,11 +475,11 @@ export default function CommandCenterInteractive({
                                       </div>
 
                                       <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
-                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">RPN</p><p className="font-semibold">{detail.rpn ?? '—'}</p></div>
-                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">PMC</p><p className="font-semibold">{detail.pmc_percentage != null ? `${detail.pmc_percentage.toFixed(1)}%` : '—'}</p></div>
-                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">Availability</p><p className="font-semibold">{detail.availability_ratio != null ? `${(detail.availability_ratio * 100).toFixed(1)}%` : '—'}</p></div>
-                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">MTBF</p><p className="font-semibold">{detail.mtbf_hours != null ? `${detail.mtbf_hours.toFixed(1)} h` : '—'}</p></div>
-                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">Priority score</p><p className="font-semibold">{detail.priority_score.toFixed(1)}</p></div>
+                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">RPN</p><p className="font-semibold">{detail.rpn == null ? '—' : <ScoreExplanation details={{ title: `RPN — ${detail.asset_name}`, scoreLabel: `${detail.rpn}`, formula: 'RPN = Severity × Occurrence × Detectability', criteria: ['Severity', 'Occurrence', 'Detectability'], rawValues: [{ label: 'RPN', value: detail.rpn }], calculation: `${detail.rpn}`, generatedReason: 'Latest FMEA risk score for this asset.', source: 'equipment_risk_scores', assignmentMethod: 'Computed FMEA score', actionSuggestion: 'Review risk controls and maintenance history.' }}>{detail.rpn}</ScoreExplanation>}</p></div>
+                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">PMC</p><p className="font-semibold">{detail.pmc_percentage == null ? '—' : <ScoreExplanation details={{ title: `PM compliance — ${detail.asset_name}`, scoreLabel: `${detail.pmc_percentage.toFixed(1)}%`, formula: '(completed PM ÷ scheduled PM) × 100', criteria: ['Scheduled PM', 'Completed PM'], rawValues: [{ label: 'PMC', value: `${detail.pmc_percentage.toFixed(1)}%` }], calculation: `${detail.pmc_percentage.toFixed(1)}%`, generatedReason: 'Latest PM compliance metric for this asset.', source: 'pm_compliance_metrics', assignmentMethod: 'Computed', actionSuggestion: 'Schedule overdue PM if compliance is low.' }}>{detail.pmc_percentage.toFixed(1)}%</ScoreExplanation>}</p></div>
+                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">Availability</p><p className="font-semibold">{detail.availability_ratio == null ? '—' : <ScoreExplanation details={{ title: `Availability — ${detail.asset_name}`, scoreLabel: `${(detail.availability_ratio * 100).toFixed(1)}%`, formula: 'MTBF ÷ (MTBF + MTTR)', criteria: ['MTBF', 'MTTR', 'Downtime history'], rawValues: [{ label: 'Availability ratio', value: detail.availability_ratio }], calculation: `${(detail.availability_ratio * 100).toFixed(1)}%`, generatedReason: 'Latest reliability availability ratio for this asset.', source: 'equipment_reliability_metrics', assignmentMethod: 'Computed', actionSuggestion: 'Review downtime if availability is low.' }}>{(detail.availability_ratio * 100).toFixed(1)}%</ScoreExplanation>}</p></div>
+                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">MTBF</p><p className="font-semibold">{detail.mtbf_hours == null ? '—' : <ScoreExplanation details={{ title: `MTBF — ${detail.asset_name}`, scoreLabel: `${detail.mtbf_hours.toFixed(1)} h`, formula: 'operational hours ÷ failure count', criteria: ['Operational hours', 'Failure count'], rawValues: [{ label: 'MTBF hours', value: detail.mtbf_hours.toFixed(1) }], calculation: `${detail.mtbf_hours.toFixed(1)} h`, generatedReason: 'Latest mean time between failures for this asset.', source: 'equipment_reliability_metrics', assignmentMethod: 'Computed', actionSuggestion: 'Investigate recurring failures if MTBF is low.' }}>{detail.mtbf_hours.toFixed(1)} h</ScoreExplanation>}</p></div>
+                                        <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">Priority score</p><p className="font-semibold"><ScoreExplanation details={{ title: `Priority score — ${detail.asset_name}`, scoreLabel: detail.priority_score.toFixed(1), formula: 'triage queue priority score', criteria: ['Flag severity', 'Risk/reliability context', 'Operational priority'], rawValues: [{ label: 'Priority score', value: detail.priority_score.toFixed(1) }], calculation: detail.priority_score.toFixed(1), generatedReason: generateTriageReason({ flagType: detail.flag_type, rationale: detail.rationale, fallbackRecommendation: detail.recommendation }), source: 'triage_action_queue', assignmentMethod: 'Computed', actionSuggestion: 'Use this as decision support; final action remains with BME Head.' }}>{detail.priority_score.toFixed(1)}</ScoreExplanation></p></div>
                                         <div className="rounded-md border border-[var(--border-subtle)]/60 p-3"><p className="text-xs text-[var(--text-muted)]">Flag type</p><p className="font-semibold">{detail.flag_type ?? 'none'}</p></div>
                                       </div>
 
@@ -476,7 +516,7 @@ export default function CommandCenterInteractive({
             )}
           </div>
         </div>
-      </section>
+      </section>}
 
       <section aria-label="Department readiness">
         <div className="panel-surface rounded-lg">
@@ -488,24 +528,65 @@ export default function CommandCenterInteractive({
               <p className="py-4 text-center text-sm text-[var(--text-muted)]">No essential equipment data available</p>
             ) : (
               <div className="space-y-3">
+                {/* Reconciliation note */}
+                <p className="rounded-md border border-[var(--border-subtle)]/40 bg-[var(--surface-2)]/40 px-3 py-2 text-xs text-[var(--text-muted)]">
+                  <strong className="text-[var(--foreground)]">Readiness %</strong> counts only{' '}
+                  <strong className="text-[var(--foreground)]">essential equipment</strong> (high/critical criticality).
+                  Non-essential and unassigned assets are tracked in the inventory but excluded from readiness scoring.
+                </p>
+
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {readiness.map((dept) => {
                     const isExpanded = expandedDepartment === dept.department_id;
                     const isFocusedDepartment = primaryRole === 'department_user' && departmentId === dept.department_id;
                     const textColor = dept.readiness_score >= 90 ? 'text-emerald-300' : dept.readiness_score >= 70 ? 'text-amber-300' : 'text-rose-300';
                     const cardClass = dept.readiness_score >= 90 ? 'border-emerald-500 bg-emerald-500/10' : dept.readiness_score >= 70 ? 'border-amber-500 bg-amber-500/10' : 'border-rose-500 bg-rose-500/10';
+                    const unavailable = dept.essential_unavailable ?? (dept.essential_total - dept.essential_functional);
+                    const totalTracked = dept.total_tracked_assets ?? dept.essential_total;
+                    const nonEssential = dept.non_essential_total ?? Math.max(0, totalTracked - dept.essential_total);
                     return (
-                      <button
+                      <div
                         key={dept.department_id}
-                        type="button"
-                        className={`flex min-w-[160px] flex-col items-center rounded-lg border p-4 text-left transition hover:opacity-80 ${cardClass} ${isFocusedDepartment ? 'ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-[var(--background)]' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        className={`flex min-w-[175px] flex-col rounded-lg border p-4 text-left transition hover:opacity-80 ${cardClass} ${isFocusedDepartment ? 'ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-[var(--background)]' : ''}`}
                         onClick={() => void toggleDepartment(dept.department_id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            void toggleDepartment(dept.department_id);
+                          }
+                        }}
                       >
-                        <span className={`text-3xl font-bold ${textColor}`}>{dept.readiness_score}%</span>
-                        <span className="mt-1 text-center text-xs font-medium text-[var(--foreground)]">{dept.department_name}</span>
-                        <span className="mt-1 text-center text-[10px] text-[var(--text-muted)]">{dept.essential_functional}/{dept.essential_total} essential functional</span>
+                        <ScoreExplanation details={{
+                          title: `Department readiness — ${dept.department_name}`,
+                          scoreLabel: `${dept.readiness_score}%`,
+                          formula: 'functional essential ÷ total essential × 100',
+                          criteria: ['Essential high/critical equipment', 'Functional condition', 'Active tracked assets'],
+                          rawValues: [
+                            { label: 'Essential functional', value: dept.essential_functional },
+                            { label: 'Essential total', value: dept.essential_total },
+                            { label: 'Non-essential excluded', value: nonEssential },
+                          ],
+                          calculation: `${dept.essential_functional} ÷ ${dept.essential_total} × 100 = ${dept.readiness_score}%`,
+                          generatedReason: 'Readiness excludes non-essential assets so operational readiness and inventory totals reconcile separately.',
+                          source: 'v_department_readiness + equipment_assets',
+                          assignmentMethod: 'Computed snapshot',
+                          actionSuggestion: 'Open details to inspect unavailable essential equipment.',
+                        }}>
+                          <span className={`text-3xl font-bold ${textColor}`}>{dept.readiness_score}%</span>
+                        </ScoreExplanation>
+                        <span className="mt-1 text-xs font-medium text-[var(--foreground)]">{dept.department_name}</span>
+                        <span className="mt-1 text-[10px] text-[var(--text-muted)]">
+                          {dept.essential_functional}/{dept.essential_total} essential functional
+                        </span>
+                        <span className="mt-0.5 text-[10px] text-[var(--text-muted)]">{totalTracked} total tracked assets</span>
+                        {nonEssential > 0 && <span className="mt-0.5 text-[10px] text-[var(--text-muted)]">{nonEssential} non-essential excluded</span>}
+                        {unavailable > 0 && (
+                          <span className="mt-0.5 text-[10px] text-rose-400">{unavailable} essential unavailable</span>
+                        )}
                         <span className="mt-2 text-[10px] text-violet-300">{isExpanded ? 'Hide details' : 'View details'}</span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -518,18 +599,55 @@ export default function CommandCenterInteractive({
                       const detail = departmentDetails[expandedDepartment];
                       const dept = readiness.find((d) => d.department_id === expandedDepartment);
                       if (!detail || !dept) return <p className="text-sm text-[var(--text-muted)]">No detail available.</p>;
+                      const unavailableEssential = detail.essential_unavailable;
+                      const totalTracked = detail.total_tracked_assets;
+                      const nonEssential = detail.non_essential_total;
+                      const essentialAssets = detail.assets.filter((asset) => asset.is_essential);
+                      const nonEssentialAssets = detail.assets.filter((asset) => !asset.is_essential);
                       return (
                         <div className="space-y-3">
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm"><p className="text-xs text-[var(--text-muted)]">PM compliance</p><p className="font-semibold">{detail.pm_compliance_percentage != null ? `${detail.pm_compliance_percentage.toFixed(1)}%` : '—'}</p></div>
-                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm"><p className="text-xs text-[var(--text-muted)]">Open work orders</p><p className="font-semibold">{detail.open_work_orders}</p></div>
-                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm"><p className="text-xs text-[var(--text-muted)]">Tracked assets</p><p className="font-semibold">{detail.assets.length}</p></div>
+                          <p className="rounded-md border border-violet-500/30 bg-violet-500/10 p-3 text-xs text-violet-200">
+                            Readiness percentage is calculated only from essential high/critical equipment. Non-essential equipment is tracked in inventory but not included in the readiness percentage.
+                          </p>
+                          {/* Reconciliation summary */}
+                          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Essential total</p>
+                              <p className="font-semibold">{detail.essential_total}</p>
+                              <p className="text-[10px] text-[var(--text-muted)]">high/critical criticality</p>
+                            </div>
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Essential functional</p>
+                              <p className="font-semibold">{detail.essential_functional}</p>
+                              {unavailableEssential > 0 && <p className="text-[10px] text-rose-400">{unavailableEssential} unavailable</p>}
+                            </div>
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Total tracked</p>
+                              <p className="font-semibold">{totalTracked}</p>
+                              {nonEssential > 0 && <p className="text-[10px] text-[var(--text-muted)]">{nonEssential} non-essential</p>}
+                            </div>
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Open work orders</p>
+                              <p className="font-semibold">{detail.open_work_orders}</p>
+                            </div>
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Overdue PM</p>
+                              <p className="font-semibold">{detail.overdue_pm}</p>
+                            </div>
+                            <div className="rounded-md border border-[var(--border-subtle)]/60 p-3 text-sm">
+                              <p className="text-xs text-[var(--text-muted)]">Calibration overdue</p>
+                              <p className="font-semibold">{detail.calibration_overdue}</p>
+                            </div>
                           </div>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Reconciliation: {detail.essential_total} essential assets included in the denominator, {detail.non_essential_total} non-essential tracked but excluded, {detail.missing_criticality_assets} missing criticality/category assignment, {detail.replacement_candidates} replacement candidates.
+                          </p>
                           <div>
                             <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Recommended actions</p>
                             <ul className="space-y-1 text-sm text-[var(--foreground)]">{readinessMessage(dept.readiness_score).map((message) => <li key={message}>• {message}</li>)}</ul>
                           </div>
                           <div className="overflow-x-auto">
+                            <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Essential assets included in readiness %</p>
                             <table className="w-full min-w-[640px] text-sm">
                               <thead>
                                 <tr className="border-b border-[var(--border-subtle)]/60 text-left">
@@ -540,7 +658,7 @@ export default function CommandCenterInteractive({
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-[var(--border-subtle)]/60">
-                                {detail.assets.map((asset) => (
+                                {essentialAssets.map((asset) => (
                                   <tr key={asset.asset_id}>
                                     <td className="py-2 pr-4"><p className="font-medium text-[var(--foreground)]">{asset.asset_name}</p><p className="text-xs text-[var(--text-muted)]">{asset.asset_code}</p></td>
                                     <td className="py-2 pr-4">{asset.health_status}</td>
@@ -551,19 +669,44 @@ export default function CommandCenterInteractive({
                               </tbody>
                             </table>
                           </div>
+                          {nonEssentialAssets.length > 0 && (
+                            <div className="overflow-x-auto">
+                              <p className="mb-2 text-xs uppercase tracking-wide text-[var(--text-muted)]">Non-essential / excluded from readiness %</p>
+                              <table className="w-full min-w-[640px] text-sm">
+                                <thead>
+                                  <tr className="border-b border-[var(--border-subtle)]/60 text-left">
+                                    <th className="pb-2 pr-4 text-[var(--text-muted)]">Asset</th>
+                                    <th className="pb-2 pr-4 text-[var(--text-muted)]">Status</th>
+                                    <th className="pb-2 pr-4 text-[var(--text-muted)]">Criticality</th>
+                                    <th className="pb-2 text-[var(--text-muted)]">RPN</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--border-subtle)]/60">
+                                  {nonEssentialAssets.map((asset) => (
+                                    <tr key={asset.asset_id}>
+                                      <td className="py-2 pr-4"><p className="font-medium text-[var(--foreground)]">{asset.asset_name}</p><p className="text-xs text-[var(--text-muted)]">{asset.asset_code}</p></td>
+                                      <td className="py-2 pr-4">{asset.health_status}</td>
+                                      <td className="py-2 pr-4">{asset.criticality_level ?? 'Missing criticality'}</td>
+                                      <td className="py-2">{asset.rpn ?? '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
                   </div>
                 )}
-                <p className="text-xs text-[var(--text-muted)]">{readiness.length} departments monitored</p>
+                <p className="text-xs text-[var(--text-muted)]">{readiness.length} departments monitored · Essential = high/critical criticality assets</p>
               </div>
             )}
           </div>
         </div>
       </section>
 
-      <section aria-label="Work in progress">
+      {showWip && <section aria-label="Work in progress">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-[var(--text-muted)]">Work in progress</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <button type="button" onClick={() => void openWipPanel('work_orders')} className="panel-surface rounded-lg p-5 text-left transition hover:border-[var(--brand)]/50">
@@ -600,7 +743,7 @@ export default function CommandCenterInteractive({
             </div>
           </button>
         </div>
-      </section>
+      </section>}
 
       <Modal
         open={modalOpen}

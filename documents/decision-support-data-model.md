@@ -9,6 +9,7 @@ This document maps database tables to roles in the system and defines the **cano
 3. **Atomic alerts** — `recommendation_flags` stores typed, severed, asset-scoped facts (with optional `details` JSON for evidence). Powers `/alerts` and feeds triage scoring.
 4. **Prioritized worklist** — `triage_action_queue` is **derived** by `refresh_decision_support_snapshots` from risk, PM, replacement, and open flags. Powers Command Center triage. **Triage is driven by this queue**, not by raw flag count.
 5. **Daily snapshots** — `equipment_health_snapshots`, `clinical_readiness_snapshots`, `workload_capacity_snapshots` roll up metrics for the command center and reporting.
+6. **Command Center action semantics** — operational rows must preserve record identity. If a row is an existing work order, request, PM schedule, procurement request, or replacement candidate, its primary action opens that exact record/evidence route. If no workflow record exists, the action opens a prefilled creation flow with source context. Informational Risk Watch signals are acknowledged/snoozed with a signal hash or converted into real workflow items.
 
 **Overlap note:** `recommendation_flags` and `triage_action_queue` are related but not redundant: flags are evidence; the queue is the ordered action list. `repeat_repair_flags` (schema) overlaps intent with `recommendation_flags` of type `recurring_failure` — a future PR may deprecate the separate table; **do not delete without a migration plan**.
 
@@ -55,6 +56,7 @@ This document maps database tables to roles in the system and defines the **cano
 | --- | --- |
 | `triage_action_queue` | Open/dismissed triage rows; **primary triage driver for UI** |
 | `recommendation_flags` | Atomic alerts; ack state |
+| `command_center_acknowledgements` | Per-profile Command Center acknowledgement/snooze state keyed by item type, item key, and signal hash |
 | `escalation_rules`, `escalation_events` | Escalation (underused in app today) |
 
 ### Audit / history / telemetry
@@ -80,6 +82,34 @@ All created in migration `00021_decision_support_read_models.sql` with `WITH (se
 | `v_maintenance_risk_context` | Per-asset maintenance/risk summary for prioritization |
 
 These views intentionally exclude auth secrets and minimize PII (same disclosure level as existing operational screens).
+
+## Command Center source-of-truth rules
+
+| Workflow | Canonical Command Center source | Count consistency rule |
+| --- | --- | --- |
+| Corrective | Open `work_orders` where `work_type='corrective'` plus open `maintenance_requests` | Corrective tab and critical actions must not fall back to all equipment |
+| Needs Request | Active condition-problem `equipment_assets` with no open corrective work/request | Used for non-functional assets without a request |
+| Risk Watch | High/critical risk scores and active recommendation flags without open corrective work | Acknowledged rows hide only while `signal_hash` matches |
+| PM | `fetchPMTriage()` / `v_overdue_pm` | Summary, triage, drilldown, and critical actions share this count |
+| Calibration | `fetchCalibrationTriage()` / `v_calibration_due` within due/overdue window | Summary, triage, and drilldown share this count |
+| Stock | `fetchStockBlockers()` / `spare_parts` below reorder with optional open-work linkage | Distinguish stockout, low-stock risk, and confirmed maintenance blocker |
+| Procurement | `procurement_requests` | Row actions open exact request detail/status route |
+| Replacement | `v_replacement_decision` | Evidence route and report prefill keep `asset_id` context |
+
+Every composite score surfaced in the Command Center must be explainable in UI: formula, criteria,
+weights when applicable, raw inputs, normalized inputs where applicable, generated reason,
+source/method, timestamp/history if available, and a decision note. The system supports decisions;
+the BME Head makes final operational decisions.
+
+## Command Center Action Semantics
+
+1. Exact record rule: row-level actions must open exact records when records exist.
+2. Prefilled creation rule: if no record exists, open a prefilled creation flow with context.
+3. Informational signal rule: informational signals use acknowledge/snooze or convert-to-workflow.
+4. Count consistency rule: summary card, triage tab, drilldown, Work Queue & Assignment, and critical action count must share the same fetcher/source for the same metric.
+5. State-aware action labels: Assign for unassigned work, Reassign for assigned work, View Progress for in-progress work, Resolve Blocker for on-hold work.
+6. Future triage categories: new triage categories must define record IDs, exact routes, and prefilled fallback flows before being shown in the Command Center.
+7. BME Head principle: the system recommends/explains; the BME Head decides.
 
 ## Operational refresh logging
 

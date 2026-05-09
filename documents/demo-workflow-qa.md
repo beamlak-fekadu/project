@@ -9,7 +9,7 @@ Scope: app hardening and demo readiness with seed data. Real Yekatit-12 producti
 | Step | Action | Expected result | Status |
 |---:|---|---|---|
 | 1 | Log in as the linked developer/admin demo user | Dashboard shell loads and role-gated navigation appears | Not manually run in this pass |
-| 2 | Open `/command` | Command Center cards, triage, readiness, risk, and replacement sections render from seed snapshots | Build verified |
+| 2 | Open `/command` | Command Center cards, triage, readiness, risk, replacement, exact row actions, and shared-count drilldowns render from operational sources | Build verified |
 | 3 | Open `/equipment` | Equipment list renders active seeded assets | Build verified |
 | 4 | Create or select a seeded asset | Equipment mutation uses `createEquipmentAction` / server auth | Code verified |
 | 5 | Create a maintenance request | Request is written by `createMaintenanceRequestAction`, audited, and relevant paths are revalidated | Code verified |
@@ -20,6 +20,7 @@ Scope: app hardening and demo readiness with seed data. Real Yekatit-12 producti
 | 10 | Refresh analytics/Command Center | Existing command refresh action recomputes all analytics | Existing behavior retained |
 | 11 | Confirm flags/triage update | Triage and alerts paths revalidate after acknowledgments and recompute | Code verified |
 | 12 | Acknowledge alert or triage | Alert acknowledge uses `acknowledgeAlertFlagAction`; triage uses existing server action | Code verified |
+| 13 | Acknowledge Risk Watch signal | Risk Watch acknowledgement stores item key + signal hash so unchanged reviewed signals hide and changed signals reappear | Code verified |
 | 13 | Export report PDF/CSV | Empty datasets now return "No rows to export" instead of downloading blank exports | Code verified |
 | 14 | Open audit log | Operational server actions write profile-id audit rows | Code verified |
 | 15 | Demo with seed data if real data is unavailable | Seed behavior is acceptable; recurring failure currently has one seeded asset above threshold | Documented |
@@ -28,7 +29,7 @@ Scope: app hardening and demo readiness with seed data. Real Yekatit-12 producti
 
 | Module | Route | Primary role | Read | Write | Empty/error behavior | Audit/revalidation | Demo status |
 |---|---|---|---|---|---|---|---|
-| Command Center | `/command` | all roles | Server read models | Refresh/ack via actions | Empty cards | Revalidates command routes | Build verified |
+| Command Center | `/command` | all roles | Shared typed fetchers | Refresh/ack/exact record links/prefilled flows | Empty cards | Revalidates command routes | Build verified |
 | Triage queue | `/command/triage` | ops roles | Client read view | Existing command actions | Empty table | Revalidates command/health | Build verified |
 | Equipment | `/equipment` | admin/technician | Client service reads | Server actions | Existing UI | Equipment/report/command revalidation | Code verified |
 | Maintenance requests | `/maintenance`, `/maintenance/requests/*` | admin/technician/department_user | Client service reads | Server actions | Existing UI | Maintenance/report/command revalidation | Code verified |
@@ -56,6 +57,16 @@ Scope: app hardening and demo readiness with seed data. Real Yekatit-12 producti
 - Recurring-failure flags keep the thesis threshold of `failureCount >= 4`. In the seeded period, currently one asset crosses that threshold. Assets with 2-3 events are below threshold and will appear after additional failures are logged.
 - Supabase Storage bucket required for document workflows: create bucket `equipment-documents`, allow authenticated upload/read/delete according to project RLS/storage policy, and ensure environment variables point to the active Supabase project.
 - Offline sync is intentionally scoped to work-order status updates and maintenance event logs. There is no background service worker; users sync manually from the work-order detail page.
+
+## Command Center Action Semantics
+
+1. Exact record rule: row-level actions must open exact records when records exist.
+2. Prefilled creation rule: if no record exists, open a prefilled creation flow with context.
+3. Informational signal rule: informational signals use acknowledge/snooze or convert-to-workflow.
+4. Count consistency rule: summary card, triage tab, drilldown, Work Queue & Assignment, and critical action count must share the same fetcher/source for the same metric.
+5. State-aware action labels: Assign for unassigned work, Reassign for assigned work, View Progress for in-progress work, Resolve Blocker for on-hold work.
+6. Future triage categories: new triage categories must define record IDs, exact routes, and prefilled fallback flows before being shown in the Command Center.
+7. BME Head principle: the system recommends/explains; the BME Head decides.
 
 ## Verification Results
 
