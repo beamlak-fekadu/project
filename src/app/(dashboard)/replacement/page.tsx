@@ -1,15 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertTriangle,
   ClipboardList,
-  FileBarChart,
   PackageCheck,
   Replace,
   SlidersHorizontal,
-  Trash2,
+  Clock,
+  Activity,
 } from 'lucide-react';
 import { getReplacementPriorities } from '@/services/analytics.service';
 import { PageHeader, StatCard, DataTable, Badge, Button } from '@/components/ui';
@@ -64,7 +65,7 @@ function rpiValue(row: ReplacementRow) {
 
 function rpiColor(index: number): string {
   if (index >= 0.7) return '#ef4444';
-  if (index >= 0.4) return '#f97316';
+  if (index >= 0.55) return '#f97316';
   return '#22c55e';
 }
 
@@ -76,8 +77,15 @@ function rpiLabel(value: number | null | undefined) {
 function scoreBand(value: number | null | undefined) {
   if (value == null) return 'Not available';
   if (value >= 0.7) return 'High';
-  if (value >= 0.4) return 'Moderate';
+  if (value >= 0.55) return 'Review';
   return 'Low';
+}
+
+function replacementDecisionBand(value: number | null | undefined) {
+  if (value == null) return 'Not scored';
+  if (value >= 0.7) return 'Strong replacement candidate';
+  if (value >= 0.55) return 'Review candidate';
+  return 'Monitor';
 }
 
 function procurementPrefill(row: ReplacementRow) {
@@ -150,9 +158,12 @@ function hasMissingScore(row: ReplacementRow) {
 }
 
 export default function ReplacementPage() {
+  const searchParams = useSearchParams();
   const { isDeveloper } = useRole();
   const [data, setData] = useState<ReplacementRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState(() => searchParams.get('filter') ?? 'candidates');
+  const [chartLimit, setChartLimit] = useState<'10' | '20' | 'all'>('10');
 
   useEffect(() => {
     async function load() {
@@ -170,11 +181,28 @@ export default function ReplacementPage() {
     .filter((d) => d.replacement_priority_index != null)
     .sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999)), [data]);
 
-  const topCandidates = ranked.slice(0, 3);
+  const topCandidates = ranked.filter((row) => rpiValue(row) >= 0.55).slice(0, 3);
+  const replacementCandidates = ranked.filter((row) => rpiValue(row) >= 0.55);
   const highPriority = ranked.filter((row) => rpiValue(row) >= 0.7);
   const criticalClinicalImpact = ranked.filter((row) => (row.risk_score ?? 0) >= 0.7);
   const poorSpareSupport = ranked.filter((row) => (row.spare_part_score ?? 0) >= 0.7);
   const highMaintenanceBurden = ranked.filter((row) => (row.maintenance_burden_score ?? 0) >= 0.7);
+  const lowAvailability = ranked.filter((row) => (row.availability_score ?? 0) >= 0.7);
+  const frequentFailure = ranked.filter((row) => (row.failure_score ?? 0) >= 0.7);
+  const obsoleteAgeRisk = ranked.filter((row) => (row.age_score ?? 0) >= 0.7);
+  const chartRows = chartLimit === 'all' ? ranked : ranked.slice(0, Number(chartLimit));
+  const filteredRows = ranked.filter((row) => {
+    if (activeFilter === 'strong') return rpiValue(row) >= 0.7;
+    if (activeFilter === 'review') return rpiValue(row) >= 0.55 && rpiValue(row) < 0.7;
+    if (activeFilter === 'maintenance') return (row.maintenance_burden_score ?? 0) >= 0.7;
+    if (activeFilter === 'availability') return (row.availability_score ?? 0) >= 0.7;
+    if (activeFilter === 'failure') return (row.failure_score ?? 0) >= 0.7;
+    if (activeFilter === 'age') return (row.age_score ?? 0) >= 0.7;
+    if (activeFilter === 'spare') return (row.spare_part_score ?? 0) >= 0.7;
+    if (activeFilter === 'critical') return (row.risk_score ?? 0) >= 0.7;
+    if (activeFilter === 'all') return true;
+    return rpiValue(row) >= 0.55;
+  });
 
   if (loading) return <PageLoader />;
 
@@ -213,14 +241,14 @@ export default function ReplacementPage() {
     },
     {
       key: 'main_driver',
-      header: 'Main Driver',
+      header: 'Top Driver',
       render: (row: ReplacementRow) => <span className="text-sm">{mainDriver(row)}</span>,
     },
     {
       key: 'risk_score',
-      header: 'Risk',
+      header: 'Availability / Downtime',
       sortable: true,
-      render: (row: ReplacementRow) => scoreBand(row.risk_score),
+      render: (row: ReplacementRow) => scoreBand(row.availability_score),
     },
     {
       key: 'maintenance_burden_score',
@@ -230,24 +258,25 @@ export default function ReplacementPage() {
     },
     {
       key: 'age_score',
-      header: 'Age',
+      header: 'Failure Count',
       sortable: true,
-      render: (row: ReplacementRow) => scoreBand(row.age_score),
+      render: (row: ReplacementRow) => scoreBand(row.failure_score),
     },
     {
-      key: 'spare_part_score',
-      header: 'Spare Support',
+      key: 'risk_band',
+      header: 'Risk Band',
       sortable: true,
-      render: (row: ReplacementRow) => scoreBand(row.spare_part_score),
+      render: (row: ReplacementRow) => <Badge variant={rpiValue(row) >= 0.7 ? 'error' : rpiValue(row) >= 0.55 ? 'warning' : 'success'}>{replacementDecisionBand(row.replacement_priority_index)}</Badge>,
     },
     {
       key: 'actions',
-      header: 'Next Action',
+      header: 'Recommended Action',
       render: (row: ReplacementRow) => (
         <div className="flex flex-wrap gap-2">
-          <Link href={replacementEvidence(row.asset_id)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Evidence</Link>
-          <Link href={procurementPrefill(row)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Procurement</Link>
-          <Link href={disposalPrefill(row)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Disposal</Link>
+          <Link href={replacementEvidence(row.asset_id)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Open Evidence</Link>
+          <Link href={`/replacement?assetId=${row.asset_id}&action=create-review`} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Create Replacement Review</Link>
+          <Link href={procurementPrefill(row)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Create Procurement Request</Link>
+          <Link href={disposalPrefill(row)} className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs hover:bg-[var(--surface-2)]">Create Disposal Request</Link>
         </div>
       ),
     },
@@ -273,15 +302,20 @@ export default function ReplacementPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Candidates" value={ranked.length} icon={<Replace className="h-6 w-6" />} color="blue" />
-        <StatCard label="High Priority" value={highPriority.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="Critical Clinical Impact" value={criticalClinicalImpact.length} icon={<ClipboardList className="h-6 w-6" />} color="orange" />
-        <StatCard label="Poor Spare Support" value={poorSpareSupport.length} icon={<PackageCheck className="h-6 w-6" />} color="yellow" />
-        <StatCard label="High Maintenance Burden" value={highMaintenanceBurden.length} icon={<AlertTriangle className="h-6 w-6" />} color="purple" />
-        <StatCard label="Procurement Linked" value="Action ready" icon={<PackageCheck className="h-6 w-6" />} color="green" />
-        <StatCard label="Disposal Linked" value="Action ready" icon={<Trash2 className="h-6 w-6" />} color="gray" />
-        <StatCard label="Management Report Candidates" value={highPriority.length} icon={<FileBarChart className="h-6 w-6" />} color="blue" />
+        <StatCard label="Replacement Candidates" value={replacementCandidates.length} icon={<Replace className="h-6 w-6" />} color="blue" active={activeFilter === 'candidates'} onClick={() => setActiveFilter('candidates')} />
+        <StatCard label="High RPI" value={highPriority.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={activeFilter === 'strong'} onClick={() => setActiveFilter('strong')} />
+        <StatCard label="High Maintenance Burden" value={highMaintenanceBurden.length} icon={<Activity className="h-6 w-6" />} color="purple" active={activeFilter === 'maintenance'} onClick={() => setActiveFilter('maintenance')} />
+        <StatCard label="Low Availability / High Downtime" value={lowAvailability.length} icon={<Clock className="h-6 w-6" />} color="orange" active={activeFilter === 'availability'} onClick={() => setActiveFilter('availability')} />
+        <StatCard label="Frequent Failure" value={frequentFailure.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={activeFilter === 'failure'} onClick={() => setActiveFilter('failure')} />
+        <StatCard label="Obsolete / Age Risk" value={obsoleteAgeRisk.length} icon={<Clock className="h-6 w-6" />} color="yellow" active={activeFilter === 'age'} onClick={() => setActiveFilter('age')} />
+        <StatCard label="Spare Parts Unsupported" value={poorSpareSupport.length} icon={<PackageCheck className="h-6 w-6" />} color="yellow" active={activeFilter === 'spare'} onClick={() => setActiveFilter('spare')} />
+        <StatCard label="Critical Service Risk" value={criticalClinicalImpact.length} icon={<ClipboardList className="h-6 w-6" />} color="orange" active={activeFilter === 'critical'} onClick={() => setActiveFilter('critical')} />
       </div>
+
+      <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4">
+        <h2 className="text-base font-semibold text-[var(--foreground)]">Prototype Decision Thresholds</h2>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">RPI &gt;= 0.70 means Strong replacement candidate. RPI 0.55-0.69 means Review candidate. RPI &lt; 0.55 means Monitor. These are prototype decision thresholds used for demonstration and sensitivity testing; they do not automatically approve replacement.</p>
+      </section>
 
       {topCandidates.length > 0 && (
         <div className="grid gap-4 md:grid-cols-3">
@@ -309,13 +343,25 @@ export default function ReplacementPage() {
         </div>
       )}
 
-      <ChartCard title="Replacement Priority Index" description="Current live ranking snapshot. Sandbox comparisons are developer-only.">
+      <ChartCard title="Replacement Priority Index" description="Current live ranking snapshot. Sandbox comparisons and threshold sensitivity are developer-only.">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {(['10', '20', 'all'] as const).map((limit) => (
+            <button
+              key={limit}
+              type="button"
+              onClick={() => setChartLimit(limit)}
+              className={`rounded-lg border px-3 py-1 text-xs font-medium ${chartLimit === limit ? 'border-[var(--brand)] bg-[var(--surface-2)] text-[var(--foreground)]' : 'border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--brand)]/50'}`}
+            >
+              {limit === 'all' ? 'All' : `Top ${limit}`}
+            </button>
+          ))}
+        </div>
         {ranked.length > 0 ? (
           <HorizontalBarChart
-            labels={ranked.map((d) => d.equipment_assets?.asset_code ?? d.asset_id)}
-            values={ranked.map((d) => rpiValue(d))}
-            colors={ranked.map((d) => rpiColor(rpiValue(d)))}
-            height={Math.max(300, ranked.length * 28)}
+            labels={chartRows.map((d) => d.equipment_assets?.asset_code ?? d.asset_id)}
+            values={chartRows.map((d) => rpiValue(d))}
+            colors={chartRows.map((d) => rpiColor(rpiValue(d)))}
+            height={chartLimit === 'all' ? 520 : Math.max(300, chartRows.length * 32)}
           />
         ) : (
           <p className="py-12 text-center text-sm text-[var(--text-muted)]">No replacement priority scores found. Run analytics recompute from Developer Lab if this is unexpected.</p>
@@ -324,7 +370,7 @@ export default function ReplacementPage() {
 
       <DataTable<ReplacementRow>
         columns={columns}
-        data={ranked}
+        data={filteredRows}
         keyField="id"
         searchPlaceholder="Search replacement candidates..."
         emptyMessage="No replacement candidates found"

@@ -57,12 +57,28 @@ const METHOD_CARDS = [
     href: '/command',
   },
   {
-    title: 'Compliance Scores',
-    formula: 'Compliance = completed scheduled tasks / total scheduled tasks',
+    title: 'PM Compliance',
+    formula: 'PMC = completed scheduled PM tasks / total scheduled PM tasks',
     criteria: 'Completed, scheduled, deferred, skipped, and overdue task evidence',
-    source: 'pm_schedules, pm_completions, calibration_records',
-    interpretation: 'Shows whether preventive controls are being performed on time.',
+    source: 'pm_schedules, pm_completions',
+    interpretation: 'Shows whether preventive maintenance controls are being performed on time.',
     href: '/reports/pm',
+  },
+  {
+    title: 'Calibration Risk',
+    formula: 'Priority = overdue severity + criticality + last result + department impact + workflow state',
+    criteria: 'Days overdue, equipment criticality, failed/adjusted results, high-impact departments, and open request state',
+    source: 'calibration_records, calibration_requests, equipment_assets',
+    interpretation: 'Highlights safety and accuracy compliance work without treating every overdue item as equally critical.',
+    href: '/calibration',
+  },
+  {
+    title: 'Workload / Capacity Score',
+    formula: 'Capacity pressure = open assigned work + overdue work + high-priority work',
+    criteria: 'Assigned work orders, in-progress work, on-hold blockers, priority, and age',
+    source: 'work_orders, profiles',
+    interpretation: 'Supports assignment review; it does not override BME Head staffing judgment.',
+    href: '/work-orders',
   },
   {
     title: 'Stock Blocker Priority',
@@ -102,7 +118,7 @@ function countByMissing<T>(rows: T[], predicate: (row: T) => boolean) {
 }
 
 export default async function DeveloperLabPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireRole(['developer']);
+  await requireRole(['developer', 'admin']);
   await searchParams;
   const supabase = await createClient();
   const currentDate = today();

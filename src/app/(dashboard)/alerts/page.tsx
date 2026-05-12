@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   Bell,
@@ -103,12 +104,14 @@ function sourceHref(alert: AlertRow) {
 }
 
 function sourceActionLabel(alert: AlertRow) {
-  if (alert.flag_type === 'replacement_candidate') return 'Evidence';
-  if (['calibrate_soon'].includes(alert.flag_type)) return 'Calibration';
-  if (['prioritize_pm', 'overdue_pm'].includes(alert.flag_type)) return 'PM';
-  if (['part_shortage', 'low_stock'].includes(alert.flag_type)) return 'Stock';
-  if (['urgent_maintenance', 'recurring_failure'].includes(alert.flag_type)) return 'Request';
-  return 'Source';
+  if (alert.flag_type === 'replacement_candidate') return 'Open Replacement Evidence';
+  if (['calibrate_soon'].includes(alert.flag_type)) return 'Open Calibration Task';
+  if (['prioritize_pm', 'overdue_pm'].includes(alert.flag_type)) return 'Open PM Task';
+  if (['part_shortage', 'low_stock'].includes(alert.flag_type)) return 'Open Stock Detail';
+  if (alert.flag_type === 'urgent_maintenance') return 'Create Maintenance Request';
+  if (alert.flag_type === 'recurring_failure') return 'Open Maintenance Evidence';
+  if (alert.flag_type === 'high_risk') return 'Open Asset Profile';
+  return 'Open Source Record';
 }
 
 function alertGroup(alert: AlertRow) {
@@ -120,6 +123,7 @@ function alertGroup(alert: AlertRow) {
 }
 
 export default function AlertsPage() {
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { profile } = useProfile(user?.id);
   const { primaryRole } = useRole();
@@ -128,6 +132,10 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({ severity: '', flag_type: '' });
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'act-now' ? 'act_now' : tab ?? 'act_now';
+  });
 
   useEffect(() => {
     async function load() {
@@ -177,8 +185,15 @@ export default function AlertsPage() {
   const criticalCount = unacknowledged.filter((d) => d.severity === 'critical').length;
   const highCount = unacknowledged.filter((d) => d.severity === 'high').length;
   const mediumCount = unacknowledged.filter((d) => d.severity === 'medium').length;
-  const infoCount = unacknowledged.filter((d) => d.severity === 'low').length;
   const acknowledgedCount = data.filter((d) => d.is_acknowledged).length;
+  const overdueCount = unacknowledged.filter((d) => ['overdue_pm', 'calibrate_soon'].includes(d.flag_type)).length;
+  const stockCount = unacknowledged.filter((d) => ['part_shortage', 'low_stock'].includes(d.flag_type)).length;
+  const riskCount = unacknowledged.filter((d) => ['replacement_candidate', 'high_risk', 'low_availability'].includes(d.flag_type)).length;
+
+  function showAlertTab(tab: string, nextFilters: Record<string, string> = { severity: '', flag_type: '' }) {
+    setActiveTab(tab);
+    setFilters(nextFilters);
+  }
 
   const filterByGroup = (group: string) => {
     if (group === 'acknowledged') return data.filter((d) => d.is_acknowledged);
@@ -220,6 +235,7 @@ export default function AlertsPage() {
                     )}
                   </div>
                   <div className="mt-2 text-sm text-gray-800 dark:text-gray-200">
+                    <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">Why it triggered</p>
                     <ExpandableText
                       text={generateAlertSummary({
                         assetName: alert.equipment_assets?.name,
@@ -300,7 +316,7 @@ export default function AlertsPage() {
     },
     {
       id: 'risk',
-      label: 'Risk',
+      label: 'Risk / Replacement',
       count: filterByGroup('risk').length,
       content: renderAlertList(filterByGroup('risk')),
     },
@@ -341,6 +357,7 @@ export default function AlertsPage() {
           value={criticalCount}
           icon={<ShieldAlert className="h-6 w-6" />}
           color="red"
+          active={filters.severity === 'critical'}
           onClick={() => setFilters((prev) => ({ ...prev, severity: 'critical' }))}
         />
         <StatCard
@@ -348,6 +365,7 @@ export default function AlertsPage() {
           value={highCount}
           icon={<AlertTriangle className="h-6 w-6" />}
           color="orange"
+          active={filters.severity === 'high'}
           onClick={() => setFilters((prev) => ({ ...prev, severity: 'high' }))}
         />
         <StatCard
@@ -355,6 +373,7 @@ export default function AlertsPage() {
           value={mediumCount}
           icon={<Clock className="h-6 w-6" />}
           color="yellow"
+          active={filters.severity === 'medium'}
           onClick={() => setFilters((prev) => ({ ...prev, severity: 'medium' }))}
         />
         <StatCard
@@ -362,31 +381,40 @@ export default function AlertsPage() {
           value={unacknowledged.length}
           icon={<Bell className="h-6 w-6" />}
           color="blue"
-          onClick={() => setFilters({ severity: '', flag_type: '' })}
-        />
-        <StatCard
-          label="Info"
-          value={infoCount}
-          icon={<Info className="h-6 w-6" />}
-          color="blue"
+          active={activeTab !== 'acknowledged' && !filters.severity && !filters.flag_type}
+          onClick={() => showAlertTab('act_now')}
         />
         <StatCard
           label="Acknowledged"
           value={acknowledgedCount}
           icon={<CheckCircle className="h-6 w-6" />}
           color="green"
-        />
-        <StatCard
-          label="Monitoring"
-          value={filterByGroup('monitoring').length}
-          icon={<Clock className="h-6 w-6" />}
-          color="gray"
+          active={activeTab === 'acknowledged'}
+          onClick={() => showAlertTab('acknowledged')}
         />
         <StatCard
           label="Overdue"
-          value={unacknowledged.filter((d) => ['overdue_pm', 'calibrate_soon'].includes(d.flag_type)).length}
+          value={overdueCount}
           icon={<AlertTriangle className="h-6 w-6" />}
           color="orange"
+          active={activeTab === 'overdue'}
+          onClick={() => showAlertTab('overdue')}
+        />
+        <StatCard
+          label="Stock"
+          value={stockCount}
+          icon={<AlertTriangle className="h-6 w-6" />}
+          color="yellow"
+          active={activeTab === 'stock'}
+          onClick={() => showAlertTab('stock')}
+        />
+        <StatCard
+          label="Risk / Replacement"
+          value={riskCount}
+          icon={<Info className="h-6 w-6" />}
+          color="purple"
+          active={activeTab === 'risk'}
+          onClick={() => showAlertTab('risk')}
         />
       </div>
 
@@ -410,7 +438,7 @@ export default function AlertsPage() {
         Acknowledged alerts hide from the active queue until the underlying signal changes. Informational signals should be acknowledged or converted into a real workflow item when action is needed.
       </div>
 
-      <Tabs tabs={tabData} defaultTab="act_now" />
+      <Tabs tabs={tabData} activeTab={activeTab} defaultTab="act_now" onChange={setActiveTab} />
     </div>
   );
 }

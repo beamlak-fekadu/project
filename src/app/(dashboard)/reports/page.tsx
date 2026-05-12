@@ -7,7 +7,6 @@ import {
   Boxes,
   CalendarCheck,
   ClipboardList,
-  FileBarChart,
   Gauge,
   GraduationCap,
   LockKeyhole,
@@ -166,16 +165,6 @@ const reports: ReportCard[] = [
     icon: <LockKeyhole className="h-7 w-7" />,
     color: 'text-violet-300 bg-violet-500/15',
   },
-  {
-    type: 'evaluation-demo',
-    title: 'Evaluation / Demo Report',
-    description: 'Defense-oriented evidence pack showing the operational workflows BMERMS demonstrates.',
-    metric: 'Demo evidence',
-    status: 'Partial',
-    icon: <FileBarChart className="h-7 w-7" />,
-    color: 'text-fuchsia-300 bg-fuchsia-500/15',
-    emphasis: true,
-  },
 ];
 
 const defensePackTypes = [
@@ -201,9 +190,7 @@ export default function ReportsPage() {
             <h2 className="text-base font-semibold text-[var(--foreground)]">Defense Evidence Pack</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">High-value reports for operations review, thesis defense, and BME Head evidence export.</p>
           </div>
-          <Link href="/developer-lab" className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-sm font-medium text-[var(--brand)] hover:bg-[var(--surface-2)]">
-            Demo tools
-          </Link>
+          <Badge variant="purple">Curated evidence</Badge>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           {reports.filter((report) => defensePackTypes.includes(report.type)).map((report) => (

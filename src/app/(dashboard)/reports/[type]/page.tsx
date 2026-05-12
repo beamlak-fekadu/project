@@ -13,6 +13,7 @@ import * as reportsService from '@/services/reports.service';
 import * as settingsService from '@/services/settings.service';
 import type { ReportFilters } from '@/services/reports.service';
 import { exportToCSV, exportToPDF } from '@/utils/export';
+import { prepareReportSnapshotAction } from '@/actions/reports.actions';
 
 type Row = Record<string, unknown>;
 
@@ -67,6 +68,16 @@ function methodologyFor(type: string) {
   if (normalized === 'risk-fmea') return 'FMEA reporting uses severity, occurrence, detectability, and RPN with assignment method and explanation evidence where available.';
   if (normalized === 'procurement-pipeline') return 'Procurement evidence follows each request through status, priority, expected delivery, delay, and justification.';
   return 'Rows come from the operational source tables for this module. Filters narrow evidence; exports use the same filtered row set shown on screen.';
+}
+
+function summarizeReport(type: string, rows: Row[]) {
+  const normalized = normalizeReportType(type);
+  if (normalized === 'maintenance') return `This maintenance evidence snapshot contains ${rows.length} maintenance events for repair history, downtime, service cost, and recurring failure review.`;
+  if (normalized === 'pm') return `This PM compliance snapshot contains ${rows.length} scheduled task rows, separating completed evidence from skipped, deferred, overdue, and active work.`;
+  if (normalized === 'calibration') return `This calibration snapshot contains ${rows.length} calibration records with due dates, failed or adjusted results, and safety follow-up evidence.`;
+  if (normalized === 'replacement-planning') return `This replacement planning snapshot contains ${rows.length} ranked assets with RPI component scores and lifecycle evidence.`;
+  if (normalized === 'procurement-pipeline') return `This procurement snapshot contains ${rows.length} requests across review, order, transit, delivery, and delay states.`;
+  return `This report contains ${rows.length} operational evidence rows from the source tables used by BMERMS workflows.`;
 }
 
 function getReportConfig(type: string): ReportConfig | null {
@@ -568,6 +579,8 @@ export default function ReportTypePage() {
   const [departments, setDepartments] = useState<{ value: string; label: string }[]>([]);
   const [categoriesList, setCategoriesList] = useState<{ value: string; label: string }[]>([]);
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const [generatedAt, setGeneratedAt] = useState(() => new Date().toISOString());
+  const [refreshStatus, setRefreshStatus] = useState('pending');
 
   const config = useMemo(() => getReportConfig(reportType), [reportType]);
 
@@ -598,6 +611,14 @@ export default function ReportTypePage() {
     if (!config) return;
     setLoading(true);
     try {
+      const snapshot = await prepareReportSnapshotAction(reportType);
+      if (snapshot.success && snapshot.data) {
+        setGeneratedAt(snapshot.data.generatedAt);
+        setRefreshStatus(snapshot.data.refreshStatus);
+      } else {
+        setGeneratedAt(new Date().toISOString());
+        setRefreshStatus(snapshot.error ? `warning: ${snapshot.error}` : 'warning: refresh unavailable');
+      }
       const filters: ReportFilters = {};
       if (filterValues.department_id) filters.department_id = filterValues.department_id;
       if (filterValues.category_id) filters.category_id = filterValues.category_id;
@@ -613,7 +634,7 @@ export default function ReportTypePage() {
     } finally {
       setLoading(false);
     }
-  }, [config, filterValues, toast]);
+  }, [config, filterValues, reportType, toast]);
 
   useEffect(() => { loadReferenceData(); }, [loadReferenceData]);
   useEffect(() => { loadData(); }, [loadData]);
@@ -729,6 +750,13 @@ export default function ReportTypePage() {
   };
 
   const showDateFilters = config.filterDefs.includes('date_range');
+  const statusCounts = data.reduce<Record<string, number>>((acc, row) => {
+    const key = String(row.status ?? row.condition ?? row.result ?? row.priority ?? 'record');
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+  const statusBreakdown = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topBreakdownTotal = Math.max(1, ...statusBreakdown.map(([, count]) => count));
 
   return (
     <div>
@@ -757,6 +785,17 @@ export default function ReportTypePage() {
         }
       />
 
+      <section className="mb-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--foreground)]">Executive Summary</h2>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">{summarizeReport(reportType, data)}</p>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">This report represents a system snapshot generated at {new Date(generatedAt).toLocaleString()}. Operational metrics were refreshed before report generation when the current role was permitted to run the safe snapshot refresh.</p>
+          </div>
+          <Badge variant={refreshStatus.startsWith('warning') ? 'warning' : 'success'}>{refreshStatus.startsWith('warning') ? 'Freshness warning' : 'Snapshot refreshed'}</Badge>
+        </div>
+      </section>
+
       <section className="mb-6 grid gap-3 md:grid-cols-3">
         <div className="panel-surface rounded-lg p-4">
           <p className="text-sm text-[var(--text-muted)]">Rows in evidence set</p>
@@ -767,14 +806,34 @@ export default function ReportTypePage() {
           <p className="mt-1 text-lg font-semibold text-[var(--foreground)]">CSV/PDF ready</p>
         </div>
         <div className="panel-surface rounded-lg p-4">
-          <p className="text-sm text-[var(--text-muted)]">Evidence scope</p>
-          <p className="mt-1 text-lg font-semibold text-[var(--foreground)]">{Object.keys(filterValues).filter((key) => filterValues[key]).length || 'All'} active filter{Object.keys(filterValues).filter((key) => filterValues[key]).length === 1 ? '' : 's'}</p>
+          <p className="text-sm text-[var(--text-muted)]">Generated at</p>
+          <p className="mt-1 text-lg font-semibold text-[var(--foreground)]">{new Date(generatedAt).toLocaleString()}</p>
         </div>
       </section>
+
+      {statusBreakdown.length > 0 && (
+        <section className="mb-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4">
+          <h2 className="text-base font-semibold text-[var(--foreground)]">Visual Summary</h2>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {statusBreakdown.map(([label, count]) => (
+              <div key={label} className="rounded-lg border border-[var(--border-subtle)] p-3">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-[var(--foreground)]">{formatLabel(label)}</span>
+                  <span className="text-[var(--text-muted)]">{count}</span>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-[var(--surface-3)]">
+                  <div className="h-2 rounded-full bg-[var(--brand)]" style={{ width: `${Math.max(8, (count / topBreakdownTotal) * 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4">
         <h2 className="text-base font-semibold text-[var(--foreground)]">Methodology</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">{methodologyFor(reportType)}</p>
+        {refreshStatus.startsWith('warning') && <p className="mt-2 text-sm text-amber-300">Data freshness note: {refreshStatus}</p>}
       </section>
 
       <div className="mb-6 space-y-4">

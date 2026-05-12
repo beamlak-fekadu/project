@@ -1,6 +1,6 @@
 # AGENTS.md — BMERMS Codebase Reference for AI Agents
 
-Last updated: 2026-05-11 (type generation cleanup)
+Last updated: 2026-05-11 (final workflow polishing pass)
 Branch: BMERMS_V4
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
@@ -205,6 +205,8 @@ supabase.rpc('refresh_decision_support_snapshots')
   All fetchers wrap in try/catch with graceful empty fallbacks for missing tables.
 
 ### Command Center action and count semantics
+- Final polishing rule: no passive dashboards. Every operational count card must filter the current surface
+  or route to an exact filtered surface, and every row should expose a state-aware next action.
 - BME Head decision principle: the system recommends, ranks, scores, and explains; the BME Head makes the final decision.
 - Row-level action rule: if a row represents an existing record, open that exact record
   (`/maintenance/work-orders/[id]`, `/maintenance/requests/[id]`, `/pm/schedules/[id]`,
@@ -265,6 +267,18 @@ supabase.rpc('refresh_decision_support_snapshots')
 9. Alerts is a Command Center-style operational alert inbox using recommendation flags today, with source actions and acknowledgement. A richer notification subsystem is deferred.
 10. Reports is the evidence/export center for operations, inventory, maintenance, work orders, PM, calibration, risk/FMEA, replacement, readiness, stock, procurement, training, disposal, workload, audit/security, and demo reports.
 11. Audit Log must not crash on empty/failing audit data. Developer/admin see diagnostics; BME Head sees governance evidence.
+
+### Final Workflow Polishing Semantics (2026-05-11)
+1. Calibration triage priority is deterministic and explainable: overdue severity + equipment criticality + last result risk + department impact + open workflow state. Triage sections are Urgent Safety Risk, Needs Scheduling, Awaiting Action, and Longest Overdue.
+2. Maintenance condition trace is visible on request and work-order detail pages. Request reported_condition syncs equipment condition for needs_repair/non_functional; work start sets under_maintenance; completion applies final_equipment_condition from the completion outcome.
+3. Work Orders default to active work. Critical/High counts are active-only; completed work is history/evidence and lives behind Completed filters.
+4. Spare Parts uses duplicate-safe procurement behavior: low-stock/stockout rows show Track Procurement when an open procurement row already exists, otherwise Request Procurement/Create Urgent Procurement.
+5. Logistics represents the MEMIS-style store workflow: Receive -> Request -> Approve -> Issue -> Balance/Bin Card -> Usage Evidence. Top cards route to filtered Spare Parts, Procurement, or local Logistics panels.
+6. Procurement cards filter the pipeline and permitted users can update status inline. Delivered procurement points to Receive Stock so stock balances are updated through the stock workflow.
+7. Replacement thresholds are prototype/system decision thresholds only: RPI >= 0.70 strong candidate, 0.55-0.69 review candidate, <0.55 monitor. They do not approve replacement automatically; sensitivity controls live in Developer Lab only.
+8. Reports prepare a timestamped snapshot, attempt a safe decision-support snapshot refresh, write audit evidence when permitted, and display freshness/methodology notes.
+9. Settings consolidates profile/password, reference data, user management, role permissions, and security posture. BME Head can view governance sections; mutation controls remain developer/admin-gated.
+10. Developer Lab is under Command for developer/admin roles. Sensitivity tabs are simulation only unless a deliberate refresh/recompute action is run.
 
 ### Requests Hub Semantics (session 13)
 1. Requests Hub (`/requests`) is central intake and cross-category tracking, not a replacement for operational modules.

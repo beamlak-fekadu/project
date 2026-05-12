@@ -30,6 +30,8 @@ import { useRole } from '@/hooks/useRole';
 type DisposalRow = Record<string, unknown>;
 type DisposedRow = Record<string, unknown>;
 type CandidateRow = Record<string, unknown>;
+type DisposalTab = 'requests' | 'candidates' | 'disposed';
+type DisposalFilter = 'all' | 'pending' | 'approved' | 'completed' | 'replacement' | 'non-repairable' | 'high-burden' | 'missing-evidence';
 
 const disposalMethodOptions: { value: DisposalMethod; label: string }[] = [
   { value: 'auction', label: 'Auction' },
@@ -52,6 +54,11 @@ function formatLabel(val: string) {
   return val.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function normalizeDisposalTab(value: string | null): DisposalTab | '' {
+  if (value === 'requests' || value === 'candidates' || value === 'disposed') return value;
+  return '';
+}
+
 export default function DisposalPage() {
   const { toast } = useToast();
   const { canManageMaintenance, primaryRole } = useRole();
@@ -62,6 +69,8 @@ export default function DisposalPage() {
   const [assets, setAssets] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<DisposalTab | ''>(() => normalizeDisposalTab(searchParams.get('tab')));
+  const [activeFilter, setActiveFilter] = useState<DisposalFilter>('all');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [approveTarget, setApproveTarget] = useState<DisposalRow | null>(null);
@@ -84,7 +93,8 @@ export default function DisposalPage() {
           .select(`
             id, asset_id, disposal_request_id, disposal_date, disposal_method,
             disposal_value, disposed_by, notes, created_at,
-            equipment_assets(id, asset_code, name)
+            equipment_assets(id, asset_code, name),
+            disposed_by_profile:profiles!disposed_assets_disposed_by_fkey(id, full_name, email)
           `)
           .order('disposal_date', { ascending: false }),
         getEquipmentList(),
@@ -256,27 +266,29 @@ export default function DisposalPage() {
         if (row.status !== 'pending' || !canManageMaintenance) {
           return (
             <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/disposal?requestId=${row.id as string}`}>
-              View
+              {row.status === 'completed' ? 'View Disposal Evidence' : row.status === 'rejected' ? 'View Reason' : 'Review Request'}
             </Link>
           );
         }
         return (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={(e) => { e.stopPropagation(); setApproveTarget(row); }}
               title="Approve"
             >
               <CheckCircle className="h-4 w-4 text-green-500" />
+              Approve Request
             </Button>
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={(e) => { e.stopPropagation(); setRejectTarget(row); }}
               title="Reject"
             >
               <XCircle className="h-4 w-4 text-red-500" />
+              Reject
             </Button>
           </div>
         );
@@ -310,7 +322,19 @@ export default function DisposalPage() {
       render: (row: DisposedRow) =>
         row.disposal_value != null ? `$${(row.disposal_value as number).toFixed(2)}` : '—',
     },
-    { key: 'disposed_by', header: 'Disposed By' },
+    {
+      key: 'disposed_by',
+      header: 'Disposed By',
+      render: (row: DisposedRow) => {
+        const profile = row.disposed_by_profile as { full_name?: string | null; email?: string | null } | null;
+        return (
+          <div>
+            <p>{profile?.full_name ?? profile?.email ?? 'Unknown user'}</p>
+            {!profile && row.disposed_by ? <p className="text-xs text-[var(--text-muted)]">{String(row.disposed_by).slice(0, 8)}...</p> : null}
+          </div>
+        );
+      },
+    },
     {
       key: 'action',
       header: 'Action',
@@ -333,10 +357,27 @@ export default function DisposalPage() {
     return ['non_functional', 'decommissioned'].includes(String(asset?.condition ?? ''));
   });
   const highMaintenance = candidates.filter((row) => Number(row.maintenance_burden_score ?? 0) >= 0.7);
-  const requestedTab = searchParams.get('tab');
-  const defaultTab = requestedTab && ['requests', 'candidates', 'disposed'].includes(requestedTab)
-    ? requestedTab
-    : disposalRequests.length === 0 && candidates.length > 0 ? 'candidates' : 'requests';
+  const defaultTab: DisposalTab = normalizeDisposalTab(searchParams.get('tab'))
+    || (pending.length > 0 ? 'requests' : disposalRequests.length === 0 && candidates.length > 0 ? 'candidates' : 'disposed');
+  const selectedTab = activeTab || defaultTab;
+  function selectDisposalView(tab: DisposalTab, filter: DisposalFilter = 'all') {
+    setActiveTab(tab);
+    setActiveFilter(filter);
+  }
+  const filteredRequests = disposalRequests.filter((row) => {
+    if (activeFilter === 'pending') return row.status === 'pending';
+    if (activeFilter === 'approved') return row.status === 'approved';
+    if (activeFilter === 'missing-evidence') return missingEvidence.some((item) => item.id === row.id);
+    return true;
+  });
+  const filteredCandidates = candidates.filter((row) => {
+    if (activeFilter === 'replacement') return true;
+    if (activeFilter === 'non-repairable') return nonRepairable.some((item) => item.id === row.id);
+    if (activeFilter === 'high-burden') return highMaintenance.some((item) => item.id === row.id);
+    if (activeFilter === 'missing-evidence') return !row.existing_request;
+    return true;
+  });
+  const filteredDisposed = activeFilter === 'completed' ? disposedAssets : disposedAssets;
 
   const candidateColumns = [
     {
@@ -388,15 +429,15 @@ export default function DisposalPage() {
         return (
           <div className="flex flex-wrap gap-1.5">
             {row.existing_request ? (
-              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/disposal?assetId=${assetId}`}>Request</Link>
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/disposal?assetId=${assetId}`}>Review Request</Link>
             ) : canManageMaintenance ? (
               <button type="button" className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" onClick={() => { setFormAssetId(assetId); setFormReason(String(row.reason ?? 'Lifecycle evidence supports disposal review.')); setCreateOpen(true); }}>
-                Request
+                Create Disposal Request
               </button>
             ) : null}
-            <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={replacementEvidence(assetId)}>Evidence</Link>
+            <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={replacementEvidence(assetId)}>Open Replacement Evidence</Link>
             {assetId && (
-              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/equipment/${assetId}`}>Asset</Link>
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/equipment/${assetId}`}>Open Asset Profile</Link>
             )}
           </div>
         );
@@ -412,7 +453,7 @@ export default function DisposalPage() {
       content: (
         <DataTable
           columns={requestColumns}
-          data={disposalRequests}
+          data={filteredRequests}
           searchPlaceholder="Search disposal requests..."
           emptyMessage="No disposal requests found"
           actions={canManageMaintenance ? (
@@ -431,7 +472,7 @@ export default function DisposalPage() {
       content: (
         <DataTable
           columns={candidateColumns}
-          data={candidates}
+          data={filteredCandidates}
           searchPlaceholder="Search disposal candidates..."
           emptyMessage="No disposal candidates found"
         />
@@ -444,7 +485,7 @@ export default function DisposalPage() {
       content: (
         <DataTable
           columns={disposedColumns}
-          data={disposedAssets}
+          data={filteredDisposed}
           searchPlaceholder="Search disposed assets..."
           emptyMessage="No disposed assets found"
         />
@@ -466,14 +507,14 @@ export default function DisposalPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Disposal Requests" value={disposalRequests.length} icon={<ClipboardList className="h-6 w-6" />} color="blue" />
-        <StatCard label="Pending Review" value={pending.length} icon={<AlertTriangle className="h-6 w-6" />} color="yellow" />
-        <StatCard label="Approved Disposal" value={approved.length} icon={<CheckCircle className="h-6 w-6" />} color="purple" />
-        <StatCard label="Completed Disposal" value={disposedAssets.length || completed.length} icon={<Trash2 className="h-6 w-6" />} color="green" />
-        <StatCard label="Replacement Candidates" value={candidates.length} icon={<Recycle className="h-6 w-6" />} color="orange" />
-        <StatCard label="Non-repairable Assets" value={nonRepairable.length} icon={<FileWarning className="h-6 w-6" />} color="red" />
-        <StatCard label="High Maintenance Burden" value={highMaintenance.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="Missing Evidence" value={missingEvidence.length} icon={<FileWarning className="h-6 w-6" />} color="gray" />
+        <StatCard label="Disposal Requests" value={disposalRequests.length} icon={<ClipboardList className="h-6 w-6" />} color="blue" active={selectedTab === 'requests' && activeFilter === 'all'} onClick={() => selectDisposalView('requests')} />
+        <StatCard label="Pending Review" value={pending.length} icon={<AlertTriangle className="h-6 w-6" />} color="yellow" active={activeFilter === 'pending'} onClick={() => selectDisposalView('requests', 'pending')} />
+        <StatCard label="Approved Disposal" value={approved.length} icon={<CheckCircle className="h-6 w-6" />} color="purple" active={activeFilter === 'approved'} onClick={() => selectDisposalView('requests', 'approved')} />
+        <StatCard label="Completed Disposal" value={disposedAssets.length || completed.length} icon={<Trash2 className="h-6 w-6" />} color="green" active={selectedTab === 'disposed'} onClick={() => selectDisposalView('disposed', 'completed')} />
+        <StatCard label="Replacement Candidates" value={candidates.length} icon={<Recycle className="h-6 w-6" />} color="orange" active={selectedTab === 'candidates' && activeFilter === 'replacement'} onClick={() => selectDisposalView('candidates', 'replacement')} />
+        <StatCard label="Non-repairable Assets" value={nonRepairable.length} icon={<FileWarning className="h-6 w-6" />} color="red" active={activeFilter === 'non-repairable'} onClick={() => selectDisposalView('candidates', 'non-repairable')} />
+        <StatCard label="High Maintenance Burden" value={highMaintenance.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={activeFilter === 'high-burden'} onClick={() => selectDisposalView('candidates', 'high-burden')} />
+        <StatCard label="Missing Evidence" value={missingEvidence.length} icon={<FileWarning className="h-6 w-6" />} color="gray" active={activeFilter === 'missing-evidence'} onClick={() => selectDisposalView(missingEvidence.length > 0 ? 'requests' : 'candidates', 'missing-evidence')} />
       </div>
 
       {disposalRequests.length === 0 && candidates.length > 0 && (
@@ -488,7 +529,7 @@ export default function DisposalPage() {
         </section>
       )}
 
-      <Tabs tabs={tabs} defaultTab={defaultTab} />
+      <Tabs tabs={tabs} activeTab={selectedTab} defaultTab={defaultTab} onChange={(tabId) => { setActiveTab(tabId as DisposalTab); setActiveFilter('all'); }} />
 
       {/* New Request Modal */}
       <Modal

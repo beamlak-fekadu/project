@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle, Clock, Factory, UserPlus, Wrench } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle, Clock, UserPlus, Wrench } from 'lucide-react';
 import { PageHeader, DataTable, Button, Spinner, StatCard, Badge } from '@/components/ui';
 import { UrgencyBadge, WorkOrderStatusBadge } from '@/components/ui/StatusBadge';
 import { getWorkOrders } from '@/services/maintenance.service';
@@ -26,9 +26,9 @@ const FILTERS = [
   { id: 'assigned', label: 'Assigned' },
   { id: 'in_progress', label: 'In Progress' },
   { id: 'on_hold', label: 'On Hold' },
+  { id: 'overdue', label: 'Overdue' },
   { id: 'completed', label: 'Completed' },
-  { id: 'external', label: 'External Vendor' },
-  { id: 'critical', label: 'Critical/High' },
+  { id: 'critical-active', label: 'Critical/High' },
 ] as const;
 
 type FilterId = typeof FILTERS[number]['id'];
@@ -58,28 +58,41 @@ function isActiveWork(row: WorkOrderRow) {
   return ['open', 'assigned', 'in_progress', 'on_hold'].includes(row.status);
 }
 
+function isOverdueActive(row: WorkOrderRow) {
+  return isActiveWork(row) && ageDays(row) >= 7;
+}
+
 function priorityRank(row: WorkOrderRow) {
   return ({ critical: 0, high: 1, medium: 2, low: 3 } as Record<string, number>)[row.priority] ?? 4;
 }
 
 function nextAction(row: WorkOrderRow, canMutate: boolean) {
-  if (row.status === 'completed') return { label: 'Evidence', href: workOrderDetail(row.id) };
-  if (row.status === 'canceled') return { label: 'Record', href: workOrderDetail(row.id) };
-  if (!canMutate) return { label: 'View', href: workOrderDetail(row.id) };
-  if (row.status === 'on_hold') return { label: 'Resolve', href: workOrderDetail(row.id, 'resolve-blocker') };
-  if (row.status === 'in_progress') return { label: 'Complete', href: workOrderDetail(row.id, 'complete') };
-  if (row.status === 'open' && !row.assigned_to) return { label: 'Assign', href: workOrderDetail(row.id, 'assign') };
-  if (row.status === 'assigned') return { label: 'Start', href: workOrderDetail(row.id, 'start') };
-  return { label: 'Open', href: workOrderDetail(row.id) };
+  if (row.status === 'completed') return { label: 'View Completion Evidence', href: workOrderDetail(row.id) };
+  if (row.status === 'canceled') return { label: 'View Record', href: workOrderDetail(row.id) };
+  if (!canMutate) return { label: 'View Work Order', href: workOrderDetail(row.id) };
+  if (row.status === 'on_hold') return { label: 'Resolve Blocker', href: workOrderDetail(row.id, 'resolve-blocker') };
+  if (row.status === 'in_progress') return { label: 'Complete Work', href: workOrderDetail(row.id, 'complete') };
+  if (row.status === 'open' && !row.assigned_to) return { label: 'Assign Work Order', href: workOrderDetail(row.id, 'assign') };
+  if (row.status === 'assigned') return { label: 'Start Work', href: workOrderDetail(row.id, 'start') };
+  return { label: 'Manage Work Order', href: workOrderDetail(row.id) };
 }
 
 function matchesFilter(row: WorkOrderRow, filter: FilterId) {
   if (filter === 'active') return isActiveWork(row);
   if (filter === 'all') return true;
   if (filter === 'unassigned') return ['open', 'assigned'].includes(row.status) && !row.assigned_to;
-  if (filter === 'external') return Boolean(row.external_vendor || row.external_vendor_name);
-  if (filter === 'critical') return ['critical', 'high'].includes(row.priority);
+  if (filter === 'overdue') return isOverdueActive(row);
+  if (filter === 'critical-active') return isActiveWork(row) && ['critical', 'high'].includes(row.priority);
   return row.status === filter;
+}
+
+function queueRank(row: WorkOrderRow) {
+  if (isOverdueActive(row)) return 0;
+  if (['critical', 'high'].includes(row.priority)) return 1;
+  if (!row.assigned_to) return 2;
+  if (row.status === 'in_progress') return 3;
+  if (row.status === 'assigned') return 4;
+  return 5;
 }
 
 export default function WorkOrdersPage() {
@@ -113,19 +126,22 @@ export default function WorkOrdersPage() {
       assigned: workOrders.filter((wo) => wo.status === 'assigned').length,
       inProgress: workOrders.filter((wo) => wo.status === 'in_progress').length,
       onHold: workOrders.filter((wo) => wo.status === 'on_hold').length,
-      criticalHigh: workOrders.filter((wo) => ['critical', 'high'].includes(wo.priority)).length,
+      overdueActive: open.filter(isOverdueActive).length,
+      criticalHigh: open.filter((wo) => ['critical', 'high'].includes(wo.priority)).length,
       completedMonth: workOrders.filter((wo) => {
         if (!wo.completed_at) return false;
         const date = new Date(wo.completed_at);
         return date.getMonth() === thisMonth.getMonth() && date.getFullYear() === thisMonth.getFullYear();
       }).length,
-      external: workOrders.filter((wo) => wo.external_vendor || wo.external_vendor_name).length,
     };
   }, [workOrders]);
 
   const filteredRows = useMemo(() => workOrders.filter((row) => matchesFilter(row, filter)), [filter, workOrders]);
   const activeQueue = useMemo(
-    () => workOrders.filter(isActiveWork).sort((a, b) => priorityRank(a) - priorityRank(b) || ageDays(b) - ageDays(a)).slice(0, 4),
+    () => workOrders
+      .filter(isActiveWork)
+      .sort((a, b) => queueRank(a) - queueRank(b) || priorityRank(a) - priorityRank(b) || ageDays(b) - ageDays(a))
+      .slice(0, 6),
     [workOrders]
   );
 
@@ -188,9 +204,21 @@ export default function WorkOrdersPage() {
       render: (row: WorkOrderRow) => {
         const action = nextAction(row, canManageMaintenance);
         return (
-          <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={action.href}>
-            {action.label}
-          </Link>
+          <div className="flex flex-wrap gap-1.5">
+            <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={action.href}>
+              {action.label}
+            </Link>
+            {canManageMaintenance && row.status === 'assigned' && (
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={workOrderDetail(row.id, 'reassign')}>
+                Reassign
+              </Link>
+            )}
+            {canManageMaintenance && row.status === 'in_progress' && (
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={workOrderDetail(row.id, 'add-event')}>
+                Add Event
+              </Link>
+            )}
+          </div>
         );
       },
     },
@@ -223,14 +251,14 @@ export default function WorkOrdersPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active Work Orders" value={summary.open} icon={<Wrench className="h-6 w-6" />} color="blue" onClick={() => setFilter('active')} />
-        <StatCard label="Unassigned" value={summary.unassigned} icon={<UserPlus className="h-6 w-6" />} color="yellow" onClick={() => setFilter('unassigned')} />
-        <StatCard label="Assigned" value={summary.assigned} icon={<Clock className="h-6 w-6" />} color="purple" onClick={() => setFilter('assigned')} />
-        <StatCard label="In Progress" value={summary.inProgress} icon={<Clock className="h-6 w-6" />} color="orange" onClick={() => setFilter('in_progress')} />
-        <StatCard label="On Hold" value={summary.onHold} icon={<AlertTriangle className="h-6 w-6" />} color="red" onClick={() => setFilter('on_hold')} />
-        <StatCard label="Critical/High" value={summary.criticalHigh} icon={<AlertTriangle className="h-6 w-6" />} color="red" onClick={() => setFilter('critical')} />
-        <StatCard label="Completed This Month" value={summary.completedMonth} icon={<CheckCircle className="h-6 w-6" />} color="green" onClick={() => setFilter('completed')} />
-        <StatCard label="External Vendor" value={summary.external} icon={<Factory className="h-6 w-6" />} color="gray" onClick={() => setFilter('external')} />
+        <StatCard label="Active Work Orders" value={summary.open} icon={<Wrench className="h-6 w-6" />} color="blue" active={filter === 'active'} onClick={() => setFilter('active')} />
+        <StatCard label="Unassigned" value={summary.unassigned} icon={<UserPlus className="h-6 w-6" />} color="yellow" active={filter === 'unassigned'} onClick={() => setFilter('unassigned')} />
+        <StatCard label="Assigned" value={summary.assigned} icon={<Clock className="h-6 w-6" />} color="purple" active={filter === 'assigned'} onClick={() => setFilter('assigned')} />
+        <StatCard label="In Progress" value={summary.inProgress} icon={<Clock className="h-6 w-6" />} color="orange" active={filter === 'in_progress'} onClick={() => setFilter('in_progress')} />
+        <StatCard label="On Hold" value={summary.onHold} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={filter === 'on_hold'} onClick={() => setFilter('on_hold')} />
+        <StatCard label="Overdue Active" value={summary.overdueActive} icon={<CalendarClock className="h-6 w-6" />} color="orange" active={filter === 'overdue'} onClick={() => setFilter('overdue')} />
+        <StatCard label="Critical/High Active Work" value={summary.criticalHigh} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={filter === 'critical-active'} onClick={() => setFilter('critical-active')} />
+        <StatCard label="Completed This Month" value={summary.completedMonth} icon={<CheckCircle className="h-6 w-6" />} color="green" active={filter === 'completed'} onClick={() => setFilter('completed')} />
       </div>
 
       {activeQueue.length > 0 && (
@@ -238,7 +266,7 @@ export default function WorkOrdersPage() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-[var(--foreground)]">Active Work Queue</h2>
-              <p className="text-sm text-[var(--text-muted)]">Open age is shown only for unfinished work. Completed records keep duration as evidence.</p>
+          <p className="text-sm text-[var(--text-muted)]">Ordered by overdue active work, critical/high priority, unassigned work, in-progress work, then assigned work.</p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setFilter('active')}>Show Active</Button>
           </div>

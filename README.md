@@ -145,6 +145,7 @@ rank, score, and explain, but final operational decisions remain with the BME He
 
 ## Final Workflow Rules
 
+- No passive dashboards: every operational count should filter the current page or route to an exact filtered surface, and every operational row should expose a state-aware next action.
 - Show the operational situation, explain why it matters, show the next action, open exact records, and preserve evidence.
 - Existing record actions open exact routes. Missing workflow records open prefilled creation flows with source context.
 - Informational signals use evidence, acknowledge/snooze, or convert-to-workflow actions.
@@ -152,6 +153,18 @@ rank, score, and explain, but final operational decisions remain with the BME He
 - Replacement Priority is a planning/evidence page only; scoring sliders belong in Developer Lab.
 - Disposal requests are formal workflow rows; replacement candidates are related evidence, not disposal requests.
 - Reports is the evidence/export center across operations, inventory, maintenance, work orders, PM, calibration, risk/FMEA, replacement, readiness, stock, procurement, training, disposal, workload, audit/security, and demo reporting.
+
+### Final Polishing Behaviors
+
+- Calibration priority = overdue severity + equipment criticality + last result risk + department impact + open workflow state.
+- Maintenance condition trace is visible from request through work order start/hold/completion and final equipment condition.
+- Work Orders default to active execution; completed rows are evidence/history and Critical/High counts are active-only.
+- Spare Parts avoids duplicate procurement by showing Track Procurement when an open request already exists.
+- Logistics follows MEMIS-style store flow: Receive -> Request -> Approve -> Issue -> Balance/Bin Card -> Usage Evidence.
+- Procurement status can be advanced inline by permitted roles; delivered procurement still needs Receive Stock to update inventory.
+- Replacement thresholds are prototype decision thresholds only: RPI >= 0.70 strong candidate, 0.55-0.69 review, below 0.55 monitor.
+- Reports show a generated-at timestamp, data freshness note, methodology note, and snapshot evidence framing.
+- Settings consolidates users/security under administration; Developer Lab owns simulation-only sensitivity controls and demo evidence tools.
 
 ## Requests Hub Semantics
 

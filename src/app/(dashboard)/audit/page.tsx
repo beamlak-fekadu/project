@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/helpers';
 import { createClient } from '@/lib/supabase/server';
-import { Activity, CalendarClock, KeyRound, Monitor, ShieldAlert, Wrench } from 'lucide-react';
+import Link from 'next/link';
+import { Activity, CalendarClock, FileBarChart, KeyRound, Monitor, ShieldAlert } from 'lucide-react';
 import { PageHeader, Badge, Card, StatCard } from '@/components/ui';
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -27,6 +28,7 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
   const userId = paramValue(params, 'user_id') ?? '';
   const dateFrom = paramValue(params, 'date_from') ?? '';
   const dateTo = paramValue(params, 'date_to') ?? '';
+  const quick = paramValue(params, 'quick') ?? '';
   const page = Math.max(1, Number(paramValue(params, 'page') ?? 1) || 1);
   const pageSize = 25;
   const from = (page - 1) * pageSize;
@@ -43,6 +45,11 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
   if (userId) query = query.eq('user_id', userId);
   if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
   if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
+  if (quick === 'security') query = query.or('entity_type.ilike.%role%,entity_type.ilike.%profile%,action.ilike.%security%,action.ilike.%role%');
+  if (quick === 'data-changes') query = query.or('action.ilike.%create%,action.ilike.%update%,action.ilike.%delete%,action.ilike.%status%');
+  if (quick === 'failed') query = query.or('action.ilike.%failed%,action.ilike.%blocked%,action.ilike.%reject%,action.ilike.%cancel%');
+  if (quick === 'reports') query = query.or('entity_type.eq.reports,action.ilike.%report%');
+  if (quick === 'high-risk') query = query.or('action.ilike.%role%,action.ilike.%delete%,action.ilike.%deactivate%,action.ilike.%condition%,action.ilike.%complete%,action.ilike.%status%,action.ilike.%report%');
 
   const [{ data: rows, count, error }, { data: profiles }, { data: entityTypes }] = await Promise.all([
     query,
@@ -54,11 +61,15 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
   const uniqueEntityTypes = [...new Set((entityTypes ?? []).map((row) => row.entity_type as string).filter(Boolean))].sort();
   const visibleRows = rows ?? [];
   const today = new Date().toISOString().slice(0, 10);
+  const weekAgoDate = new Date();
+  weekAgoDate.setDate(weekAgoDate.getDate() - 7);
+  const weekAgo = weekAgoDate.toISOString();
   const todayEvents = visibleRows.filter((row) => String(row.created_at).startsWith(today)).length;
+  const weekEvents = visibleRows.filter((row) => String(row.created_at) >= weekAgo).length;
   const roleSecurityEvents = visibleRows.filter((row) => String(row.entity_type).match(/role|profile|security|settings|auth/i) || String(row.action).match(/role|profile|security|reference/i)).length;
-  const equipmentEvents = visibleRows.filter((row) => String(row.entity_type).includes('equipment')).length;
-  const workflowEvents = visibleRows.filter((row) => String(row.entity_type).match(/maintenance|work_order|pm_|calibration/i)).length;
-  const criticalEvents = visibleRows.filter((row) => String(row.action).match(/delete|deactivate|reject|security|role|dispose|complete/i)).length;
+  const dataChangeEvents = visibleRows.filter((row) => String(row.action).match(/create|update|delete|status|condition|complete/i)).length;
+  const failedEvents = visibleRows.filter((row) => String(row.action).match(/failed|blocked|reject|cancel/i)).length;
+  const reportEvents = visibleRows.filter((row) => String(row.entity_type).match(/reports/i) || String(row.action).match(/report/i)).length;
   const canSeeDiagnostics = profile.roleNames?.some((role: string) => ['developer', 'admin'].includes(role));
 
   return (
@@ -69,13 +80,13 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
         actions={<Badge variant={canSeeDiagnostics ? 'purple' : 'info'}>{canSeeDiagnostics ? 'Admin diagnostics' : 'BME Head governance'}</Badge>}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Total Events" value={count ?? 0} icon={<Activity className="h-6 w-6" />} color="blue" />
-        <StatCard label="Today" value={todayEvents} icon={<CalendarClock className="h-6 w-6" />} color="green" />
-        <StatCard label="Critical Actions" value={criticalEvents} icon={<ShieldAlert className="h-6 w-6" />} color="red" />
-        <StatCard label="Role/Security Events" value={roleSecurityEvents} icon={<KeyRound className="h-6 w-6" />} color="purple" />
-        <StatCard label="Equipment Changes" value={equipmentEvents} icon={<Monitor className="h-6 w-6" />} color="orange" />
-        <StatCard label="Maintenance/PM/Calibration" value={workflowEvents} icon={<Wrench className="h-6 w-6" />} color="gray" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <Link href="/audit"><StatCard label="Events Today" value={todayEvents} icon={<CalendarClock className="h-6 w-6" />} color="green" active={!quick} /></Link>
+        <Link href="/audit"><StatCard label="Events This Week" value={weekEvents} icon={<Activity className="h-6 w-6" />} color="blue" /></Link>
+        <Link href="/audit?quick=security"><StatCard label="Security Events" value={roleSecurityEvents} icon={<KeyRound className="h-6 w-6" />} color="purple" active={quick === 'security'} /></Link>
+        <Link href="/audit?quick=data-changes"><StatCard label="Data Changes" value={dataChangeEvents} icon={<Monitor className="h-6 w-6" />} color="orange" active={quick === 'data-changes'} /></Link>
+        <Link href="/audit?quick=failed"><StatCard label="Failed/Blocked Actions" value={failedEvents} icon={<ShieldAlert className="h-6 w-6" />} color="red" active={quick === 'failed'} /></Link>
+        <Link href="/audit?quick=reports"><StatCard label="Report Generations" value={reportEvents} icon={<FileBarChart className="h-6 w-6" />} color="gray" active={quick === 'reports'} /></Link>
       </div>
 
       <Card>
@@ -96,8 +107,16 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
           <div className="md:col-span-5 flex gap-2">
             <button type="submit" className="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-medium text-white">Apply Filters</button>
             <a href="/audit" className="rounded-md border border-[var(--border-subtle)] px-3 py-2 text-sm text-[var(--foreground)]">Clear</a>
+            <a href="/audit?quick=high-risk" className="rounded-md border border-[var(--border-subtle)] px-3 py-2 text-sm text-[var(--foreground)]">High-risk only</a>
           </div>
         </form>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p className="text-[var(--text-muted)]">High-risk events include role changes, user activation changes, equipment condition changes, work completion, PM/calibration completion, procurement status changes, report generation, deletion, cancellation, and blocked attempts when logged.</p>
+          <Link href="/reports/audit-security" className="rounded-md border border-[var(--border-subtle)] px-3 py-2 font-medium text-[var(--brand)]">Export Audit Evidence</Link>
+        </div>
       </Card>
 
       <Card padding={false}>

@@ -135,6 +135,14 @@ export default function RequestDetailPage() {
     { key: 'in_progress', label: 'In Progress', done: !!linkedWOs.find((wo) => ['in_progress', 'completed'].includes(wo.status)) },
     { key: 'completed', label: 'Completed', done: request.status === 'completed' || !!linkedWOs.find((wo) => wo.status === 'completed') },
   ];
+  const latestCompletedWO = linkedWOs.find((wo) => wo.status === 'completed' && wo.final_equipment_condition);
+  const requestedConditionEffect = request.reported_condition === 'functional_issue'
+    ? 'Equipment remains Functional unless an active work order or worse existing condition says otherwise.'
+    : request.reported_condition === 'needs_repair'
+      ? 'Equipment condition syncs to Needs repair because the request reported repair risk.'
+      : request.reported_condition === 'non_functional'
+        ? 'Equipment condition syncs to Non-functional because the request reported loss of function.'
+        : 'No condition change was reported on the request.';
 
   return (
     <div className="space-y-6">
@@ -348,6 +356,43 @@ export default function RequestDetailPage() {
                 <Link href={`/equipment/${equipment.id}`} className="block text-xs text-[var(--brand)] hover:underline">
                   View equipment detail →
                 </Link>
+              </CardContent>
+            </Card>
+          )}
+
+          {equipment && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Condition Trace</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                  <p className="text-xs text-[var(--text-muted)]">Condition at request time</p>
+                  <p className="font-medium text-[var(--foreground)]"><ReportedConditionLabel condition={request.reported_condition} /></p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{requestedConditionEffect}</p>
+                </div>
+                {openWO && (
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Current work-order state</p>
+                    <p className="font-medium text-[var(--foreground)]">{openWO.work_order_number} · {openWO.status.replace(/_/g, ' ')}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{openWO.status === 'in_progress' ? 'Started work sets the equipment condition to Under maintenance.' : openWO.status === 'on_hold' ? 'On hold preserves the current maintenance/repair condition until the blocker is resolved.' : 'Assignment/open state preserves the request condition until work starts or completes.'}</p>
+                  </div>
+                )}
+                {latestCompletedWO && (
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Final condition after completion</p>
+                    <p className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getConditionBadgeClass(latestCompletedWO.final_equipment_condition)}`}>
+                      {formatEquipmentCondition(latestCompletedWO.final_equipment_condition)}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{latestCompletedWO.completion_outcome ? `Source action: work order completion outcome ${latestCompletedWO.completion_outcome.replace(/_/g, ' ')}.` : 'Source action: work order completion.'}</p>
+                  </div>
+                )}
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                  <p className="text-xs text-[var(--text-muted)]">Current equipment condition</p>
+                  <span className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getConditionBadgeClass(equipment.condition)}`}>
+                    {formatEquipmentCondition(equipment.condition)}
+                  </span>
+                </div>
               </CardContent>
             </Card>
           )}

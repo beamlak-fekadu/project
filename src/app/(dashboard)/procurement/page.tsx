@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { AlertTriangle, ClipboardCheck, PackageCheck, Truck, Timer, CircleDollarSign } from 'lucide-react';
 import { PageHeader, StatCard, Card, CardHeader, CardTitle, DataTable, Badge, Button, Modal, Input, Select, Textarea } from '@/components/ui';
 import { getProcurementPipeline } from '@/services/procurement.service';
-import { createProcurementRequestAction } from '@/actions/procurement.actions';
+import { createProcurementRequestAction, updateProcurementStatusAction } from '@/actions/procurement.actions';
 import { procurementRequestSchema } from '@/utils/validation/operations';
 import { useToast } from '@/components/ui/Toast';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
@@ -24,6 +24,7 @@ type ProcurementRow = {
   created_at: string;
 };
 type ProcurementTableRow = ProcurementRow & Record<string, unknown>;
+type ProcurementFilter = 'all' | 'open' | 'requested' | 'approved' | 'ordered' | 'in_transit' | 'delivered' | 'delayed' | 'critical-linked' | 'stock-blockers' | 'replacement-linked';
 
 export default function ProcurementPage() {
   const { toast } = useToast();
@@ -31,6 +32,17 @@ export default function ProcurementPage() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<ProcurementRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<ProcurementFilter>(() => {
+    const requested = searchParams.get('filter');
+    if (requested === 'open') return 'open';
+    if (requested === 'delayed') return 'delayed';
+    if (requested === 'stock-blockers') return 'stock-blockers';
+    if (requested === 'replacement-linked') return 'replacement-linked';
+    if (requested === 'critical-linked') return 'critical-linked';
+    if (requested === 'requested' || requested === 'approved' || requested === 'ordered' || requested === 'in_transit' || requested === 'delivered') return requested;
+    return 'all';
+  });
   const [todayTime] = useState(() => Date.now());
   const source = searchParams.get('source');
   const hasPrefill = Boolean(source);
@@ -105,22 +117,39 @@ export default function ProcurementPage() {
   }
 
   function impactLabel(row: ProcurementRow) {
-    if (isDelayed(row)) return `Delayed ${delayDays(row)} day${delayDays(row) === 1 ? '' : 's'}`;
-    if (isStockLinked(row)) return 'Stock blocker / reorder support';
-    if (isReplacementLinked(row)) return 'Replacement planning dependency';
+    const subject = row.title?.replace(/^Procure\s+/i, '') || 'biomedical item';
+    if (isDelayed(row)) return `Delayed ${delayDays(row)} day${delayDays(row) === 1 ? '' : 's'}; affects ${sourceLabel(row).toLowerCase()} recovery for ${subject}`;
+    if (isStockLinked(row)) return `Stockout or reorder blocker; ${subject} unavailable or below reorder level`;
+    if (isReplacementLinked(row)) return `Replacement-linked procurement; needed for ${subject} planning`;
     if (row.priority === 'critical') return 'Critical biomedical dependency';
     return 'Operational procurement';
   }
 
   function actionFor(row: ProcurementRow) {
-    if (!canManageParts) return { label: 'View', href: procurementDetail(row.id) };
-    if (isDelayed(row)) return { label: 'Escalate', href: procurementDetail(row.id, 'escalate') };
-    if (row.status === 'requested') return { label: 'Review', href: procurementDetail(row.id, 'review') };
-    if (row.status === 'approved') return { label: 'Order', href: procurementDetail(row.id, 'mark-ordered') };
-    if (row.status === 'ordered') return { label: 'Delivery', href: procurementDetail(row.id, 'update-delivery') };
-    if (row.status === 'in_transit') return { label: 'Receive', href: procurementDetail(row.id, 'receive') };
-    if (row.status === 'delivered') return { label: 'Receipt', href: procurementDetail(row.id) };
-    return { label: 'View', href: procurementDetail(row.id) };
+    if (!canManageParts) return { label: 'View Procurement Evidence', href: procurementDetail(row.id) };
+    if (isDelayed(row)) return { label: 'Escalate Delay', href: procurementDetail(row.id, 'escalate') };
+    if (row.status === 'requested') return { label: 'Review / Approve', href: procurementDetail(row.id, 'review') };
+    if (row.status === 'approved') return { label: 'Place Order', href: procurementDetail(row.id, 'mark-ordered') };
+    if (row.status === 'ordered') return { label: 'Mark In Transit', href: procurementDetail(row.id, 'mark-in-transit') };
+    if (row.status === 'in_transit') return { label: 'Mark Delivered', href: procurementDetail(row.id, 'mark-delivered') };
+    if (row.status === 'delivered') return { label: 'Receive Stock', href: `/spare-parts?action=receive&source=procurement&procurementId=${row.id}` };
+    return { label: 'View Procurement Evidence', href: procurementDetail(row.id) };
+  }
+
+  async function handleStatusUpdate(row: ProcurementRow, status: string) {
+    if (status === 'canceled') {
+      window.location.href = procurementDetail(row.id, 'cancel');
+      return;
+    }
+    setStatusUpdating(row.id);
+    const result = await updateProcurementStatusAction(row.id, status);
+    setStatusUpdating(null);
+    if (!result.success) {
+      toast('error', result.error ?? 'Failed to update procurement status');
+      return;
+    }
+    setRows((current) => current.map((item) => item.id === row.id ? { ...item, status } : item));
+    toast('success', status === 'delivered' ? 'Marked delivered. Receive into stock to update balances.' : 'Procurement status updated');
   }
 
   const summary = {
@@ -135,6 +164,15 @@ export default function ProcurementPage() {
     replacementLinked: rows.filter((r) => isReplacementLinked(r)).length,
   };
   const delayedRows = rows.filter((r) => isDelayed(r)).sort((a, b) => delayDays(b) - delayDays(a));
+  const filteredRows = rows.filter((row) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'open') return !['delivered', 'canceled'].includes(row.status);
+    if (activeFilter === 'delayed') return isDelayed(row);
+    if (activeFilter === 'critical-linked') return ['critical', 'high'].includes(row.priority) && isLinked(row);
+    if (activeFilter === 'stock-blockers') return isStockLinked(row);
+    if (activeFilter === 'replacement-linked') return isReplacementLinked(row);
+    return row.status === activeFilter;
+  });
   const pipelineSteps = [
     { id: 'requested', label: 'Requested', count: summary.requested, desc: 'Needs BME review and approval.' },
     { id: 'approved', label: 'Approved', count: summary.approved, desc: 'Ready to place order.' },
@@ -159,7 +197,23 @@ export default function ProcurementPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (row: ProcurementTableRow) => <Badge variant="purple">{row.status.replace(/_/g, ' ')}</Badge>,
+      render: (row: ProcurementTableRow) => {
+        const procurement = row as ProcurementRow;
+        if (!canManageParts) return <Badge variant="purple">{procurement.status.replace(/_/g, ' ')}</Badge>;
+        return (
+          <select
+            value={procurement.status}
+            disabled={statusUpdating === procurement.id}
+            onChange={(event) => void handleStatusUpdate(procurement, event.target.value)}
+            className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--foreground)]"
+            aria-label={`Update ${procurement.request_number} status`}
+          >
+            {['requested', 'approved', 'ordered', 'in_transit', 'delivered', 'canceled'].map((status) => (
+              <option key={status} value={status}>{status.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+        );
+      },
     },
     {
       key: 'expected_delivery_date',
@@ -186,7 +240,22 @@ export default function ProcurementPage() {
       header: 'Action',
       render: (row: ProcurementTableRow) => {
         const action = actionFor(row as ProcurementRow);
-        return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={action.href}>{action.label}</Link>;
+        const procurement = row as ProcurementRow;
+        return (
+          <div className="flex flex-wrap gap-1.5">
+            <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={action.href}>{action.label}</Link>
+            {isStockLinked(procurement) && (
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href="/work-orders?filter=on_hold&source=procurement">
+                Open Blocked Work
+              </Link>
+            )}
+            {isReplacementLinked(procurement) && (
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href="/replacement?filter=review&source=procurement">
+                Open Replacement Evidence
+              </Link>
+            )}
+          </div>
+        );
       },
     },
   ];
@@ -208,15 +277,15 @@ export default function ProcurementPage() {
         }
       />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Requested" value={summary.requested} icon={<ClipboardCheck className="h-6 w-6" />} color="yellow" />
-        <StatCard label="Approved" value={summary.approved} icon={<ClipboardCheck className="h-6 w-6" />} color="blue" />
-        <StatCard label="Ordered" value={summary.ordered} icon={<PackageCheck className="h-6 w-6" />} color="purple" />
-        <StatCard label="In Transit" value={summary.inTransit} icon={<Timer className="h-6 w-6" />} color="orange" />
-        <StatCard label="Delivered" value={summary.delivered} icon={<Truck className="h-6 w-6" />} color="green" />
-        <StatCard label="Delayed" value={summary.delayed} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="Critical Linked" value={summary.criticalLinked} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="Stock Blockers" value={summary.stockBlockers} icon={<CircleDollarSign className="h-6 w-6" />} color="yellow" />
-        <StatCard label="Replacement Linked" value={summary.replacementLinked} icon={<PackageCheck className="h-6 w-6" />} color="gray" />
+        <StatCard label="Requested" value={summary.requested} icon={<ClipboardCheck className="h-6 w-6" />} color="yellow" active={activeFilter === 'requested'} onClick={() => setActiveFilter('requested')} />
+        <StatCard label="Approved" value={summary.approved} icon={<ClipboardCheck className="h-6 w-6" />} color="blue" active={activeFilter === 'approved'} onClick={() => setActiveFilter('approved')} />
+        <StatCard label="Ordered" value={summary.ordered} icon={<PackageCheck className="h-6 w-6" />} color="purple" active={activeFilter === 'ordered'} onClick={() => setActiveFilter('ordered')} />
+        <StatCard label="In Transit" value={summary.inTransit} icon={<Timer className="h-6 w-6" />} color="orange" active={activeFilter === 'in_transit'} onClick={() => setActiveFilter('in_transit')} />
+        <StatCard label="Delivered" value={summary.delivered} icon={<Truck className="h-6 w-6" />} color="green" active={activeFilter === 'delivered'} onClick={() => setActiveFilter('delivered')} />
+        <StatCard label="Delayed" value={summary.delayed} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={activeFilter === 'delayed'} onClick={() => setActiveFilter('delayed')} />
+        <StatCard label="Critical Linked" value={summary.criticalLinked} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={activeFilter === 'critical-linked'} onClick={() => setActiveFilter('critical-linked')} />
+        <StatCard label="Stock Blockers" value={summary.stockBlockers} icon={<CircleDollarSign className="h-6 w-6" />} color="yellow" active={activeFilter === 'stock-blockers'} onClick={() => setActiveFilter('stock-blockers')} />
+        <StatCard label="Replacement Linked" value={summary.replacementLinked} icon={<PackageCheck className="h-6 w-6" />} color="gray" active={activeFilter === 'replacement-linked'} onClick={() => setActiveFilter('replacement-linked')} />
       </div>
       <section className="panel-surface rounded-lg p-4">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -241,7 +310,7 @@ export default function ProcurementPage() {
               <Link key={row.id} href={procurementDetail(row.id, 'escalate')} className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm hover:border-red-400/60">
                 <p className="font-medium text-[var(--foreground)]">{row.request_number}</p>
                 <p className="truncate text-[var(--text-muted)]">{row.title}</p>
-                <p className="mt-2 font-medium text-red-300">Escalate · {delayDays(row)}d delayed</p>
+                <p className="mt-2 font-medium text-red-300">Escalate Delay · {delayDays(row)}d delayed</p>
               </Link>
             ))}
           </div>
@@ -253,7 +322,7 @@ export default function ProcurementPage() {
         </CardHeader>
         <DataTable<ProcurementTableRow>
           columns={columns}
-          data={rows as ProcurementTableRow[]}
+          data={filteredRows as ProcurementTableRow[]}
           loading={loading}
           searchPlaceholder="Search procurement requests..."
           emptyMessage="No procurement requests found"

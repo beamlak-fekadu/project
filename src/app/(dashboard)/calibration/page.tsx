@@ -49,6 +49,17 @@ function formatLabel(val: string) {
 
 type CalRecord = Record<string, unknown>;
 type CalRequest = Record<string, unknown>;
+type CalibrationTab = 'requests' | 'upcoming' | 'overdue' | 'records';
+type CalibrationFilter =
+  | 'all'
+  | 'due-soon'
+  | 'overdue'
+  | 'critical-overdue'
+  | 'failed-adjusted'
+  | 'external'
+  | 'completed-month'
+  | 'pending-requests'
+  | 'approved-requests';
 type CalibrationAsset = {
   id?: string;
   asset_code?: string;
@@ -80,12 +91,44 @@ function isCriticalCalibration(row: CalRecord) {
     || /(ventilator|anesthesia|defibrillator|infusion|monitor)/.test(assetText);
 }
 
-function calibrationPriority(row: CalRecord) {
-  const days = Math.abs(Math.min(daysFromToday(row.next_due_date), 0));
+function isImpactDepartment(asset: CalibrationAsset | null) {
+  const department = `${asset?.departments?.name ?? ''} ${asset?.departments?.code ?? ''}`.toLowerCase();
+  return /(icu|intensive care|or\b|operating|theater|emergency|laboratory|lab\b|imaging|radiology)/.test(department);
+}
+
+function calibrationPriorityScore(row: CalRecord, request?: CalRequest | null) {
+  const asset = calibrationAsset(row);
+  const overdueDays = Math.abs(Math.min(daysFromToday(row.next_due_date), 0));
   const result = String(row.result ?? '');
-  return (isCriticalCalibration(row) ? 0 : 20)
-    + (['fail', 'adjusted'].includes(result) ? 0 : 8)
-    + (days > 90 ? 0 : days > 30 ? 4 : 8);
+  const criticality = String(asset?.equipment_categories?.criticality_level ?? '').toLowerCase();
+  const workflowStatus = String(request?.status ?? '');
+  return Math.min(100,
+    Math.min(overdueDays, 120) * 0.35
+    + (criticality === 'critical' ? 28 : criticality === 'high' ? 20 : criticality === 'medium' ? 10 : 4)
+    + (result === 'fail' ? 22 : result === 'adjusted' ? 14 : 0)
+    + (isImpactDepartment(asset) ? 12 : 0)
+    + (!workflowStatus ? 10 : ['pending', 'approved'].includes(workflowStatus) ? 6 : 2)
+  );
+}
+
+function calibrationFactors(row: CalRecord, request?: CalRequest | null) {
+  const asset = calibrationAsset(row);
+  const days = daysFromToday(row.next_due_date);
+  const result = String(row.result ?? 'unknown');
+  const criticality = String(asset?.equipment_categories?.criticality_level ?? 'routine');
+  const workflow = request ? formatLabel(String(request.status ?? 'request open')) : 'No workflow';
+  return [
+    days < 0 ? `${Math.abs(days)}d overdue` : `${days}d until due`,
+    formatLabel(criticality),
+    `Last ${formatLabel(result)}`,
+    isImpactDepartment(asset) ? 'High-impact department' : 'Routine department',
+    workflow,
+  ];
+}
+
+function normalizeCalibrationTab(value: string | null): CalibrationTab | '' {
+  if (value === 'requests' || value === 'upcoming' || value === 'overdue' || value === 'records') return value;
+  return '';
 }
 
 export default function CalibrationPage() {
@@ -98,6 +141,15 @@ export default function CalibrationPage() {
   const [assets, setAssets] = useState<{ value: string; label: string }[]>([]);
   const [calTypes, setCalTypes] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<CalibrationTab | ''>(() => normalizeCalibrationTab(searchParams.get('tab')));
+  const [activeFilter, setActiveFilter] = useState<CalibrationFilter>(() => {
+    const requested = searchParams.get('filter');
+    if (requested === 'critical-overdue') return 'critical-overdue';
+    if (requested === 'failed-adjusted') return 'failed-adjusted';
+    if (requested === 'external') return 'external';
+    if (requested === 'due-soon') return 'due-soon';
+    return 'all';
+  });
 
   const [recordModalOpen, setRecordModalOpen] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
@@ -165,6 +217,19 @@ export default function CalibrationPage() {
     if (searchParams.get('action') === 'record-result') setRecordModalOpen(true);
     if (searchParams.get('action') === 'new-request') setRequestModalOpen(true);
   }, [searchParams]);
+
+  const openRequestForAsset = useCallback((assetId?: string | null) => {
+    if (!assetId) return null;
+    return requests.find((request) =>
+      request.asset_id === assetId
+      && ['pending', 'approved', 'in_progress'].includes(String(request.status ?? ''))
+    ) ?? null;
+  }, [requests]);
+
+  function selectCalibrationView(tab: CalibrationTab, filter: CalibrationFilter = 'all') {
+    setActiveTab(tab);
+    setActiveFilter(filter);
+  }
 
   const handleCreateRecord = async () => {
     if (!recAssetId || !recDate) {
@@ -280,11 +345,11 @@ export default function CalibrationPage() {
         return (
           <div className="flex flex-wrap gap-1.5">
             <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/calibration?recordId=${row.id as string}&source=calibration-record`}>
-              Evidence
+              View Evidence
             </Link>
             {['fail', 'adjusted'].includes(row.result as string) && asset?.id && (
               <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/maintenance/requests/new?assetId=${asset.id}&source=calibration&reportedCondition=needs_repair`}>
-                Request
+                Create Maintenance Request
               </Link>
             )}
           </div>
@@ -343,7 +408,15 @@ export default function CalibrationPage() {
       key: 'action',
       header: 'Next Action',
       render: (row: CalRequest) => {
-        const label = row.status === 'pending' ? 'Review' : row.status === 'approved' ? 'Schedule' : row.status === 'completed' ? 'View Evidence' : 'View';
+        const label = row.status === 'pending'
+          ? 'Review Request'
+          : row.status === 'approved'
+            ? 'Schedule Calibration'
+            : row.status === 'completed'
+              ? 'View Evidence'
+              : row.status === 'rejected'
+                ? 'View Reason'
+                : 'Open Assigned Task';
         return (
           <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/calibration?requestId=${row.id as string}&action=${label.toLowerCase().replace(/\s+/g, '-')}`}>
             {label}
@@ -419,7 +492,7 @@ export default function CalibrationPage() {
       header: 'Risk',
       render: (row: CalRecord) => (
         <Badge variant={isCriticalCalibration(row) ? 'error' : 'info'}>
-          {isCriticalCalibration(row) ? 'Critical' : 'Routine'}
+          {Math.round(calibrationPriorityScore(row, openRequestForAsset(String(row.asset_id ?? calibrationAsset(row)?.id ?? ''))))}/100
         </Badge>
       ),
     },
@@ -430,10 +503,37 @@ export default function CalibrationPage() {
         const asset = calibrationAsset(row);
         const due = row.next_due_date ? new Date(row.next_due_date as string) : null;
         const overdue = due ? due < new Date() : false;
-        const label = overdue ? 'Record' : 'Schedule';
+        const request = openRequestForAsset(String(row.asset_id ?? asset?.id ?? ''));
+        if (request?.id) {
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/calibration?requestId=${request.id as string}`}>
+                {String(request.status) === 'approved' ? 'Open Assigned Task' : 'Open Request'}
+              </Link>
+              {asset?.id && (
+                <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/equipment/${asset.id}`}>
+                  Open Asset Profile
+                </Link>
+              )}
+            </div>
+          );
+        }
+        const label = overdue && isCriticalCalibration(row) ? 'Create Calibration Request' : overdue ? 'Record Calibration Result' : 'Prepare Calibration';
         return (
           <div className="flex flex-wrap gap-1.5">
-            {canManageMaintenance && (
+            {canManageMaintenance && label === 'Create Calibration Request' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (asset?.id) setReqAssetId(asset.id);
+                  setRequestModalOpen(true);
+                }}
+                className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]"
+              >
+                {label}
+              </button>
+            )}
+            {canManageMaintenance && label !== 'Create Calibration Request' && (
               <button
                 type="button"
                 onClick={() => {
@@ -447,7 +547,7 @@ export default function CalibrationPage() {
             )}
             {asset?.id && (
               <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/equipment/${asset.id}`}>
-                Asset
+                Open Asset Profile
               </Link>
             )}
           </div>
@@ -461,15 +561,23 @@ export default function CalibrationPage() {
   const now = new Date();
   const overdueRows = upcoming.filter((row) => row.next_due_date && new Date(row.next_due_date as string) < now);
   const criticalOverdueRows = overdueRows.filter(isCriticalCalibration);
-  const failedAdjustedOverdueRows = overdueRows.filter((row) => ['fail', 'adjusted'].includes(String(row.result ?? '')));
-  const sortedUpcoming = [...upcoming].sort((a, b) => calibrationPriority(a) - calibrationPriority(b) || daysFromToday(a.next_due_date) - daysFromToday(b.next_due_date));
-  const longestOverdueRows = [...overdueRows].sort((a, b) => daysFromToday(a.next_due_date) - daysFromToday(b.next_due_date)).slice(0, 3);
   const dueSoonRows = upcoming.filter((row) => {
     if (!row.next_due_date) return false;
     const due = new Date(row.next_due_date as string);
     const days = Math.ceil((due.getTime() - now.getTime()) / 86_400_000);
     return days >= 0 && days <= 30;
   });
+  const upcomingOnlyRows = dueSoonRows.filter((row) => daysFromToday(row.next_due_date) >= 0);
+  const awaitingActionRequests = requests.filter((row) => ['pending', 'approved'].includes(String(row.status ?? '')));
+  const needsSchedulingRows = [...overdueRows, ...upcomingOnlyRows]
+    .filter((row) => !openRequestForAsset(String(row.asset_id ?? calibrationAsset(row)?.id ?? '')))
+    .sort((a, b) => daysFromToday(a.next_due_date) - daysFromToday(b.next_due_date));
+  const urgentSafetyRows = overdueRows
+    .filter((row) => isCriticalCalibration(row) || ['fail', 'adjusted'].includes(String(row.result ?? '')))
+    .sort((a, b) => calibrationPriorityScore(b, openRequestForAsset(String(b.asset_id ?? calibrationAsset(b)?.id ?? ''))) - calibrationPriorityScore(a, openRequestForAsset(String(a.asset_id ?? calibrationAsset(a)?.id ?? ''))));
+  const longestOverdueRows = [...overdueRows].sort((a, b) => daysFromToday(a.next_due_date) - daysFromToday(b.next_due_date)).slice(0, 5);
+  const sortedUpcoming = [...upcomingOnlyRows].sort((a, b) => calibrationPriorityScore(b, openRequestForAsset(String(b.asset_id ?? calibrationAsset(b)?.id ?? ''))) - calibrationPriorityScore(a, openRequestForAsset(String(a.asset_id ?? calibrationAsset(a)?.id ?? ''))));
+  const sortedOverdue = [...overdueRows].sort((a, b) => calibrationPriorityScore(b, openRequestForAsset(String(b.asset_id ?? calibrationAsset(b)?.id ?? ''))) - calibrationPriorityScore(a, openRequestForAsset(String(a.asset_id ?? calibrationAsset(a)?.id ?? ''))));
   const failedAdjusted = records.filter((row) => ['fail', 'adjusted'].includes(row.result as string));
   const completedThisMonth = records.filter((row) => {
     if (!row.calibration_date) return false;
@@ -481,31 +589,36 @@ export default function CalibrationPage() {
     const notes = String(row.notes ?? '').toLowerCase();
     return by.includes('vendor') || by.includes('external') || notes.includes('vendor') || notes.includes('external');
   });
-  const requestedTab = searchParams.get('tab');
-  const defaultTab = requestedTab && ['records', 'requests', 'upcoming'].includes(requestedTab)
-    ? requestedTab
-    : overdueRows.length > 0 ? 'upcoming' : 'records';
+  const externalRequests = requests.filter((row) => String(row.notes ?? '').toLowerCase().match(/vendor|external|third[- ]party/));
+  const defaultTab: CalibrationTab = normalizeCalibrationTab(searchParams.get('tab'))
+    || (awaitingActionRequests.length > 0 ? 'requests' : overdueRows.length > 0 ? 'overdue' : dueSoonRows.length > 0 ? 'upcoming' : 'records');
+  const selectedTab = activeTab || defaultTab;
+  const selectedFilter = activeFilter;
+
+  const filteredRecords = records.filter((row) => {
+    if (selectedFilter === 'failed-adjusted') return ['fail', 'adjusted'].includes(String(row.result ?? ''));
+    if (selectedFilter === 'external') return externalCalibration.some((item) => item.id === row.id);
+    if (selectedFilter === 'completed-month') return completedThisMonth.some((item) => item.id === row.id);
+    return true;
+  });
+  const filteredRequests = requests.filter((row) => {
+    if (selectedFilter === 'pending-requests') return row.status === 'pending';
+    if (selectedFilter === 'approved-requests') return row.status === 'approved';
+    if (selectedFilter === 'external') return externalRequests.some((item) => item.id === row.id);
+    return true;
+  });
+  const filteredUpcoming = sortedUpcoming.filter((row) => {
+    if (selectedFilter === 'due-soon') return dueSoonRows.some((item) => item.id === row.id);
+    if (selectedFilter === 'critical-overdue') return false;
+    return true;
+  });
+  const filteredOverdue = sortedOverdue.filter((row) => {
+    if (selectedFilter === 'critical-overdue') return isCriticalCalibration(row);
+    if (selectedFilter === 'failed-adjusted') return ['fail', 'adjusted'].includes(String(row.result ?? ''));
+    return true;
+  });
 
   const tabs = [
-    {
-      id: 'records',
-      label: 'Records',
-      count: records.length,
-      content: (
-        <DataTable
-          columns={recordColumns}
-          data={records}
-          searchPlaceholder="Search calibration records..."
-          emptyMessage="No calibration records found"
-          actions={
-            <Button onClick={() => setRecordModalOpen(true)}>
-              <Plus className="h-4 w-4" />
-              New Record
-            </Button>
-          }
-        />
-      ),
-    },
     {
       id: 'requests',
       label: 'Requests',
@@ -513,7 +626,7 @@ export default function CalibrationPage() {
       content: (
         <DataTable
           columns={requestColumns}
-          data={requests}
+          data={filteredRequests}
           searchPlaceholder="Search calibration requests..."
           emptyMessage="No calibration requests found"
           actions={
@@ -527,13 +640,44 @@ export default function CalibrationPage() {
     },
     {
       id: 'upcoming',
-      label: 'Upcoming / Overdue',
-      count: upcoming.length,
+      label: 'Upcoming',
+      count: upcomingOnlyRows.length,
       content: (
         <Table
           columns={upcomingColumns}
-          data={sortedUpcoming}
+          data={filteredUpcoming}
           emptyMessage="No upcoming calibrations in the next 90 days"
+        />
+      ),
+    },
+    {
+      id: 'overdue',
+      label: 'Overdue',
+      count: overdueRows.length,
+      content: (
+        <Table
+          columns={upcomingColumns}
+          data={filteredOverdue}
+          emptyMessage="No overdue calibration rows found"
+        />
+      ),
+    },
+    {
+      id: 'records',
+      label: 'Records',
+      count: records.length,
+      content: (
+        <DataTable
+          columns={recordColumns}
+          data={filteredRecords}
+          searchPlaceholder="Search calibration records..."
+          emptyMessage="No calibration records found"
+          actions={
+            <Button onClick={() => setRecordModalOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New Record
+            </Button>
+          }
         />
       ),
     },
@@ -553,46 +697,73 @@ export default function CalibrationPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Calibration Records" value={records.length} icon={<Gauge className="h-6 w-6" />} color="blue" />
-        <StatCard label="Calibration Requests" value={requests.length} icon={<ClipboardList className="h-6 w-6" />} color="purple" />
-        <StatCard label="Due Soon" value={dueSoonRows.length} icon={<CalendarClock className="h-6 w-6" />} color="yellow" />
-        <StatCard label="Overdue" value={overdueRows.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="Failed / Adjusted" value={failedAdjusted.length} icon={<ShieldAlert className="h-6 w-6" />} color="orange" />
-        <StatCard label="Critical Overdue" value={criticalOverdueRows.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" />
-        <StatCard label="External Calibration" value={externalCalibration.length} icon={<Wrench className="h-6 w-6" />} color="gray" />
-        <StatCard label="Completed This Month" value={completedThisMonth.length} icon={<CheckCircle className="h-6 w-6" />} color="green" />
+        <StatCard label="Calibration Records" value={records.length} icon={<Gauge className="h-6 w-6" />} color="blue" active={selectedTab === 'records' && selectedFilter === 'all'} onClick={() => selectCalibrationView('records')} />
+        <StatCard label="Calibration Requests" value={requests.length} icon={<ClipboardList className="h-6 w-6" />} color="purple" active={selectedTab === 'requests' && selectedFilter === 'all'} onClick={() => selectCalibrationView('requests')} />
+        <StatCard label="Due Soon" value={dueSoonRows.length} icon={<CalendarClock className="h-6 w-6" />} color="yellow" active={selectedTab === 'upcoming' && selectedFilter === 'due-soon'} onClick={() => selectCalibrationView('upcoming', 'due-soon')} />
+        <StatCard label="Overdue" value={overdueRows.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={selectedTab === 'overdue' && selectedFilter === 'overdue'} onClick={() => selectCalibrationView('overdue', 'overdue')} />
+        <StatCard label="Failed / Adjusted" value={failedAdjusted.length} icon={<ShieldAlert className="h-6 w-6" />} color="orange" active={selectedFilter === 'failed-adjusted'} onClick={() => selectCalibrationView('records', 'failed-adjusted')} />
+        <StatCard label="Critical Overdue" value={criticalOverdueRows.length} icon={<AlertTriangle className="h-6 w-6" />} color="red" active={selectedFilter === 'critical-overdue'} onClick={() => selectCalibrationView('overdue', 'critical-overdue')} />
+        <StatCard label="External Calibration" value={externalCalibration.length + externalRequests.length} icon={<Wrench className="h-6 w-6" />} color="gray" active={selectedFilter === 'external'} onClick={() => selectCalibrationView(externalRequests.length > 0 ? 'requests' : 'records', 'external')} />
+        <StatCard label="Completed This Month" value={completedThisMonth.length} icon={<CheckCircle className="h-6 w-6" />} color="green" active={selectedFilter === 'completed-month'} onClick={() => selectCalibrationView('records', 'completed-month')} />
       </div>
 
-      {(overdueRows.length > 0 || failedAdjusted.length > 0) && (
+      {(overdueRows.length > 0 || failedAdjusted.length > 0 || awaitingActionRequests.length > 0) && (
         <section className="panel-surface rounded-lg p-4">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-[var(--foreground)]">Calibration Triage</h2>
-              <p className="text-sm text-[var(--text-muted)]">Overdue calibration affects safety, accuracy, and FMEA detectability. The queue is ordered by criticality, failed/adjusted evidence, and days overdue.</p>
+              <p className="text-sm text-[var(--text-muted)]">Calibration priority = overdue severity + equipment criticality + last result risk + department impact + open workflow state.</p>
             </div>
-            <Badge variant="warning">{overdueRows.length} overdue</Badge>
+            <Badge variant="warning">Scoring method visible per item</Badge>
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="mb-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 text-sm text-[var(--text-muted)]">
+            Urgent safety risk is curated for overdue high-criticality assets or failed/adjusted last results. Needs Scheduling is due/overdue equipment without an open workflow. Awaiting Action is pending or approved requests. Longest Overdue is a secondary lens so routine overdue work is visible without overstating every item as critical.
+          </div>
+          <div className="grid gap-3 lg:grid-cols-4">
             {[
-              { title: 'Critical Overdue', rows: criticalOverdueRows.slice(0, 3), empty: 'No high-critical overdue items.' },
-              { title: 'Failed / Adjusted Last Result', rows: failedAdjustedOverdueRows.slice(0, 3), empty: 'No failed or adjusted overdue results.' },
+              { title: 'Urgent Safety Risk', rows: urgentSafetyRows.slice(0, 4), empty: 'No urgent calibration safety risks.' },
+              { title: 'Needs Scheduling', rows: needsSchedulingRows.slice(0, 4), empty: 'No due items without a workflow.' },
+              { title: 'Awaiting Action', requests: awaitingActionRequests.slice(0, 4), empty: 'No calibration requests awaiting action.' },
               { title: 'Longest Overdue', rows: longestOverdueRows, empty: 'No overdue calibration rows.' },
             ].map((group) => (
               <div key={group.title} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
                 <h3 className="text-sm font-semibold text-[var(--foreground)]">{group.title}</h3>
                 <div className="mt-3 space-y-2">
-                  {group.rows.length === 0 ? (
+                  {'requests' in group ? (
+                    (group.requests ?? []).length === 0 ? (
+                      <p className="text-sm text-[var(--text-muted)]">{group.empty}</p>
+                    ) : (group.requests ?? []).map((request) => {
+                      const asset = calibrationAsset(request);
+                      return (
+                        <Link key={String(request.id)} href={`/calibration?requestId=${request.id as string}`} className="block rounded-md bg-[var(--surface-2)]/70 p-2 hover:bg-[var(--surface-2)]">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-[var(--foreground)]">{asset?.asset_code ?? 'Request'} · {asset?.name ?? String(request.request_number ?? 'Calibration request')}</p>
+                              <p className="text-xs text-[var(--text-muted)]">{asset?.departments?.name ?? 'No department'} · {formatLabel(String(request.status ?? 'pending'))}</p>
+                            </div>
+                            <span className="text-xs font-medium text-[var(--brand)]">{request.status === 'pending' ? 'Review Request' : 'Schedule Calibration'}</span>
+                          </div>
+                        </Link>
+                      );
+                    })
+                  ) : (group.rows ?? []).length === 0 ? (
                     <p className="text-sm text-[var(--text-muted)]">{group.empty}</p>
-                  ) : group.rows.map((row) => {
+                  ) : (group.rows ?? []).map((row) => {
                     const asset = calibrationAsset(row);
+                    const request = openRequestForAsset(String(row.asset_id ?? asset?.id ?? ''));
                     return (
                       <div key={String(row.id)} className="rounded-md bg-[var(--surface-2)]/70 p-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-[var(--foreground)]">{asset?.asset_code ?? 'Asset'} · {asset?.name ?? 'Unknown'}</p>
-                            <p className="text-xs text-[var(--text-muted)]">{Math.abs(daysFromToday(row.next_due_date))}d overdue · {formatLabel(String(row.result ?? 'unknown'))}</p>
+                            <p className="text-xs text-[var(--text-muted)]">{asset?.departments?.name ?? 'No department'} · {formatLabel(String((row.calibration_types as { name?: string } | null)?.name ?? 'Calibration'))}</p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {calibrationFactors(row, request).map((factor) => (
+                                <span key={factor} className="rounded-full bg-[var(--surface-3)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{factor}</span>
+                              ))}
+                            </div>
                           </div>
-                          {asset?.id && <Link className="text-xs font-medium text-[var(--brand)] hover:underline" href={`/equipment/${asset.id}`}>Asset</Link>}
+                          {asset?.id && <Link className="text-xs font-medium text-[var(--brand)] hover:underline" href={request?.id ? `/calibration?requestId=${request.id as string}` : `/calibration?assetId=${asset.id}&action=new-request`}>{request?.id ? 'Open Request' : 'Create Calibration Request'}</Link>}
                         </div>
                       </div>
                     );
@@ -604,7 +775,7 @@ export default function CalibrationPage() {
         </section>
       )}
 
-      <Tabs tabs={tabs} defaultTab={defaultTab} />
+      <Tabs tabs={tabs} activeTab={selectedTab} defaultTab={defaultTab} onChange={(tabId) => { setActiveTab(tabId as CalibrationTab); setActiveFilter('all'); }} />
 
       {/* New Record Modal */}
       <Modal

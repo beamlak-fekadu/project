@@ -1,6 +1,6 @@
 # CLAUDE.md — BMERMS Project Intelligence
 
-Last updated: 2026-05-11 (type generation cleanup)
+Last updated: 2026-05-11 (final workflow polishing pass)
 Branch: BMERMS_V4
 Deployment: https://project-git-bmermsv3-beamlak-fekadus-projects.vercel.app
 Supabase project ID: fgqyszbxzpmqzpqvdivx
@@ -106,6 +106,21 @@ DONE:
   - After regenerating Supabase types, rerun `npx tsc --noEmit` and `npm run build`; fix missing exports by moving/reusing app types outside the generated file instead of editing `database.ts`.
   - Migration 00043 exposes `asset_id` in `v_calibration_due` for exact calibration and Command Center drilldowns.
 
+- Final workflow polishing pass (2026-05-11):
+  - Global rule: operational pages are control surfaces, not passive dashboards. Count cards filter the page or route to exact filtered destinations, active cards are highlighted, and row actions use state-aware workflow verbs.
+  - Calibration now uses an explainable priority model: overdue severity + equipment criticality + last result risk + department impact + open workflow state. Tabs are Requests, Upcoming, Overdue, Records; triage sections are Urgent Safety Risk, Needs Scheduling, Awaiting Action, and Longest Overdue.
+  - Maintenance request and work-order details show a Condition Trace. Request reported_condition and work-order status/completion rules are visible next to current/final equipment condition.
+  - Work Orders default to active work; Critical/High excludes completed history by default; External Vendor is no longer a top-level card/tab.
+  - Spare Parts cards filter catalog/low stock/blockers/receipts/issues; Stock Action Queue separates stockout blockers, low stock with/without procurement, and ready-to-issue. Open procurement is tracked instead of duplicated.
+  - Logistics now represents Receive -> Request -> Approve -> Issue -> Balance/Bin Card -> Usage Evidence with local panels and filtered cross-module routes.
+  - Procurement pipeline cards filter rows; permitted roles can update status inline; delivered rows point to Receive Stock.
+  - Training removes ambiguous Coverage as a primary tab/card; main flow is Requests, Upcoming Sessions, Completed Sessions, Competency Evidence.
+  - Replacement defaults to strong/review candidates, chart defaults to Top 10, and thresholds are explicitly prototype decision thresholds (0.70 strong, 0.55 review, below 0.55 monitor).
+  - Disposal cards filter requests/candidates/disposed evidence; disposed-by resolves profile name through `disposed_assets_disposed_by_fkey`.
+  - Alerts use Command Center-style tabs and specific source actions. Reports generate timestamped snapshot evidence and moved demo tools to Developer Lab.
+  - Settings shows profile/password, reference sections, user management, role permissions, and configured/planned lookup sections. Audit highlights governance/high-risk events.
+  - Developer Lab moved under Command for developer/admin roles and now frames methodology, sensitivity tabs, ranking stability, refresh tools, data health, demo evidence tools, and disabled safe reset.
+
 IN PROGRESS:
 - Step 8:  Recurring failure count intentionally remains at 1 seeded asset because the thesis
            threshold is failureCount >= 4; this is documented in the UI and QA notes
@@ -181,7 +196,7 @@ NOT STARTED:
   /settings                   Administration center: Hospital Profile, Departments, Categories, Staff & Access, Security & Access, Reference Data, Preferences, Import/Export
   /security                   Deprecated redirect alias → /settings?tab=security-access
   /audit                      Governance/audit viewer for developer/admin/BME Head
-  /developer-lab              Developer-only scoring methodology, sandbox sliders, data health, refresh/debug, thesis/demo tools
+  /developer-lab              Developer/admin scoring methodology, simulation-only sandbox tabs, data health, refresh/debug, thesis/demo tools
   /command/health             Deprecated redirect alias → /developer-lab
 
 ### API Routes

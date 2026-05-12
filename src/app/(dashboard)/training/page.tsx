@@ -33,6 +33,8 @@ import { useRole } from '@/hooks/useRole';
 type SessionRow = Record<string, unknown>;
 type RequestRow = Record<string, unknown>;
 type AttendeeRow = Record<string, unknown>;
+type TrainingTab = 'requests' | 'upcoming' | 'completed' | 'evidence';
+type TrainingFilter = 'all' | 'pending' | 'upcoming' | 'completed-month' | 'new-equipment' | 'user-error' | 'critical-equipment';
 
 const trainingTypeOptions: { value: TrainingType; label: string }[] = [
   { value: 'equipment_operation', label: 'Equipment Operation' },
@@ -63,6 +65,12 @@ function formatLabel(val: string) {
   return val.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function normalizeTrainingTab(value: string | null): TrainingTab | '' {
+  if (value === 'requests' || value === 'upcoming' || value === 'completed' || value === 'evidence') return value;
+  if (value === 'sessions' || value === 'history') return 'completed';
+  return '';
+}
+
 export default function TrainingPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -73,6 +81,8 @@ export default function TrainingPage() {
   const [categories, setCategories] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<TrainingTab | ''>(() => normalizeTrainingTab(searchParams.get('tab')));
+  const [activeFilter, setActiveFilter] = useState<TrainingFilter>('all');
 
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
@@ -262,7 +272,7 @@ export default function TrainingPage() {
       header: 'Action',
       render: (row: SessionRow) => {
         const date = row.training_date ? new Date(row.training_date as string) : null;
-        const label = date && date < new Date() ? 'Evidence' : 'Open';
+        const label = date && date < new Date() ? 'View Attendance' : 'Open Session';
         return (
           <button type="button" className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" onClick={() => openDetail(row)}>
             {label}
@@ -317,14 +327,14 @@ export default function TrainingPage() {
       header: 'Next Action',
       render: (row: RequestRow) => {
         if (!canManageMaintenance) {
-          return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}`}>View</Link>;
+          return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}`}>View Request</Link>;
         }
-        if (row.status === 'pending') return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}&action=review`}>Review</Link>;
+        if (row.status === 'pending') return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}&action=review`}>Review Request</Link>;
         if (row.status === 'approved') {
-          return <button type="button" className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" onClick={() => scheduleFromRequest(row)}>Schedule</button>;
+          return <button type="button" className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" onClick={() => scheduleFromRequest(row)}>Schedule Session</button>;
         }
-        if (row.status === 'completed') return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}&action=evidence`}>Evidence</Link>;
-        return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}`}>View</Link>;
+        if (row.status === 'completed') return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}&action=evidence`}>View Attendance</Link>;
+        return <Link className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" href={`/training?requestId=${row.id as string}`}>Open Session</Link>;
       },
     },
   ];
@@ -360,23 +370,32 @@ export default function TrainingPage() {
   });
   const newEquipmentTraining = [...sessions, ...requests].filter((row) => row.asset_id).length;
   const userErrorRelated = requests.filter((row) => String(row.description ?? '').toLowerCase().match(/user error|operator|misuse|training/)).length;
-  const departmentCoverage = new Set(requests.map((row) => (row.departments as { id?: string } | null)?.id ?? row.department_id).filter(Boolean)).size;
   const criticalEquipmentTraining = [...sessions, ...requests].filter((row) => row.asset_id).length;
-  const categoryCoverageRows = categories.map((category) => {
-    const sessionCount = sessions.filter((session) => session.category_id === category.value).length;
-    const completed = sessions.filter((session) => session.category_id === category.value && session.training_date && new Date(session.training_date as string) < now).length;
-    return {
-      id: category.value,
-      department: 'All departments',
-      category: category.label,
-      required: sessionCount > 0 ? 'Defined by completed sessions' : 'No required rule table',
-      completed,
-      coverage: sessionCount > 0 ? `${Math.round((completed / sessionCount) * 100)}%` : 'Not configured',
-      gap: sessionCount > completed ? `${sessionCount - completed} upcoming/open` : sessionCount === 0 ? 'No session history' : 'Covered',
-    };
-  });
   const pendingRequests = requests.filter((row) => row.status === 'pending');
   const approvedRequests = requests.filter((row) => row.status === 'approved');
+  const completedSessions = sessions.filter((row) => row.training_date && new Date(row.training_date as string) < now);
+  const filteredRequests = requests.filter((row) => {
+    if (activeFilter === 'pending') return row.status === 'pending';
+    if (activeFilter === 'new-equipment') return Boolean(row.asset_id);
+    if (activeFilter === 'user-error') return Boolean(String(row.description ?? '').toLowerCase().match(/user error|operator|misuse|training/));
+    if (activeFilter === 'critical-equipment') return Boolean(row.asset_id);
+    return true;
+  });
+  const filteredUpcoming = upcomingSessions.filter((row) => {
+    if (activeFilter === 'new-equipment' || activeFilter === 'critical-equipment') return Boolean(row.asset_id);
+    return true;
+  });
+  const filteredCompleted = completedSessions.filter((row) => {
+    if (activeFilter === 'completed-month') return completedThisMonth.some((item) => item.id === row.id);
+    if (activeFilter === 'new-equipment' || activeFilter === 'critical-equipment') return Boolean(row.asset_id);
+    return true;
+  });
+  const defaultTab: TrainingTab = normalizeTrainingTab(searchParams.get('tab')) || (pendingRequests.length > 0 ? 'requests' : upcomingSessions.length > 0 ? 'upcoming' : 'completed');
+  const selectedTab = activeTab || defaultTab;
+  function selectTrainingView(tab: TrainingTab, filter: TrainingFilter = 'all') {
+    setActiveTab(tab);
+    setActiveFilter(filter);
+  }
   const trainingQueue = [
     {
       label: 'Review requests',
@@ -393,11 +412,11 @@ export default function TrainingPage() {
       tab: 'requests',
     },
     {
-      label: 'Coverage gaps',
-      count: categoryCoverageRows.filter((row) => row.gap !== 'Covered').length,
-      why: 'Coverage gaps show who needs training and why.',
-      action: 'Coverage',
-      tab: 'coverage',
+      label: 'User-error training gaps',
+      count: userErrorRelated,
+      why: 'Maintenance evidence or request text points to operator misuse or training needs.',
+      action: 'Open Evidence',
+      tab: 'requests',
     },
   ];
 
@@ -449,33 +468,13 @@ export default function TrainingPage() {
 
   const tabs = [
     {
-      id: 'sessions',
-      label: 'Sessions',
-      count: sessions.length,
-      content: (
-        <DataTable
-          columns={sessionColumns}
-          data={sessions}
-          searchPlaceholder="Search sessions..."
-          emptyMessage="No training sessions found"
-          onRowClick={openDetail}
-          actions={canManageMaintenance ? (
-            <Button onClick={() => setSessionModalOpen(true)}>
-              <Plus className="h-4 w-4" />
-              New Session
-            </Button>
-          ) : undefined}
-        />
-      ),
-    },
-    {
       id: 'requests',
       label: 'Requests',
       count: requests.length,
       content: (
         <DataTable
           columns={requestColumns}
-          data={requests}
+          data={filteredRequests}
           searchPlaceholder="Search requests..."
           emptyMessage="No training requests found"
           actions={canManageMaintenance ? (
@@ -494,7 +493,7 @@ export default function TrainingPage() {
       content: (
         <DataTable
           columns={sessionColumns}
-          data={upcomingSessions}
+          data={filteredUpcoming}
           searchPlaceholder="Search upcoming sessions..."
           emptyMessage="No upcoming sessions scheduled"
           onRowClick={openDetail}
@@ -502,30 +501,30 @@ export default function TrainingPage() {
       ),
     },
     {
-      id: 'coverage',
-      label: 'Coverage',
-      count: categoryCoverageRows.length,
+      id: 'completed',
+      label: 'Completed Sessions',
+      count: completedSessions.length,
       content: (
-        <Table
-          columns={[
-            { key: 'department', header: 'Department' },
-            { key: 'category', header: 'Equipment Category' },
-            { key: 'required', header: 'Required Training' },
-            { key: 'completed', header: 'Completed Training' },
-            { key: 'coverage', header: 'Coverage %' },
-            { key: 'gap', header: 'Gap' },
-            {
-              key: 'action',
-              header: 'Action',
-              render: (row: Record<string, unknown>) => canManageMaintenance ? (
-                <button type="button" className="rounded-lg border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium hover:bg-[var(--surface-2)]" onClick={() => { setSesCategoryId(row.id as string); setRequestModalOpen(true); }}>
-                  Create Training Request
-                </button>
-              ) : 'View',
-            },
-          ]}
-          data={categoryCoverageRows}
-          emptyMessage="No training coverage rows found"
+        <DataTable
+          columns={sessionColumns}
+          data={filteredCompleted}
+          searchPlaceholder="Search completed sessions..."
+          emptyMessage="No completed training sessions found"
+          onRowClick={openDetail}
+        />
+      ),
+    },
+    {
+      id: 'evidence',
+      label: 'Competency Evidence',
+      count: completedSessions.length,
+      content: (
+        <DataTable
+          columns={sessionColumns}
+          data={filteredCompleted}
+          searchPlaceholder="Search competency evidence..."
+          emptyMessage="No competency evidence found"
+          onRowClick={openDetail}
         />
       ),
     },
@@ -545,14 +544,13 @@ export default function TrainingPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Training Sessions" value={sessions.length} icon={<GraduationCap className="h-6 w-6" />} color="blue" />
-        <StatCard label="Pending Requests" value={pendingRequests.length} icon={<ClipboardList className="h-6 w-6" />} color="yellow" />
-        <StatCard label="Upcoming Sessions" value={upcomingSessions.length} icon={<CalendarClock className="h-6 w-6" />} color="purple" />
-        <StatCard label="Completed This Month" value={completedThisMonth.length} icon={<CheckCircle className="h-6 w-6" />} color="green" />
-        <StatCard label="New Equipment Training" value={newEquipmentTraining} icon={<GraduationCap className="h-6 w-6" />} color="orange" />
-        <StatCard label="User Error Related" value={userErrorRelated} icon={<ShieldAlert className="h-6 w-6" />} color="red" />
-        <StatCard label="Department Coverage" value={departmentCoverage} icon={<Users className="h-6 w-6" />} color="blue" />
-        <StatCard label="Critical Equipment Training" value={criticalEquipmentTraining} icon={<ShieldAlert className="h-6 w-6" />} color="purple" />
+        <StatCard label="Training Sessions" value={sessions.length} icon={<GraduationCap className="h-6 w-6" />} color="blue" active={selectedTab === 'completed' && activeFilter === 'all'} onClick={() => selectTrainingView('completed')} />
+        <StatCard label="Pending Requests" value={pendingRequests.length} icon={<ClipboardList className="h-6 w-6" />} color="yellow" active={selectedTab === 'requests' && activeFilter === 'pending'} onClick={() => selectTrainingView('requests', 'pending')} />
+        <StatCard label="Upcoming Sessions" value={upcomingSessions.length} icon={<CalendarClock className="h-6 w-6" />} color="purple" active={selectedTab === 'upcoming'} onClick={() => selectTrainingView('upcoming', 'upcoming')} />
+        <StatCard label="Completed This Month" value={completedThisMonth.length} icon={<CheckCircle className="h-6 w-6" />} color="green" active={activeFilter === 'completed-month'} onClick={() => selectTrainingView('completed', 'completed-month')} />
+        <StatCard label="New Equipment Training" value={newEquipmentTraining} icon={<GraduationCap className="h-6 w-6" />} color="orange" active={activeFilter === 'new-equipment'} onClick={() => selectTrainingView('requests', 'new-equipment')} />
+        <StatCard label="User Error Related" value={userErrorRelated} icon={<ShieldAlert className="h-6 w-6" />} color="red" active={activeFilter === 'user-error'} onClick={() => selectTrainingView('requests', 'user-error')} />
+        <StatCard label="Critical Equipment Training" value={criticalEquipmentTraining} icon={<ShieldAlert className="h-6 w-6" />} color="purple" active={activeFilter === 'critical-equipment'} onClick={() => selectTrainingView('upcoming', 'critical-equipment')} />
       </div>
 
       <section className="panel-surface rounded-lg p-4">
@@ -560,18 +558,19 @@ export default function TrainingPage() {
         <p className="mt-1 text-sm text-[var(--text-muted)]">Training should answer who needs competency support, why it matters, and what evidence closes the gap.</p>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
           {trainingQueue.map((item) => (
-            <div key={item.label} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+            <button key={item.label} type="button" className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3 text-left transition hover:border-[var(--brand)]/50" onClick={() => selectTrainingView(item.tab as TrainingTab, item.label.includes('User-error') ? 'user-error' : item.label.includes('Review') ? 'pending' : 'all')}>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-[var(--foreground)]">{item.label}</p>
                 <span className="text-2xl font-bold text-[var(--foreground)]">{item.count}</span>
               </div>
               <p className="mt-2 text-sm text-[var(--text-muted)]">{item.why}</p>
-            </div>
+              <p className="mt-3 text-xs font-medium text-[var(--brand)]">{item.action}</p>
+            </button>
           ))}
         </div>
       </section>
 
-      <Tabs tabs={tabs} defaultTab={pendingRequests.length > 0 ? 'requests' : 'sessions'} />
+      <Tabs tabs={tabs} activeTab={selectedTab} defaultTab={defaultTab} onChange={(tabId) => { setActiveTab(tabId as TrainingTab); setActiveFilter('all'); }} />
 
       {/* New Session Modal */}
       <Modal

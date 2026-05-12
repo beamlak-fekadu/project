@@ -535,19 +535,19 @@ export default function WorkOrderDetailPage() {
                 {(wo.status === 'assigned' || wo.status === 'on_hold') && (
                   <Button size="sm" onClick={() => handleStatusUpdate('in_progress')} loading={actionLoading}>
                     <Play className="h-4 w-4" />
-                    Start
+                    Start Work
                   </Button>
                 )}
                 {wo.status === 'in_progress' && (
                   <Button size="sm" variant="secondary" onClick={() => handleStatusUpdate('on_hold')} loading={actionLoading}>
                     <Pause className="h-4 w-4" />
-                    Hold
+                    Put On Hold
                   </Button>
                 )}
                 {(wo.status === 'in_progress' || wo.status === 'assigned') && (
                   <Button size="sm" onClick={openCompletionModal} loading={actionLoading}>
                     <CheckCircle className="h-4 w-4" />
-                    Complete
+                    Complete Work
                   </Button>
                 )}
                 <Button size="sm" variant="secondary" onClick={() => queueStatusUpdate('in_progress')}>
@@ -673,24 +673,42 @@ export default function WorkOrderDetailPage() {
         {equipmentCondition && (
           <Card>
             <CardHeader>
-              <CardTitle>Equipment Condition</CardTitle>
+              <CardTitle>Condition Trace</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap items-start gap-6">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {originatingRequest?.reported_condition && (
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                    <p className="text-xs text-[var(--text-muted)]">Condition at request time</p>
+                    <p className="mt-1 text-xs font-medium text-[var(--foreground)]">
+                      {originatingRequest.reported_condition === 'functional_issue' ? 'Functional (issue)' : originatingRequest.reported_condition === 'needs_repair' ? 'Needs repair' : 'Non-functional'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                      {originatingRequest.reported_condition === 'functional_issue'
+                        ? 'Minor functional issue does not degrade condition by itself.'
+                        : 'Request creation synced the equipment condition to the reported risk.'}
+                    </p>
+                  </div>
+                )}
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
+                  <p className="text-xs text-[var(--text-muted)]">During work order</p>
+                  <p className="mt-1 text-xs font-medium text-[var(--foreground)]">{wo.status.replace(/_/g, ' ')}</p>
+                  <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                    {wo.status === 'in_progress'
+                      ? 'Starting work sets the equipment to Under maintenance.'
+                      : wo.status === 'on_hold'
+                        ? 'On hold preserves the current maintenance/repair condition until the blocker is resolved.'
+                        : wo.status === 'completed'
+                          ? 'Completion applies the final equipment condition below.'
+                          : 'Assignment/open state preserves request condition until work starts.'}
+                  </p>
+                </div>
                 <div>
                   <p className="text-xs text-[var(--text-muted)]">Current condition</p>
                   <span className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getConditionBadgeClass(equipmentCondition.condition)}`}>
                     {formatEquipmentCondition(equipmentCondition.condition)}
                   </span>
                 </div>
-                {originatingRequest?.reported_condition && (
-                  <div>
-                    <p className="text-xs text-[var(--text-muted)]">Reported at request</p>
-                    <p className="mt-1 text-xs font-medium text-[var(--foreground)]">
-                      {originatingRequest.reported_condition === 'functional_issue' ? 'Functional (issue)' : originatingRequest.reported_condition === 'needs_repair' ? 'Needs repair' : 'Non-functional'}
-                    </p>
-                  </div>
-                )}
                 {wo?.final_equipment_condition && (
                   <div>
                     <p className="text-xs text-[var(--text-muted)]">Final (at completion)</p>
@@ -700,11 +718,12 @@ export default function WorkOrderDetailPage() {
                   </div>
                 )}
                 {wo?.completion_outcome && (
-                  <div>
+                  <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-3">
                     <p className="text-xs text-[var(--text-muted)]">Completion outcome</p>
                     <p className="mt-1 text-xs font-medium text-[var(--foreground)]">
                       {wo.completion_outcome.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
                     </p>
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">Source action: work-order completion updated the final condition and analytics.</p>
                   </div>
                 )}
               </div>

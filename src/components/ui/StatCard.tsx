@@ -7,9 +7,10 @@ interface StatCardProps {
   trend?: { value: number; label: string };
   color?: string;
   onClick?: () => void;
+  active?: boolean;
 }
 
-export default function StatCard({ label, value, icon, trend, color = 'blue', onClick }: StatCardProps) {
+export default function StatCard({ label, value, icon, trend, color = 'blue', onClick, active = false }: StatCardProps) {
   const colorMap: Record<string, string> = {
     blue: 'bg-blue-500/15 text-blue-300',
     green: 'bg-emerald-500/15 text-emerald-300',
@@ -22,7 +23,7 @@ export default function StatCard({ label, value, icon, trend, color = 'blue', on
 
   return (
     <div
-      className={`panel-surface rounded-lg p-5 transition-colors ${onClick ? 'cursor-pointer hover:border-[var(--brand)]/50' : ''}`}
+      className={`panel-surface rounded-lg p-5 transition-colors ${onClick ? 'cursor-pointer hover:border-[var(--brand)]/50' : ''} ${active ? 'ring-2 ring-[var(--brand)]' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center justify-between">

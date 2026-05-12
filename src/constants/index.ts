@@ -64,6 +64,7 @@ export const NAV_SECTIONS = [
     items: [
       { label: 'Command Center', href: ROUTES.COMMAND, icon: 'LayoutDashboard', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
       { label: 'Hospital Calendar', href: ROUTES.CALENDAR, icon: 'CalendarDays', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
+      { label: 'Developer Lab', href: ROUTES.DEVELOPER_LAB, icon: 'Activity', roles: ['developer', 'admin'] },
     ],
   },
   {
@@ -121,7 +122,6 @@ export const NAV_SECTIONS = [
     items: [
       { label: 'Settings', href: ROUTES.SETTINGS, icon: 'Settings', roles: ['developer', 'admin', 'bme_head'] },
       { label: 'Audit Log', href: ROUTES.AUDIT, icon: 'FileText', roles: ['developer', 'admin', 'bme_head'] },
-      { label: 'Developer Lab', href: ROUTES.DEVELOPER_LAB, icon: 'Activity', roles: ['developer'] },
     ],
   },
 ] as const;

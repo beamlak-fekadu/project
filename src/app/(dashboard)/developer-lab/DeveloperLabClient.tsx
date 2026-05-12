@@ -65,6 +65,7 @@ export default function DeveloperLabClient({ replacementRows }: Props) {
   const { toast } = useToast();
   const [pendingAction, startTransition] = useTransition();
   const [weights, setWeights] = useState<Record<ScoreKey, number>>(DEFAULT_WEIGHTS);
+  const [sandboxTab, setSandboxTab] = useState<'rpi' | 'health' | 'readiness' | 'critical' | 'stock'>('rpi');
 
   const simulated = useMemo(() => {
     return replacementRows
@@ -85,6 +86,11 @@ export default function DeveloperLabClient({ replacementRows }: Props) {
     .filter((row) => row.rankDelta !== 0 && row.rankDelta != null)
     .sort((a, b) => Math.abs(b.rankDelta ?? 0) - Math.abs(a.rankDelta ?? 0))
     .slice(0, 8);
+  const stability = topMovement.length === 0
+    ? 'Stable: top candidates unchanged'
+    : topMovement.some((row) => Math.abs(row.rankDelta ?? 0) >= 5)
+      ? 'Sensitive: top candidates changed significantly'
+      : 'Moderate movement: some rank order changes';
 
   function runAction(label: string, action: () => Promise<{ success: boolean; error?: string }>) {
     startTransition(async () => {
@@ -101,7 +107,7 @@ export default function DeveloperLabClient({ replacementRows }: Props) {
           <div>
             <CardTitle>Sensitivity Sandbox</CardTitle>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Sandbox only. These controls do not modify live operational decision outputs.
+              Simulation only. Does not modify operational decisions.
             </p>
           </div>
           <div className="text-right text-xs text-[var(--text-muted)]">
@@ -112,40 +118,61 @@ export default function DeveloperLabClient({ replacementRows }: Props) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {SCORE_CRITERIA.map((criterion) => (
-              <label key={criterion.key} className="rounded-lg border border-[var(--border-subtle)] p-3">
-                <span className="mb-2 flex items-center justify-between gap-3 text-sm">
-                  <span className="font-medium text-[var(--foreground)]">{criterion.label}</span>
-                  <span className="text-[var(--text-muted)]">{weights[criterion.key]}%</span>
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={40}
-                  step={1}
-                  value={weights[criterion.key]}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    setWeights((current) => ({ ...current, [criterion.key]: value }));
-                  }}
-                  className="w-full accent-[var(--brand)]"
-                  aria-label={`${criterion.label} simulated weight`}
-                />
-              </label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ['rpi', 'RPI weights'],
+              ['health', 'Equipment Health weights'],
+              ['readiness', 'Department Readiness weights'],
+              ['critical', 'Critical Action score weights'],
+              ['stock', 'Stock/procurement priority weights'],
+            ].map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setSandboxTab(id as typeof sandboxTab)} className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${sandboxTab === id ? 'border-[var(--brand)] bg-[var(--surface-2)] text-[var(--foreground)]' : 'border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--brand)]/50'}`}>
+                {label}
+              </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={() => setWeights(DEFAULT_WEIGHTS)}>
-            <RotateCcw className="h-4 w-4" />
-            Reset Sandbox
-          </Button>
+          {sandboxTab === 'rpi' ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {SCORE_CRITERIA.map((criterion) => (
+                  <label key={criterion.key} className="rounded-lg border border-[var(--border-subtle)] p-3">
+                    <span className="mb-2 flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium text-[var(--foreground)]">{criterion.label}</span>
+                      <span className="text-[var(--text-muted)]">{weights[criterion.key]}%</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      step={1}
+                      value={weights[criterion.key]}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setWeights((current) => ({ ...current, [criterion.key]: value }));
+                      }}
+                      className="w-full accent-[var(--brand)]"
+                      aria-label={`${criterion.label} simulated weight`}
+                    />
+                  </label>
+                ))}
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setWeights(DEFAULT_WEIGHTS)}>
+                <RotateCcw className="h-4 w-4" />
+                Reset Sandbox
+              </Button>
+            </>
+          ) : (
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-muted)]">
+              Simulation limited by available fields. This tab documents the scoring family and reserves the interface for client-side ranking once its full row inputs are loaded.
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>Ranking Comparison</CardTitle>
-          <Badge variant="info">{simulated.length} assets simulated</Badge>
+          <Badge variant={stability.startsWith('Sensitive') ? 'warning' : stability.startsWith('Stable') ? 'success' : 'info'}>{stability}</Badge>
         </CardHeader>
         <CardContent>
           {topMovement.length === 0 ? (

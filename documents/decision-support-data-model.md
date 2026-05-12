@@ -12,6 +12,7 @@ This document maps database tables to roles in the system and defines the **cano
 6. **Command Center action semantics** — operational rows must preserve record identity. If a row is an existing work order, request, PM schedule, procurement request, or replacement candidate, its primary action opens that exact record/evidence route. If no workflow record exists, the action opens a prefilled creation flow with source context. Informational Risk Watch signals are acknowledged/snoozed with a signal hash or converted into real workflow items.
 7. **Developer Lab boundary** — scoring methodology, sandbox sliders, sensitivity testing, debug tools, data health checks, refresh tools, and thesis/demo tools live in `/developer-lab` and are developer-only. Sandbox controls do not affect live decision outputs unless a developer explicitly runs a real refresh action.
 8. **Operational-page boundary** — BME Head pages show the situation, evidence, explanations, and next actions, but not developer-only sliders or debug controls. Replacement Priority is a planning/evidence page; scoring sliders belong only in Developer Lab.
+9. **Final polishing rule** — operational count cards must filter the current surface or route to an exact filtered surface. Tables and queues must use the same loaded rows as their cards whenever possible. Completed rows are evidence/history, not default active work queues.
 
 **Overlap note:** `recommendation_flags` and `triage_action_queue` are related but not redundant: flags are evidence; the queue is the ordered action list. `repeat_repair_flags` (schema) overlaps intent with `recommendation_flags` of type `recurring_failure` — a future PR may deprecate the separate table; **do not delete without a migration plan**.
 
@@ -112,16 +113,17 @@ the BME Head makes final operational decisions.
 | Staff & Access | Uses `profiles`, `user_roles`, `roles`, and `departments`; profile-only staff and auth-linked login users are both shown |
 | Security & Access | Uses roles/profile/audit evidence; shows role matrix, users per role, RLS/audit posture, risky accounts, and recent governance events |
 | Calibration | Uses `calibration_records`, `calibration_requests`, and `v_calibration_due`; failed/adjusted and overdue rows must be visible |
-| Work Orders | Uses `work_orders`; row actions open exact `/maintenance/work-orders/[id]` with state-aware action query where needed |
-| Spare Parts | Uses `spare_parts`, `stock_receipts`, `stock_issues`, and procurement prefill links for low-stock/stockout blockers |
-| Logistics | Uses real receipt, issue, spare part, and procurement rows; workflow cards must not fake unimplemented stock-request tables |
-| Procurement | Uses `procurement_requests`; exact detail/status route is `/command/drilldown/procurement/[id]` |
-| Training | Uses `training_requests`, `training_sessions`, and `staff_training_records`; coverage is derived from available session/category evidence |
-| Replacement | Uses `replacement_priority_scores` and `v_replacement_decision`; no sliders on BME Head page |
-| Disposal | Uses formal `disposal_requests` and `disposed_assets`; replacement/non-repairable candidates are evidence prompts, not request counts |
-| Alerts | Uses `recommendation_flags` today; richer notification/escalation subsystem is deferred |
-| Reports | Uses table-backed report services; do not claim export/report data that is not implemented |
-| Audit | Uses `audit_logs`; page must degrade gracefully if the table is empty or inaccessible |
+| Calibration | Uses `calibration_records`, `calibration_requests`, and `v_calibration_due`; priority = overdue severity + criticality + last result risk + department impact + workflow state |
+| Work Orders | Uses `work_orders`; default active queue excludes completed history; row actions open exact `/maintenance/work-orders/[id]` with state-aware action query where needed |
+| Spare Parts | Uses `spare_parts`, `stock_receipts`, `stock_issues`, and procurement prefill links; open procurement is tracked instead of duplicated |
+| Logistics | Uses real receipt, issue, spare part, and procurement rows; represents Receive -> Request -> Approve -> Issue -> Balance/Bin Card -> Usage Evidence |
+| Procurement | Uses `procurement_requests`; exact detail/status route is `/command/drilldown/procurement/[id]`; inline status updates use server actions where permitted |
+| Training | Uses `training_requests`, `training_sessions`, and `staff_training_records`; primary tabs are Requests, Upcoming, Completed, Competency Evidence |
+| Replacement | Uses `replacement_priority_scores` and `v_replacement_decision`; thresholds are prototype/system decision thresholds: >=0.70 strong, 0.55-0.69 review, <0.55 monitor |
+| Disposal | Uses formal `disposal_requests` and `disposed_assets`; replacement/non-repairable candidates are evidence prompts, not request counts; disposed_by resolves through profiles |
+| Alerts | Uses `recommendation_flags` today; specific source action labels are preferred over generic source links |
+| Reports | Uses table-backed report services; report detail shows generated timestamp, refresh/freshness note, methodology, and export evidence |
+| Audit | Uses `audit_logs`; page highlights high-risk governance events and must degrade gracefully if the table is empty or inaccessible |
 
 Route compatibility rules: `/helpdesk` redirects to `/requests`, `/users` redirects to `/settings?tab=staff-access`, `/security` redirects to `/settings?tab=security-access`, and `/command/health` plus `/decision-support-health` redirect to `/developer-lab`.
 

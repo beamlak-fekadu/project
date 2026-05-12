@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   Bell,
   Building2,
+  ClipboardList,
   Database,
   Download,
   MoreVertical,
@@ -43,9 +44,15 @@ import {
 } from '@/components/ui';
 
 type SettingsSection =
+  | 'profile-password'
   | 'hospital-profile'
   | 'departments'
   | 'equipment-categories'
+  | 'calibration-types'
+  | 'pm-templates'
+  | 'spare-part-categories'
+  | 'procurement-statuses'
+  | 'disposal-reasons'
   | 'staff-access'
   | 'security-access'
   | 'notifications'
@@ -93,11 +100,17 @@ interface ReferenceConfig {
 }
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.ElementType; access: string }> = [
+  { id: 'profile-password', label: 'Profile and Password', icon: UserCog, access: 'Personal' },
   { id: 'hospital-profile', label: 'Hospital Profile', icon: Building2, access: 'Operational' },
   { id: 'departments', label: 'Departments', icon: Building2, access: 'Operational' },
   { id: 'equipment-categories', label: 'Equipment Categories', icon: Database, access: 'Operational' },
-  { id: 'staff-access', label: 'Staff & Access', icon: Users, access: 'Admin' },
-  { id: 'security-access', label: 'Security & Access', icon: Shield, access: 'Admin' },
+  { id: 'calibration-types', label: 'Calibration Types', icon: Database, access: 'Operational' },
+  { id: 'pm-templates', label: 'PM Templates', icon: Database, access: 'Operational' },
+  { id: 'spare-part-categories', label: 'Spare Part Categories', icon: Database, access: 'Configured' },
+  { id: 'procurement-statuses', label: 'Procurement Statuses', icon: ClipboardList, access: 'Configured' },
+  { id: 'disposal-reasons', label: 'Disposal Reasons', icon: Trash2, access: 'Configured' },
+  { id: 'staff-access', label: 'User Management', icon: Users, access: 'Admin' },
+  { id: 'security-access', label: 'Role Permissions', icon: Shield, access: 'Admin' },
   { id: 'notifications', label: 'Notifications', icon: Bell, access: 'Planned' },
   { id: 'reference-data', label: 'Reference Data', icon: Database, access: 'Admin' },
   { id: 'system-preferences', label: 'System Preferences', icon: SlidersHorizontal, access: 'Operational' },
@@ -257,7 +270,7 @@ const ROLE_VARIANT: Record<string, 'info' | 'purple' | 'warning' | 'success' | '
 };
 
 function normalizeSection(value: string | null): SettingsSection {
-  return SECTIONS.some((section) => section.id === value) ? (value as SettingsSection) : 'hospital-profile';
+  return SECTIONS.some((section) => section.id === value) ? (value as SettingsSection) : 'profile-password';
 }
 
 function roleNames(profile: ProfileRow) {
@@ -276,12 +289,16 @@ function permissionsCount(value: unknown) {
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { isDeveloper, isAdmin, primaryRole } = useRole();
+  const { isDeveloper, isAdmin, isBmeHead, primaryRole } = useRole();
   const canAdministerSettings = isDeveloper || isAdmin;
+  const canViewGovernance = canAdministerSettings || isBmeHead;
   const initialSection = normalizeSection(searchParams.get('tab'));
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [referenceTable, setReferenceTable] = useState<ReferenceTable>(
-    initialSection === 'equipment-categories' ? 'equipment_categories' : 'departments'
+    initialSection === 'equipment-categories' ? 'equipment_categories'
+      : initialSection === 'calibration-types' ? 'calibration_types'
+        : initialSection === 'pm-templates' ? 'pm_templates'
+          : 'departments'
   );
   const [referenceData, setReferenceData] = useState<Record<string, Record<string, unknown>[]>>({});
   const [referenceLoading, setReferenceLoading] = useState<Record<string, boolean>>({});
@@ -670,8 +687,37 @@ export default function SettingsPage() {
   }
 
   function renderSection() {
+    if (activeSection === 'profile-password') {
+      return (
+        <Card>
+          <CardHeader><CardTitle>Profile and Password</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 text-sm text-[var(--text-muted)]">
+            <p>Profile information comes from the linked staff profile and department assignment.</p>
+            <p>Password and authentication changes are handled by Supabase Auth flows. In-app password management is not implemented in this pass.</p>
+          </CardContent>
+        </Card>
+      );
+    }
     if (activeSection === 'departments') return renderReferenceManager('departments');
     if (activeSection === 'equipment-categories') return renderReferenceManager('equipment_categories');
+    if (activeSection === 'calibration-types') return renderReferenceManager('calibration_types');
+    if (activeSection === 'pm-templates') return renderReferenceManager('pm_templates');
+    if (activeSection === 'spare-part-categories' || activeSection === 'procurement-statuses' || activeSection === 'disposal-reasons') {
+      const labels: Record<string, string> = {
+        'spare-part-categories': 'Spare Part Categories',
+        'procurement-statuses': 'Procurement Statuses',
+        'disposal-reasons': 'Disposal Reasons',
+      };
+      return (
+        <Card>
+          <CardHeader><CardTitle>{labels[activeSection]}</CardTitle><Badge variant="info">Configured in database</Badge></CardHeader>
+          <CardContent className="space-y-2 text-sm text-[var(--text-muted)]">
+            <p>This setting is represented by existing operational fields and database constraints today.</p>
+            <p>Full CRUD can be added once a dedicated lookup table is introduced; no fake controls are shown here.</p>
+          </CardContent>
+        </Card>
+      );
+    }
     if (activeSection === 'staff-access') return renderStaffAccess();
     if (activeSection === 'security-access') return renderSecurityAccess();
     if (activeSection === 'reference-data') return renderReferenceManager();
@@ -745,7 +791,7 @@ export default function SettingsPage() {
       />
 
       <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
-        {SECTIONS.map((section) => {
+        {SECTIONS.filter((section) => section.access !== 'Admin' || canViewGovernance).map((section) => {
           const Icon = section.icon;
           const active = activeSection === section.id;
           return (
@@ -756,6 +802,8 @@ export default function SettingsPage() {
                 setActiveSection(section.id);
                 if (section.id === 'departments') setReferenceTable('departments');
                 if (section.id === 'equipment-categories') setReferenceTable('equipment_categories');
+                if (section.id === 'calibration-types') setReferenceTable('calibration_types');
+                if (section.id === 'pm-templates') setReferenceTable('pm_templates');
               }}
               className={`rounded-lg border p-3 text-left transition ${active ? 'border-[var(--brand)] bg-[var(--surface-2)]' : 'border-[var(--border-subtle)] hover:border-[var(--brand)]/50'}`}
             >
