@@ -4,7 +4,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_SECTIONS, APP_NAME_SHORT, ROUTES } from '@/constants';
-import { ChevronLeft, ChevronRight, Activity, LayoutDashboard, Bell, Monitor, FileText, PackageCheck, Wrench, CalendarCheck, CalendarDays, Gauge, Package, Boxes, GraduationCap, Trash2, ShieldAlert, CheckCircle, BarChart3, ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight, Monitor, FileText, PackageCheck, Wrench, CalendarCheck, CalendarDays, Gauge,
+  Package, Boxes, GraduationCap, Trash2, Activity, ShieldAlert, CheckCircle, BarChart3,
+  ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText, Bell, LayoutDashboard,
+} from 'lucide-react';
+import LogoMark from '@/components/brand/LogoMark';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Bell, Monitor, FileText, PackageCheck, Wrench, CalendarCheck, CalendarDays, Gauge,
@@ -29,16 +34,27 @@ export default function Sidebar({ userRoles = ['admin'] }: SidebarProps) {
   };
 
   return (
-    <aside className={`panel-surface flex h-screen flex-col border-r-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-72'}`}>
+    <aside
+      className={`panel-surface-muted flex h-screen flex-col border-r border-[var(--border-subtle)] transition-all duration-200 ${
+        collapsed ? 'w-16' : 'w-72'
+      }`}
+    >
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-4">
         {!collapsed && (
-          <Link href="/" className="flex items-center gap-2">
-            <Activity className="h-6 w-6 text-[var(--brand)]" />
-            <span className="text-lg font-bold text-[var(--foreground)]">{APP_NAME_SHORT}</span>
+          <Link href="/" className="flex items-center gap-2.5">
+            <LogoMark size={28} />
+            <span className="text-base font-semibold text-[var(--foreground)] tracking-tight">{APP_NAME_SHORT}</span>
           </Link>
         )}
-        {collapsed && <Activity className="mx-auto h-6 w-6 text-[var(--brand)]" />}
-        <button onClick={() => setCollapsed(!collapsed)} className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]">
+        {collapsed && (
+          <Link href="/" className="mx-auto">
+            <LogoMark size={26} />
+          </Link>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
+        >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
@@ -51,9 +67,9 @@ export default function Sidebar({ userRoles = ['admin'] }: SidebarProps) {
           if (visibleItems.length === 0) return null;
 
           return (
-            <div key={section.title} className="mb-4">
+            <div key={section.title} className="mb-5">
               {!collapsed && (
-                <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-subtle)]">
                   {section.title}
                 </p>
               )}
@@ -70,16 +86,19 @@ export default function Sidebar({ userRoles = ['admin'] }: SidebarProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                       !isChatbotItem && active
-                        ? 'bg-[var(--brand)]/20 text-[var(--foreground)]'
+                        ? 'bg-[var(--brand-soft)] font-medium text-[var(--brand)] shadow-sm'
                         : !isChatbotItem
-                          ? 'text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]'
+                          ? 'font-normal text-[var(--text-muted)] hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]'
                           : chatbotClass
-                    } ${isChatbotItem ? 'relative overflow-hidden' : ''}`}
+                    } ${isChatbotItem ? 'relative overflow-hidden font-medium' : ''}`}
                     title={collapsed ? item.label : undefined}
                   >
-                    <Icon className={`h-5 w-5 flex-shrink-0 ${isChatbotItem ? 'text-[var(--chatbot-nav-icon)]' : ''}`} />
+                    <Icon
+                      className={`h-[18px] w-[18px] flex-shrink-0 ${isChatbotItem ? 'text-[var(--chatbot-nav-icon)]' : ''}`}
+                      strokeWidth={active ? 2 : 1.75}
+                    />
                     {!collapsed && <span>{item.label}</span>}
                   </Link>
                 );

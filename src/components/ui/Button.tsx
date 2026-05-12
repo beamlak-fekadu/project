@@ -11,15 +11,27 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+/**
+ * Primary uses the brand gradient with a subtle inset highlight (glass).
+ * Secondary/outline/ghost are translucent surfaces that adapt to glass + dark.
+ */
 const variantStyles: Record<Variant, string> = {
-  primary: 'bg-[var(--brand)] text-white hover:bg-[var(--brand-strong)] focus:ring-[var(--brand)] disabled:border disabled:border-[var(--border-subtle)] disabled:bg-[var(--surface-3)] disabled:text-[var(--foreground)] disabled:opacity-100',
-  secondary: 'bg-[var(--surface-3)] text-[var(--foreground)] hover:bg-[#232e50] focus:ring-[var(--brand)]',
-  outline: 'border border-[var(--border-subtle)] bg-transparent text-[var(--foreground)] hover:bg-[var(--surface-2)] focus:ring-[var(--brand)]',
-  ghost: 'text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)] focus:ring-[var(--brand)]',
-  destructive: 'bg-[var(--danger)] text-white hover:bg-red-500 focus:ring-[var(--danger)]',
-  warning: 'bg-amber-600 text-white hover:bg-amber-500 focus:ring-amber-500',
-  success: 'bg-emerald-600 text-white hover:bg-emerald-500 focus:ring-emerald-500',
-  info: 'bg-blue-600 text-white hover:bg-blue-500 focus:ring-blue-500',
+  primary:
+    'bg-[image:var(--brand-gradient)] text-white shadow-[0_4px_12px_-2px_rgba(37,99,235,0.35)] hover:brightness-[1.05] focus:ring-[var(--brand)] disabled:bg-[var(--surface-3)] disabled:bg-none disabled:text-[var(--text-muted)] disabled:shadow-none disabled:opacity-100',
+  secondary:
+    'bg-[var(--surface-3)] text-[var(--foreground)] hover:bg-[var(--surface-1)] focus:ring-[var(--brand)]',
+  outline:
+    'border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--foreground)] backdrop-blur hover:bg-[var(--surface-3)] focus:ring-[var(--brand)]',
+  ghost:
+    'text-[var(--text-muted)] hover:bg-[var(--surface-1)] hover:text-[var(--foreground)] focus:ring-[var(--brand)]',
+  destructive:
+    'bg-[var(--danger)] text-white hover:brightness-110 focus:ring-[var(--danger)]',
+  warning:
+    'bg-[var(--warning)] text-white hover:brightness-110 focus:ring-[var(--warning)]',
+  success:
+    'bg-[var(--success)] text-white hover:brightness-110 focus:ring-[var(--success)]',
+  info:
+    'bg-[var(--brand)] text-white hover:brightness-110 focus:ring-[var(--brand)]',
 };
 
 const sizeStyles: Record<Size, string> = {
@@ -34,7 +46,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium tracking-tight transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       {...props}
     >
       {loading && (

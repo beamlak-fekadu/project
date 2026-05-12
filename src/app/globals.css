@@ -1,19 +1,52 @@
 @import "tailwindcss";
 
+/* ──────────────────────────────────────────────────────────────────────────
+   BMERMS · V4_Theme · Glass & Depth
+   Light is primary; dark is parity. Calmer clinical blue accent.
+   ──────────────────────────────────────────────────────────────────────── */
+
 :root {
   color-scheme: light;
-  --background: #f3f6fb;
-  --foreground: #172033;
-  --surface-1: #ffffff;
-  --surface-2: #eef3fc;
-  --surface-3: #dde7f6;
-  --border-subtle: #c8d4e7;
-  --text-muted: #5f6f8a;
-  --brand: #4f46e5;
-  --brand-strong: #4338ca;
+
+  /* Base surfaces — translucent panels over a soft gradient backdrop */
+  --background: #eef2f8;
+  --background-deep: #e6ecf6;
+  --foreground: #0b1220;
+  --surface-1: rgba(255, 255, 255, 0.72);
+  --surface-2: rgba(255, 255, 255, 0.45);
+  --surface-3: rgba(255, 255, 255, 0.92);
+  --surface-solid: #ffffff;
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --text-muted: #475569;
+  --text-subtle: #94a3b8;
+
+  /* Brand — calm clinical blue with violet gradient partner for emphasis */
+  --brand: #2563eb;
+  --brand-strong: #1d4ed8;
+  --brand-2: #7c3aed;
+  --brand-soft: rgba(37, 99, 235, 0.10);
+  --brand-gradient: linear-gradient(135deg, #2563eb, #7c3aed);
+
+  /* Semantic */
   --danger: #dc2626;
   --success: #059669;
   --warning: #d97706;
+
+  /* Materials */
+  --backdrop-blur: blur(28px) saturate(180%);
+  --shadow-sm: 0 1px 0 rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 1px 0 rgba(15, 23, 42, 0.04), 0 12px 32px -12px rgba(15, 23, 42, 0.18);
+  --shadow-lg: 0 1px 0 rgba(15, 23, 42, 0.04), 0 30px 60px -20px rgba(15, 23, 42, 0.22);
+  --ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+
+  /* Ambient backdrop — radial color blobs over base */
+  --ambient-bg:
+    radial-gradient(1200px 800px at 10% -10%, #dde7ff 0%, transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, #e8ddff 0%, transparent 55%),
+    linear-gradient(180deg, #eef2f8, #e6ecf6);
+
+  /* Assistant + chatbot accents (preserved from prior theme) */
   --assistant-accent: #d6a547;
   --assistant-accent-soft: rgb(214 165 71 / 24%);
   --assistant-glow: rgb(214 165 71 / 15%);
@@ -28,28 +61,57 @@
   --chatbot-nav-text: #7a4a00;
   --chatbot-nav-icon: #b67605;
   --chatbot-nav-glow: 0 0 0 1px rgb(214 165 71 / 30%), 0 8px 18px rgb(214 165 71 / 18%);
-  --chart-label: #64748b;
-  --chart-grid: rgb(148 163 184 / 28%);
-  --chart-tooltip-bg: rgb(15 23 42 / 92%);
+
+  /* Charts */
+  --chart-label: #475569;
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-tooltip-bg: rgba(15, 23, 42, 0.92);
   --chart-tooltip-text: #f8fafc;
-  --chart-tooltip-border: rgb(148 163 184 / 35%);
+  --chart-tooltip-border: rgba(255, 255, 255, 0.12);
+  --chart-1: #2563eb;
+  --chart-2: #7c3aed;
+  --chart-3: #0ea5e9;
+  --chart-4: #10b981;
+  --chart-5: #f59e0b;
+  --chart-6: #ef4444;
 }
 
 :root[data-theme='dark'],
 html.dark {
   color-scheme: dark;
-  --background: #070a14;
-  --foreground: #e6ebff;
-  --surface-1: #0e1324;
-  --surface-2: #131a31;
-  --surface-3: #1a2340;
-  --border-subtle: #2a3352;
-  --text-muted: #9ca8cf;
-  --brand: #7b61ff;
-  --brand-strong: #6a4dff;
+
+  --background: #0a0e1a;
+  --background-deep: #070a14;
+  --foreground: #f1f5f9;
+  --surface-1: rgba(255, 255, 255, 0.05);
+  --surface-2: rgba(255, 255, 255, 0.03);
+  --surface-3: rgba(255, 255, 255, 0.09);
+  --surface-solid: #0e1324;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text-muted: #a1adc7;
+  --text-subtle: #6b7693;
+
+  --brand: #5b8def;
+  --brand-strong: #3b6ee0;
+  --brand-2: #a78bfa;
+  --brand-soft: rgba(91, 141, 239, 0.16);
+  --brand-gradient: linear-gradient(135deg, #5b8def, #a78bfa);
+
   --danger: #f87171;
   --success: #34d399;
   --warning: #fbbf24;
+
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 1px 0 rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 1px 0 rgba(0, 0, 0, 0.3), 0 30px 70px -20px rgba(0, 0, 0, 0.6);
+  --ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
+
+  --ambient-bg:
+    radial-gradient(1200px 800px at 10% -10%, rgba(37, 99, 235, 0.18) 0%, transparent 60%),
+    radial-gradient(900px 600px at 100% 100%, rgba(124, 58, 237, 0.18) 0%, transparent 55%),
+    linear-gradient(180deg, #0a0e1a, #070a14);
+
   --assistant-accent: #d6a547;
   --assistant-accent-soft: rgb(214 165 71 / 35%);
   --assistant-glow: rgb(214 165 71 / 28%);
@@ -64,11 +126,18 @@ html.dark {
   --chatbot-nav-text: #f6d089;
   --chatbot-nav-icon: #efbe61;
   --chatbot-nav-glow: 0 0 0 1px rgb(214 165 71 / 35%), 0 10px 24px rgb(214 165 71 / 22%);
-  --chart-label: #9ca8cf;
-  --chart-grid: rgb(75 85 99 / 28%);
-  --chart-tooltip-bg: rgb(17 24 39 / 95%);
-  --chart-tooltip-text: #f9fafb;
-  --chart-tooltip-border: rgb(75 85 99 / 30%);
+
+  --chart-label: #a1adc7;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(10, 14, 26, 0.95);
+  --chart-tooltip-text: #f1f5f9;
+  --chart-tooltip-border: rgba(255, 255, 255, 0.12);
+  --chart-1: #5b8def;
+  --chart-2: #a78bfa;
+  --chart-3: #38bdf8;
+  --chart-4: #34d399;
+  --chart-5: #fbbf24;
+  --chart-6: #f87171;
 }
 
 @theme inline {
@@ -81,34 +150,61 @@ html.dark {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Inter, Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── App shell — ambient color backdrop ──────────────────────────────────── */
 .app-shell {
-  background: var(--background);
+  background: var(--ambient-bg);
+  min-height: 100vh;
+  position: relative;
 }
 
+/* ── Glass panels ────────────────────────────────────────────────────────── */
 .panel-surface {
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
-  box-shadow: 0 2px 8px rgb(1 4 12 / 8%);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  box-shadow: var(--shadow-md);
 }
 
 .panel-surface-muted {
   border: 1px solid var(--border-subtle);
   background: var(--surface-2);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+}
+
+.panel-surface-solid {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-sm);
 }
 
 .text-muted {
   color: var(--text-muted);
 }
 
+/* ── Tabular numbers for data-heavy UI ───────────────────────────────────── */
+.tabular,
+[class*="font-mono"],
+[class*="font-bold"][class*="text-"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Assistant launcher / panel (preserved, retoned for glass) ───────────── */
 .assistant-launcher {
   background:
     radial-gradient(80px 60px at 75% -20%, var(--assistant-glow), transparent 75%),
-    linear-gradient(180deg, rgb(255 255 255 / 4%) 0%, rgb(255 255 255 / 1%) 100%),
-    var(--surface-2);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 35%);
+    var(--surface-1);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg);
 }
 
 .assistant-panel {
@@ -118,8 +214,9 @@ body {
 .assistant-panel-surface {
   background:
     radial-gradient(420px 180px at 85% 0%, var(--assistant-glow), transparent 70%),
-    linear-gradient(180deg, rgb(255 255 255 / 2%) 0%, rgb(255 255 255 / 0%) 100%),
     var(--surface-1);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
 }
 
 .assistant-warning {
@@ -132,16 +229,14 @@ body {
   color: var(--assistant-warning-text-strong);
 }
 
-/* ── Print styles ──────────────────────────────────────────────────────────── */
+/* ── Print styles (preserved) ────────────────────────────────────────────── */
 @media print {
-  /* Hide navigation, controls, and interactive chrome */
   .no-print,
   .assistant-launcher,
   .assistant-panel {
     display: none !important;
   }
 
-  /* Reset dark backgrounds for legibility */
   body,
   .app-shell,
   .panel-surface,
@@ -149,20 +244,18 @@ body {
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
+    backdrop-filter: none !important;
   }
 
-  /* Ensure text is readable on white */
   h1, h2, h3, h4, p, span, td, th, li {
     color: #111111 !important;
   }
 
-  /* Muted text slightly softer but still legible */
   .text-muted,
   [class*="text-muted"] {
     color: #444444 !important;
   }
 
-  /* Brand purple readable on white */
   [class*="text-brand"],
   [class*="text-violet"],
   [class*="text-blue"],
@@ -173,48 +266,39 @@ body {
     color: #000000 !important;
   }
 
-  /* Badges — remove colored backgrounds for print */
   [class*="bg-"] {
     background: transparent !important;
     border-color: #cccccc !important;
   }
 
-  /* Keep borders visible for structure */
   [class*="border"] {
     border-color: #cccccc !important;
   }
 
-  /* Charts need their canvas visible — don't hide them */
   canvas {
     max-width: 100% !important;
   }
 
-  /* Break page neatly between chart rows but not inside them */
   .report-chart-grid > * {
     break-inside: avoid;
   }
 
-  /* Don't break KPI cards mid-row */
   .report-kpi-grid > * {
     break-inside: avoid;
   }
 
-  /* Avoid page breaks inside evidence tables */
   table {
     break-inside: avoid;
   }
 
-  /* Show snapshot header in print */
   .report-print-header {
     display: block !important;
   }
 
-  /* Remove sticky headers that don't print well */
   thead {
     display: table-header-group;
   }
 
-  /* Ensure page uses full width */
   @page {
     margin: 1.5cm;
     size: A4 portrait;
