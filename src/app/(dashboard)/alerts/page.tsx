@@ -26,6 +26,9 @@ import type { Urgency, RecommendationFlagType } from '@/types/domain';
 import { generateAlertSummary } from '@/utils/decision-support/explanations';
 import ExpandableText from '@/components/ui/ExpandableText';
 import { replacementEvidence } from '@/app/(dashboard)/command/_lib/command-center-routes';
+import ViewerManagementAlerts from './_components/ViewerManagementAlerts';
+import StoreLogisticsAlerts from './_components/StoreLogisticsAlerts';
+import DepartmentAlerts from './_components/DepartmentAlerts';
 
 interface AssetInfo {
   id: string;
@@ -124,6 +127,23 @@ function alertGroup(alert: AlertRow) {
 }
 
 export default function AlertsPage() {
+  const { roles } = useRole();
+  const isViewerOnly =
+    roles.includes('viewer') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isStoreOnly =
+    roles.includes('store_user') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isDepartmentOnly =
+    (roles.includes('department_head') || roles.includes('department_user')) &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isDepartmentOnly) return <DepartmentAlerts />;
+  if (isStoreOnly) return <StoreLogisticsAlerts />;
+  if (isViewerOnly) return <ViewerManagementAlerts />;
+  return <OperationalAlertsPage />;
+}
+
+function OperationalAlertsPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { profile } = useProfile(user?.id);

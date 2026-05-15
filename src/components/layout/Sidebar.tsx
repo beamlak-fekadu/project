@@ -22,7 +22,53 @@ interface SidebarProps {
   userRoles?: string[];
 }
 
+// Viewer-specific label overrides — viewer pages are framed as read-only
+// management overviews, not operational modules. The underlying routes are
+// unchanged; only the label is swapped in the sidebar for the viewer role.
+const VIEWER_LABEL_OVERRIDES: Record<string, string> = {
+  [ROUTES.EQUIPMENT]: 'Equipment Overview',
+  [ROUTES.MAINTENANCE]: 'Maintenance Overview',
+  [ROUTES.REPLACEMENT]: 'Replacement & Risk',
+  [ROUTES.COMPLIANCE]: 'Compliance Overview',
+  [ROUTES.ALERTS]: 'Management Alerts',
+};
+
+// Store-User-specific label overrides — store pages are framed as a
+// Store / Logistics Operations Console, not generic biomedical modules.
+const STORE_LABEL_OVERRIDES: Record<string, string> = {
+  [ROUTES.COMMAND]: 'Store Operations',
+  [ROUTES.SPARE_PARTS]: 'Spare Parts Stock Control',
+  [ROUTES.LOGISTICS]: 'Logistics Console',
+  [ROUTES.PROCUREMENT]: 'Procurement Tracking',
+  [ROUTES.MAINTENANCE]: 'Maintenance Blockers',
+  [ROUTES.ALERTS]: 'Logistics Alerts',
+};
+
+// Department-role label overrides — department pages are framed as a
+// Department Equipment & Service Readiness Portal.
+const DEPARTMENT_LABEL_OVERRIDES: Record<string, string> = {
+  [ROUTES.COMMAND]: 'Department Dashboard',
+  [ROUTES.CALENDAR]: 'Department Calendar',
+  [ROUTES.EQUIPMENT]: 'Department Equipment',
+  [ROUTES.REQUESTS]: 'Department Requests',
+  [ROUTES.MAINTENANCE]: 'Work Status',
+  [ROUTES.COMPLIANCE]: 'Compliance Status',
+  [ROUTES.ALERTS]: 'Department Alerts',
+};
+
 export default function Sidebar({ userRoles = ['admin'] }: SidebarProps) {
+  const isViewerOnly =
+    userRoles.length > 0 &&
+    userRoles.includes('viewer') &&
+    !userRoles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head');
+  const isStoreOnly =
+    userRoles.length > 0 &&
+    userRoles.includes('store_user') &&
+    !userRoles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isDepartmentOnly =
+    userRoles.length > 0 &&
+    (userRoles.includes('department_head') || userRoles.includes('department_user')) &&
+    !userRoles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
@@ -102,7 +148,17 @@ export default function Sidebar({ userRoles = ['admin'] }: SidebarProps) {
                       className={`h-[18px] w-[18px] flex-shrink-0 ${isChatbotItem ? 'text-[var(--chatbot-nav-icon)]' : ''}`}
                       strokeWidth={active ? 2 : 1.75}
                     />
-                    {!collapsed && <span>{item.label}</span>}
+                    {!collapsed && (
+                      <span>
+                        {isStoreOnly && STORE_LABEL_OVERRIDES[item.href]
+                          ? STORE_LABEL_OVERRIDES[item.href]
+                          : isDepartmentOnly && DEPARTMENT_LABEL_OVERRIDES[item.href]
+                            ? DEPARTMENT_LABEL_OVERRIDES[item.href]
+                            : isViewerOnly && VIEWER_LABEL_OVERRIDES[item.href]
+                              ? VIEWER_LABEL_OVERRIDES[item.href]
+                              : item.label}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

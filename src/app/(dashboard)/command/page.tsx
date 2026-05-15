@@ -48,6 +48,32 @@ import {
 } from './_lib/command-center-data';
 import { equipmentDetail, replacementEvidence, replacementReportPrefill } from './_lib/command-center-routes';
 import { isReplacementCandidate } from '@/utils/decision-support/replacement-thresholds';
+import ViewerExecutiveCommandCenter from './_components/ViewerExecutiveCommandCenter';
+import {
+  fetchViewerExecutiveMetrics,
+  fetchViewerDeptReadiness,
+  fetchViewerCriticalRisks,
+} from '@/utils/viewer/executive-metrics';
+import { classifyDeptRisk } from '@/utils/viewer/readiness';
+import StoreOperationsCommandCenter from './_components/StoreOperationsCommandCenter';
+import {
+  fetchStoreExecutiveMetrics,
+  fetchStoreStockRisk,
+  fetchStoreReceivingQueue,
+  fetchStoreIssueQueue,
+  fetchStoreBlockers,
+} from '@/utils/store/store-metrics';
+import DepartmentDashboard from './_components/DepartmentDashboard';
+import {
+  fetchDepartmentMetrics,
+  fetchDepartmentAttention,
+  fetchDepartmentRequests,
+  fetchDepartmentWorkOrders,
+  fetchDepartmentOverduePm,
+  fetchDepartmentOverdueCalibration,
+  fetchDepartmentName,
+} from '@/utils/department/department-metrics';
+import { detectDepartmentRoleType } from '@/utils/department/department-scope';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -409,6 +435,113 @@ export default async function CommandCenterPage() {
 
   const supabase = await createClient();
   const now = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // ── Department Head / Department User Department Dashboard ────────────
+  const deptRoleType = detectDepartmentRoleType(profile.roleNames ?? []);
+  if (deptRoleType) {
+    const departmentId = (profile as unknown as Record<string, unknown>).department_id as string | null | undefined ?? null;
+    const profileIdLocal = (profile as unknown as Record<string, unknown>).id as string | null ?? null;
+    const [departmentName, deptMetrics, attention, requests, workOrders, overduePm, overdueCal] = await Promise.all([
+      fetchDepartmentName(supabase, departmentId).catch(() => null),
+      fetchDepartmentMetrics(supabase, departmentId).catch(() => null),
+      fetchDepartmentAttention(supabase, departmentId).catch(() => []),
+      fetchDepartmentRequests(supabase, departmentId).catch(() => []),
+      fetchDepartmentWorkOrders(supabase, departmentId).catch(() => []),
+      fetchDepartmentOverduePm(supabase, departmentId).catch(() => []),
+      fetchDepartmentOverdueCalibration(supabase, departmentId).catch(() => []),
+    ]);
+    return (
+      <DepartmentDashboard
+        departmentId={departmentId}
+        departmentName={departmentName}
+        profileId={profileIdLocal}
+        roleType={deptRoleType}
+        metrics={deptMetrics ?? {
+          totalAssets: 0, functionalAssets: 0, needsRepairAssets: 0, nonFunctionalAssets: 0,
+          underMaintenanceAssets: 0, criticalAssets: 0, criticalEquipmentDown: 0,
+          readinessPercent: null, openRequests: 0, pendingRequests: 0, openWorkOrders: 0,
+          criticalOpenWork: 0, overdueWork: 0, awaitingPartsWork: 0, overduePm: 0,
+          overdueCalibration: 0, failedCalibration: 0, monthlyCompletedWork: 0,
+          monthlyCompletedPm: 0, monthlyCompletedCalibration: 0, trainingNeeds: 0,
+          unacknowledgedAlerts: 0,
+        }}
+        attention={attention}
+        requests={requests}
+        workOrders={workOrders}
+        overduePm={overduePm}
+        overdueCalibration={overdueCal}
+        generatedAt={now}
+      />
+    );
+  }
+
+  // ── Store-User Store Operations Command Center ─────────────────────────
+  // Renders a dedicated stock/logistics console. Other roles fall through.
+  if (primaryRole === 'store_user') {
+    const [storeMetricsBase, stockRisk, receiving, issueQueue, blockers] = await Promise.all([
+      fetchStoreExecutiveMetrics(supabase).catch(() => null),
+      fetchStoreStockRisk(supabase).catch(() => []),
+      fetchStoreReceivingQueue(supabase).catch(() => []),
+      fetchStoreIssueQueue(supabase).catch(() => []),
+      fetchStoreBlockers(supabase).catch(() => []),
+    ]);
+    const storeMetrics = storeMetricsBase ?? {
+      totalParts: 0, inStockParts: 0, lowStockParts: 0, stockoutParts: 0,
+      blockedWorkOrders: 0, approvedItemsToIssue: 0, deliveredItemsToReceive: 0,
+      openProcurement: 0, delayedProcurement: 0, recentReceipts: 0,
+      recentIssues: 0, pendingIssueRequests: 0,
+    };
+    return (
+      <StoreOperationsCommandCenter
+        metrics={storeMetrics}
+        stockRisk={stockRisk}
+        receiving={receiving}
+        issueQueue={issueQueue}
+        blockers={blockers}
+        generatedAt={now}
+      />
+    );
+  }
+
+  // ── Viewer-only Executive Oversight Portal ─────────────────────────────────
+  // Developer/Admin/BME Head/other operational roles fall through to the
+  // existing Command Center below. Viewer renders a dedicated read-only view
+  // computed from the same canonical helpers and views — no generated text.
+  if (primaryRole === 'viewer') {
+    const [vMetricsBase, vDepartments, vCriticalRisks] = await Promise.all([
+      fetchViewerExecutiveMetrics(supabase).catch(() => null),
+      fetchViewerDeptReadiness(supabase).catch(() => []),
+      fetchViewerCriticalRisks(supabase).catch(() => []),
+    ]);
+    const departmentsAtRisk = vDepartments.filter((d) => {
+      const level = classifyDeptRisk({
+        readinessScore: d.readinessScore,
+        essentialUnavailable: d.essentialUnavailable,
+        criticalOpenWork: d.criticalOpenWork,
+        overduePm: d.overduePm,
+        overdueCalibration: d.overdueCalibration,
+      });
+      return level === 'high' || level === 'medium';
+    }).length;
+    const vMetrics = vMetricsBase ?? {
+      totalAssets: 0, functionalAssets: 0, needsRepairAssets: 0, nonFunctionalAssets: 0,
+      underMaintenanceAssets: 0, essentialAssets: 0, criticalEquipmentDown: 0,
+      clinicalReadinessPercent: null, openWorkOrders: 0, criticalOpenWork: 0,
+      overdueWork: 0, onHoldWork: 0, monthlyCompletion: 0, pmCompliancePercent: null,
+      pmOverdue: 0, calibrationDueSoon: 0, calibrationOverdue: 0,
+      criticalCalibrationOverdue: 0, stockBlockers: 0, procurementDelays: 0,
+      replacementReviewCandidates: 0, strongReplacementCandidates: 0,
+      highRiskAssets: 0, recurringFailureFlags: 0, departmentsAtRisk: 0,
+    };
+    return (
+      <ViewerExecutiveCommandCenter
+        metrics={{ ...vMetrics, departmentsAtRisk }}
+        departments={vDepartments}
+        criticalRisks={vCriticalRisks}
+        generatedAt={now}
+      />
+    );
+  }
 
   // ── Fetch all data in parallel ─────────────────────────────────────────────
   let triage: { rows: TriageRow[]; totalItems: number } = { rows: [], totalItems: 0 };

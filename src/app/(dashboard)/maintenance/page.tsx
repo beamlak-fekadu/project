@@ -18,6 +18,9 @@ import type { MaintenanceRequest, WorkOrder } from '@/types/domain';
 import { generateAlertSummary } from '@/utils/decision-support/explanations';
 import { createMaintenanceRequestFromAsset } from '@/app/(dashboard)/command/_lib/command-center-routes';
 import { isOpenMaintenanceRequestStatus } from '@/utils/maintenance/request-status';
+import ViewerMaintenanceOverview from './_components/ViewerMaintenanceOverview';
+import StoreMaintenanceBlockers from './_components/StoreMaintenanceBlockers';
+import DepartmentWorkStatus from './_components/DepartmentWorkStatus';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type RequestRow = MaintenanceRequest & {
@@ -172,6 +175,23 @@ const WO_FILTERS: { key: WOFilter; label: string }[] = [
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 export default function MaintenancePage() {
+  const { roles } = useRole();
+  const isViewerOnly =
+    roles.includes('viewer') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isStoreOnly =
+    roles.includes('store_user') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isDepartmentOnly =
+    (roles.includes('department_head') || roles.includes('department_user')) &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isDepartmentOnly) return <DepartmentWorkStatus />;
+  if (isStoreOnly) return <StoreMaintenanceBlockers />;
+  if (isViewerOnly) return <ViewerMaintenanceOverview />;
+  return <OperationalMaintenancePage />;
+}
+
+function OperationalMaintenancePage() {
   const router = useRouter();
   const { toast } = useToast();
   const { canCreateRequests, canManageMaintenance } = useRole();

@@ -29,6 +29,7 @@ import {
   isReplacementCandidate,
 } from '@/utils/decision-support/replacement-thresholds';
 import { useRole } from '@/hooks/useRole';
+import ViewerReplacementRisk from './_components/ViewerReplacementRisk';
 import { ROUTES } from '@/constants';
 
 interface AssetInfo {
@@ -167,6 +168,15 @@ function hasMissingScore(row: ReplacementRow) {
 }
 
 export default function ReplacementPage() {
+  const { roles } = useRole();
+  const isViewerOnly =
+    roles.includes('viewer') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isViewerOnly) return <ViewerReplacementRisk />;
+  return <OperationalReplacementPage />;
+}
+
+function OperationalReplacementPage() {
   const searchParams = useSearchParams();
   const { isDeveloper } = useRole();
   const [data, setData] = useState<ReplacementRow[]>([]);

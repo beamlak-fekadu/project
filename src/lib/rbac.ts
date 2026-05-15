@@ -36,6 +36,7 @@ export type Capability =
   | 'nav.reports'
   | 'nav.settings'
   | 'nav.audit'
+  | 'nav.compliance'
   // Equipment + assets
   | 'equipment.create'
   | 'equipment.edit'
@@ -97,6 +98,7 @@ const DEVELOPER_CAPS: Capability[] = [
   'nav.developer_lab', 'nav.command', 'nav.calendar', 'nav.equipment', 'nav.maintenance', 'nav.requests',
   'nav.pm', 'nav.calibration', 'nav.work_orders', 'nav.spare_parts', 'nav.logistics', 'nav.procurement',
   'nav.training', 'nav.replacement', 'nav.disposal', 'nav.alerts', 'nav.reports', 'nav.settings', 'nav.audit',
+  'nav.compliance',
   'equipment.create', 'equipment.edit', 'equipment.delete',
   'maintenance.request.create', 'maintenance.request.approve',
   'work_order.create', 'work_order.assign', 'work_order.start', 'work_order.complete', 'work_order.add_event',
@@ -136,17 +138,27 @@ export const CAPABILITY_MATRIX: Matrix = {
     'alerts.acknowledge', 'reports.view',
   ),
 
+  // Store User = Store / Logistics Operations Console. Read-only outside of
+  // store/logistics workflows. Can create reorder/procurement requests for
+  // stock needs, receive delivered items, and issue approved items. Cannot
+  // approve procurement, assign technicians, or run maintenance execution.
+  // Note: nav.maintenance is granted so /maintenance can render as
+  // "Maintenance Blockers" — a strictly read-only blocker view for store.
   store_user: caps(
-    'nav.command', 'nav.calendar', 'nav.equipment', 'nav.requests',
-    'nav.spare_parts', 'nav.logistics', 'nav.procurement', 'nav.alerts', 'nav.reports',
+    'nav.command', 'nav.calendar', 'nav.spare_parts', 'nav.logistics',
+    'nav.procurement', 'nav.maintenance', 'nav.alerts', 'nav.reports',
     'spare_parts.manage', 'stock.receive', 'stock.issue',
     'procurement.request',
     'reports.view',
   ),
 
+  // Department Head / User = Department Equipment & Service Readiness Portal.
+  // Both roles use the same set of navigation routes (the page renders a
+  // different tailored view per role). Pages are department-scoped at the
+  // server level — no all-hospital fallback.
   department_head: caps(
     'nav.command', 'nav.calendar', 'nav.equipment', 'nav.maintenance', 'nav.requests',
-    'nav.work_orders', 'nav.training', 'nav.alerts', 'nav.reports',
+    'nav.compliance', 'nav.alerts', 'nav.reports',
     'maintenance.request.create',
     'calibration.request.create',
     'training.request.create',
@@ -156,7 +168,7 @@ export const CAPABILITY_MATRIX: Matrix = {
 
   department_user: caps(
     'nav.command', 'nav.calendar', 'nav.equipment', 'nav.maintenance', 'nav.requests',
-    'nav.training', 'nav.reports',
+    'nav.compliance', 'nav.alerts', 'nav.reports',
     'maintenance.request.create',
     'calibration.request.create',
     'training.request.create',
@@ -164,9 +176,13 @@ export const CAPABILITY_MATRIX: Matrix = {
     'reports.view',
   ),
 
+  // Viewer = Executive Oversight Portal. Read-only management view with
+  // intentionally limited navigation. See utils/viewer/* for the dashboards
+  // computed from real data, and src/app/(dashboard)/compliance for the
+  // viewer-first compliance overview.
   viewer: caps(
-    'nav.command', 'nav.calendar', 'nav.equipment', 'nav.requests',
-    'nav.pm', 'nav.replacement', 'nav.reports',
+    'nav.command', 'nav.calendar', 'nav.equipment', 'nav.maintenance',
+    'nav.compliance', 'nav.replacement', 'nav.alerts', 'nav.reports',
     'reports.view',
   ),
 };

@@ -359,11 +359,29 @@ export default function HospitalCalendarClient({ data }: { data: HospitalCalenda
   const [selectedDay, setSelectedDay] = useState(today);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const initialType = TYPE_OPTIONS.includes(searchParams.get('type') as CalendarEventType) ? searchParams.get('type') as CalendarEventType : 'all';
-  const [typeFilter, setTypeFilter] = useState<CalendarEventType | 'all'>(initialType);
+  // Viewer-only default: prefer management-significant events. The user can
+  // still flip these toggles, but the initial view shows critical/high
+  // priority events and excludes completed/cancelled noise.
+  const isViewerOnly = data.scope.roleNames.length > 0
+    && data.scope.roleNames.includes('viewer')
+    && !data.scope.roleNames.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head');
+  const isStoreOnly = data.scope.roleNames.length > 0
+    && data.scope.roleNames.includes('store_user')
+    && !data.scope.roleNames.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isDepartmentOnly = data.scope.roleNames.length > 0
+    && (data.scope.roleNames.includes('department_head') || data.scope.roleNames.includes('department_user'))
+    && !data.scope.roleNames.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  // For store_user, default the type filter to procurement so logistics
+  // events surface first. Users can still flip to other event types.
+  const storeDefaultType: CalendarEventType | 'all' = 'procurement';
+  const [typeFilter, setTypeFilter] = useState<CalendarEventType | 'all'>(isStoreOnly && initialType === 'all' ? storeDefaultType : initialType);
   const [statusFilter, setStatusFilter] = useState<CalendarEventStatus | 'all'>('all');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
+  // For department roles, default the department filter to the user's
+  // department so events from other departments are not shown by default.
+  // The user can still flip the filter to "all" if needed.
+  const [departmentFilter, setDepartmentFilter] = useState(isDepartmentOnly && data.scope.departmentName ? data.scope.departmentName : 'all');
   const [assignedFilter, setAssignedFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState<(typeof PRIORITY_OPTIONS)[number]>('all');
+  const [priorityFilter, setPriorityFilter] = useState<(typeof PRIORITY_OPTIONS)[number]>(isViewerOnly ? 'high' : 'all');
   const [datePreset, setDatePreset] = useState<DatePreset>('visible');
   const [showCompleted, setShowCompleted] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);

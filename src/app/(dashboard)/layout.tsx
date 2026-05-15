@@ -18,16 +18,27 @@ const EXTRA_ROUTE_RULES: Array<{ prefix: string; roles: RoleName[] }> = [
   { prefix: '/security', roles: ['developer', 'admin', 'bme_head'] },
   { prefix: '/audit', roles: ['developer', 'admin', 'bme_head'] },
   { prefix: '/equipment/new', roles: ['developer', 'admin', 'bme_head', 'technician'] },
+  // Store user can open asset detail as read-only evidence from blocker /
+  // usage-linkage pages.
   { prefix: '/equipment/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
   { prefix: '/inventory/new', roles: ['developer', 'admin', 'bme_head', 'technician'] },
   { prefix: '/inventory/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
   { prefix: '/maintenance/work-orders/new', roles: ['developer', 'admin', 'bme_head', 'technician'] },
-  { prefix: '/maintenance/work-orders/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head'] },
+  // Viewer can open work-order and maintenance-request detail records as
+  // read-only evidence from the Viewer Maintenance Overview and Alerts.
+  // Store user can open work-order detail as evidence from blocker rows.
+  { prefix: '/maintenance/work-orders/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'viewer', 'store_user'] },
   { prefix: '/maintenance/requests/new', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user'] },
-  { prefix: '/maintenance/requests/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user'] },
+  { prefix: '/maintenance/requests/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'viewer'] },
   { prefix: '/pm/plans/new', roles: ['developer', 'admin', 'bme_head', 'technician'] },
   { prefix: '/pm/plans/', roles: ['developer', 'admin', 'bme_head', 'technician', 'viewer'] },
   { prefix: '/pm/schedules/', roles: ['developer', 'admin', 'bme_head', 'technician', 'viewer'] },
+  // Viewer drilldowns into evidence (procurement, replacement) — read-only.
+  { prefix: '/command/drilldown/', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
+  // Compliance Overview is primarily a Viewer route, but allowed for
+  // developer/admin/bme_head for parity, and for department roles which see
+  // a department-scoped variant.
+  { prefix: '/compliance', roles: ['developer', 'admin', 'bme_head', 'viewer', 'department_head', 'department_user'] },
   { prefix: '/requests', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
   { prefix: '/documents', roles: ['developer', 'admin', 'bme_head', 'technician'] },
   { prefix: '/installation', roles: ['developer', 'admin', 'bme_head', 'technician'] },

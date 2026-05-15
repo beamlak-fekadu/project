@@ -13,6 +13,7 @@ import { getProcurementPipeline } from '@/services/procurement.service';
 import { createClient } from '@/lib/supabase/client';
 import { procurementDetail } from '@/app/(dashboard)/command/_lib/command-center-routes';
 import { useRole } from '@/hooks/useRole';
+import StoreLogisticsConsole from './_components/StoreLogisticsConsole';
 
 type WorkflowPanel = 'receiving' | 'requests' | 'issue' | 'bin-card' | 'usage-linkage';
 
@@ -43,6 +44,15 @@ function normalizeWorkflow(value: string | null): WorkflowPanel {
 }
 
 export default function LogisticsPage() {
+  const { roles } = useRole();
+  const isStoreOnly =
+    roles.includes('store_user') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isStoreOnly) return <StoreLogisticsConsole />;
+  return <OperationalLogisticsPage />;
+}
+
+function OperationalLogisticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { canManageParts } = useRole();

@@ -46,6 +46,7 @@ export const ROUTES = {
   DISPOSAL: '/disposal',
   REPORTS: '/reports',
   REPLACEMENT: '/replacement',
+  COMPLIANCE: '/compliance',
   ALERTS: '/alerts',
   HELPDESK: '/helpdesk',
   DEVELOPER_LAB: '/developer-lab',
@@ -77,17 +78,29 @@ export const NAV_SECTIONS = [
   {
     title: 'Equipment',
     items: [
-      { label: 'Equipment', href: ROUTES.EQUIPMENT, icon: 'Monitor', capability: 'nav.equipment', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
+      // Store User does not get a top-level Equipment entry; they still reach
+      // asset detail through evidence links inside the Store pages.
+      { label: 'Equipment', href: ROUTES.EQUIPMENT, icon: 'Monitor', capability: 'nav.equipment', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'viewer'] },
     ],
   },
   {
     title: 'Work',
     items: [
-      { label: 'Maintenance', href: ROUTES.MAINTENANCE, icon: 'Wrench', capability: 'nav.maintenance', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user'] },
-      { label: 'Requests', href: ROUTES.REQUESTS, icon: 'ClipboardList', capability: 'nav.requests', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
-      { label: 'Preventive Maintenance', href: ROUTES.PM, icon: 'CalendarCheck', capability: 'nav.pm', roles: ['developer', 'admin', 'bme_head', 'technician', 'viewer'] },
+      // Maintenance is included for store_user — renders as Maintenance
+      // Blockers (read-only) when the role is store_user. See
+      // src/app/(dashboard)/maintenance/_components/StoreMaintenanceBlockers.tsx.
+      { label: 'Maintenance', href: ROUTES.MAINTENANCE, icon: 'Wrench', capability: 'nav.maintenance', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'viewer', 'store_user'] },
+      { label: 'Requests', href: ROUTES.REQUESTS, icon: 'ClipboardList', capability: 'nav.requests', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user'] },
+      { label: 'Preventive Maintenance', href: ROUTES.PM, icon: 'CalendarCheck', capability: 'nav.pm', roles: ['developer', 'admin', 'bme_head', 'technician'] },
       { label: 'Calibration', href: ROUTES.CALIBRATION, icon: 'Gauge', capability: 'nav.calibration', roles: ['developer', 'admin', 'bme_head', 'technician'] },
-      { label: 'Work Orders', href: ROUTES.WORK_ORDERS, icon: 'ClipboardList', capability: 'nav.work_orders', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head'] },
+      // Department Head historically had work-orders nav access but should
+      // now use the department-scoped Work Status under /maintenance. Keep
+      // operational Work Orders for BME/technician only.
+      { label: 'Work Orders', href: ROUTES.WORK_ORDERS, icon: 'ClipboardList', capability: 'nav.work_orders', roles: ['developer', 'admin', 'bme_head', 'technician'] },
+      // Viewer + department roles see the Compliance Overview. For viewer
+      // it is the executive read-only view; for department roles the page
+      // renders the department-scoped DepartmentComplianceStatus.
+      { label: 'Compliance Overview', href: ROUTES.COMPLIANCE, icon: 'CheckCircle2', capability: 'nav.compliance', roles: ['viewer', 'department_head', 'department_user'] },
     ],
   },
   {
@@ -101,7 +114,9 @@ export const NAV_SECTIONS = [
   {
     title: 'People',
     items: [
-      { label: 'Training', href: ROUTES.TRAINING, icon: 'GraduationCap', capability: 'nav.training', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user'] },
+      // Department roles request training through Requests Hub; the operational
+      // Training page is BME/admin-only.
+      { label: 'Training', href: ROUTES.TRAINING, icon: 'GraduationCap', capability: 'nav.training', roles: ['developer', 'admin', 'bme_head', 'technician'] },
     ],
   },
   {
@@ -114,7 +129,7 @@ export const NAV_SECTIONS = [
   {
     title: 'Support',
     items: [
-      { label: 'Alerts', href: ROUTES.ALERTS, icon: 'Bell', capability: 'nav.alerts', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head'] },
+      { label: 'Alerts', href: ROUTES.ALERTS, icon: 'Bell', capability: 'nav.alerts', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'viewer', 'store_user'] },
       // BMERMS AI Chatbot has no dedicated capability; keep roles-based.
       { label: CHATBOT_NAME, href: ROUTES.CHATBOT, icon: 'MessageSquareText', roles: ['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer'] },
     ],

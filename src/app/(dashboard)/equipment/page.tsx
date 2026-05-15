@@ -35,6 +35,8 @@ import {
   replacementEvidence,
 } from '@/app/(dashboard)/command/_lib/command-center-routes';
 import type { EquipmentCondition } from '@/types/domain';
+import ViewerEquipmentOverview from './_components/ViewerEquipmentOverview';
+import DepartmentEquipmentOverview from './_components/DepartmentEquipmentOverview';
 
 interface EquipmentRow {
   id: string;
@@ -167,6 +169,19 @@ const CONDITION_CHART_COLORS: Record<string, string> = {
 };
 
 export default function EquipmentListPage() {
+  const { roles } = useRole();
+  const isViewerOnly =
+    roles.includes('viewer') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const isDepartmentOnly =
+    (roles.includes('department_head') || roles.includes('department_user')) &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isDepartmentOnly) return <DepartmentEquipmentOverview />;
+  if (isViewerOnly) return <ViewerEquipmentOverview />;
+  return <OperationalEquipmentListPage />;
+}
+
+function OperationalEquipmentListPage() {
   const router = useRouter();
   const { canManageEquipment, canCreateRequests } = useRole();
 

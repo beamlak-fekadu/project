@@ -4659,9 +4659,11 @@ export type Database = {
       v_open_work_orders: {
         Row: {
           asset_code: string | null
+          asset_id: string | null
           asset_name: string | null
           assigned_to_name: string | null
           created_at: string | null
+          department_id: string | null
           department_name: string | null
           id: string | null
           priority: string | null
@@ -4670,7 +4672,36 @@ export type Database = {
           work_order_number: string | null
           work_type: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "equipment_assets_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "equipment_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "v_equipment_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "v_maintenance_risk_context"
+            referencedColumns: ["asset_id"]
+          },
+        ]
       }
       v_overdue_pm: {
         Row: {
@@ -4681,6 +4712,7 @@ export type Database = {
           category_name: string | null
           criticality_level: string | null
           days_overdue: number | null
+          department_id: string | null
           department_name: string | null
           id: string | null
           plan_name: string | null
@@ -4688,6 +4720,13 @@ export type Database = {
           status: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "equipment_assets_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pm_schedules_asset_id_fkey"
             columns: ["asset_id"]

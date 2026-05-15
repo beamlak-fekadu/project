@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { useRole } from '@/hooks/useRole';
 import {
   Boxes,
   CalendarCheck,
@@ -255,7 +256,160 @@ function ReportCard({ report }: { report: ReportDef }) {
   );
 }
 
+// Viewer-allowed report types. Audit/dev/demo reports are hidden from viewer.
+const VIEWER_ALLOWED_REPORTS = new Set([
+  'equipment',
+  'risk-fmea',
+  'replacement-planning',
+  'maintenance-performance',
+  'work-orders',
+  'pm-compliance',
+  'calibration-compliance',
+  'spare-parts-stock',
+  'procurement-pipeline',
+  'training-competency',
+  'department-readiness',
+]);
+
+// Store-allowed reports. Audit/dev/demo/methodology and BME-only deep reports
+// are hidden. Work-orders is included to expose blocker evidence; risk/FMEA
+// is hidden because store does not own risk decisions.
+const STORE_ALLOWED_REPORTS = new Set([
+  'spare-parts-stock',
+  'procurement-pipeline',
+  'maintenance-performance',
+  'work-orders',
+]);
+
+// Department-allowed reports — surfaced as department-scoped snapshots.
+// Hospital-wide deep reports, audit, methodology, and demo reports are not
+// shown for department roles.
+const DEPARTMENT_ALLOWED_REPORTS = new Set([
+  'equipment',
+  'maintenance-performance',
+  'work-orders',
+  'pm-compliance',
+  'calibration-compliance',
+  'department-readiness',
+  'training-competency',
+]);
+
 export default function ReportsPage() {
+  const { roles, isViewer, isDeveloper, isAdmin, isBmeHead, isTechnician, isStoreUser } = useRole();
+  const isViewerOnly = isViewer && !isDeveloper && !isAdmin && !isBmeHead && !isTechnician;
+  const isStoreOnly = isStoreUser && !isDeveloper && !isAdmin && !isBmeHead && !isTechnician;
+  const isDepartmentOnly =
+    (roles.includes('department_head') || roles.includes('department_user')) &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+
+  if (isDepartmentOnly) {
+    const deptSections = sections
+      .map((s) => ({ ...s, reports: s.reports.filter((r) => DEPARTMENT_ALLOWED_REPORTS.has(r.type)) }))
+      .filter((s) => s.reports.length > 0);
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title="Department Reports"
+          description="Department-scoped reports. Open a report to download a PDF snapshot."
+        />
+        <div className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          <p className="text-sm text-[var(--text-muted)]">
+            Reports are filtered to your department. Hospital-wide, audit, decision-support methodology, and demo reports are not shown in this view.
+          </p>
+        </div>
+        {deptSections.map((section) => (
+          <section key={section.id}>
+            <div className={`mb-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 ${section.sectionColor}`}>
+              <div>
+                <h2 className="text-base font-semibold text-[var(--foreground)]">{section.title}</h2>
+                <p className="mt-0.5 text-sm text-[var(--text-muted)]">{section.description}</p>
+              </div>
+              <span className="shrink-0 text-xs text-[var(--text-muted)]">{section.reports.length} reports</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {section.reports.map((report) => (<ReportCard key={report.type} report={report} />))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  if (isStoreOnly) {
+    const storeSections = sections
+      .map((s) => ({ ...s, reports: s.reports.filter((r) => STORE_ALLOWED_REPORTS.has(r.type)) }))
+      .filter((s) => s.reports.length > 0);
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title="Reports"
+          description="Stock, procurement, and store-relevant reports. Open a report to download a PDF snapshot of the current data."
+        />
+        <div className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          <p className="text-sm text-[var(--text-muted)]">
+            Store reports are filtered to stock, procurement, and work-order blocker evidence. Decision-support, audit, and methodology reports are not shown in this view.
+          </p>
+        </div>
+        {storeSections.map((section) => (
+          <section key={section.id}>
+            <div className={`mb-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 ${section.sectionColor}`}>
+              <div>
+                <h2 className="text-base font-semibold text-[var(--foreground)]">{section.title}</h2>
+                <p className="mt-0.5 text-sm text-[var(--text-muted)]">{section.description}</p>
+              </div>
+              <span className="shrink-0 text-xs text-[var(--text-muted)]">{section.reports.length} reports</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {section.reports.map((report) => (<ReportCard key={report.type} report={report} />))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  if (isViewerOnly) {
+    // Filter sections to viewer-allowed reports only.
+    const viewerSections = sections
+      .map((s) => ({ ...s, reports: s.reports.filter((r) => VIEWER_ALLOWED_REPORTS.has(r.type)) }))
+      .filter((s) => s.reports.length > 0);
+
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title="Reports"
+          description="Read-only management report center. Open a report to download a PDF snapshot of the current operational data."
+        />
+        <div className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          <p className="text-sm text-[var(--text-muted)]">
+            Reports are generated from the current operational database state. Each report includes a snapshot timestamp,
+            methodology note, charts, evidence tables, and PDF export. Developer/audit/demo reports are not shown in
+            the read-only management view.
+          </p>
+        </div>
+        {viewerSections.map((section) => (
+          <section key={section.id}>
+            <div className={`mb-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 ${section.sectionColor}`}>
+              <div>
+                <h2 className="text-base font-semibold text-[var(--foreground)]">{section.title}</h2>
+                <p className="mt-0.5 text-sm text-[var(--text-muted)]">{section.description}</p>
+              </div>
+              <span className="shrink-0 text-xs text-[var(--text-muted)]">{section.reports.length} reports</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {section.reports.map((report) => (
+                <ReportCard key={report.type} report={report} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <PageHeader

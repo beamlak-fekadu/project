@@ -1,7 +1,7 @@
 # CLAUDE.md — BMERMS Project Intelligence
 
-Last updated: 2026-05-12 (Reports module redesign — professional evidence/export center)
-Branch: BMERMS_V4
+Last updated: 2026-05-15 (System integrity + analytics truth pass — view column fixes, zero-data bug resolution)
+Branch: V4_Theme
 Deployment: https://project-git-bmermsv3-beamlak-fekadus-projects.vercel.app
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
@@ -151,6 +151,32 @@ DONE:
   - Alerts use Command Center-style tabs and specific source actions. Reports generate timestamped snapshot evidence and moved demo tools to Developer Lab.
   - Settings shows profile/password, reference sections, user management, role permissions, and configured/planned lookup sections. Audit highlights governance/high-risk events.
   - Developer Lab moved under Command for developer/admin roles and now frames methodology, sensitivity tabs, ranking stability, refresh tools, data health, demo evidence tools, and disabled safe reset.
+
+- System integrity + analytics truth pass (2026-05-15, branch V4_Theme):
+  - Root cause found: v_open_work_orders (migration 00031) did NOT expose asset_id or department_id.
+    All department-filtered WO queries and all Viewer maintenance WO counts returned 0 due to this.
+  - Root cause 2: work_orders table has NO scheduled_date column. Queries requesting it caused PostgREST
+    to fail silently; overdue WO count was always 0. Fixed: all WO queries now use age from created_at
+    (>14 days = "aging") instead of scheduled_date. UI label updated to "Aging Work (>14d)" with sub.
+  - Root cause 3: v_calibration_due exposes 'result' (not 'last_result'). All calibration queries using
+    last_result returned null, causing failed/adjusted calibration count = 0. Fixed in department-metrics.ts
+    and fetchDepartmentOverdueCalibration.
+  - Root cause 4: v_overdue_pm (migration 00042) exposed asset_id but NOT department_id. Department PM
+    compliance filters returned 0 rows. Fixed in migration 00044.
+  - Root cause 5: StoreMaintenanceBlockers flags table displayed raw UUID as asset name (line 229).
+    Fixed: equipment_assets(asset_code, name) join added to flags query; table shows asset name + code.
+  - Migration 00044 created: adds asset_id + department_id to v_open_work_orders; adds department_id to
+    v_overdue_pm. Non-breaking additions — existing queries unaffected.
+  - DepartmentWorkStatus.tsx rewritten to use direct view columns (asset_name, asset_code, assigned_to_name)
+    instead of nested FK queries that fail when view has no Relationships in generated types.
+  - ViewerMaintenanceOverview.tsx rewritten: direct view columns, age-based overdue, no FK nest queries.
+  - department-metrics.ts: three query bugs fixed (scheduled_date, last_result, department filter).
+  - Analytics truth map created: src/utils/analytics/analytics-truth-map.ts — documents formula, source,
+    live/snapshot/sandbox status, pages, missing-data and stale-data behavior for 14 metrics.
+  - After applying migration 00044 (supabase db push --linked), regenerate types:
+    npx supabase gen types typescript --linked > src/types/database.ts
+  - Build: tsc --noEmit ✅ npm run lint ✅. npm run build fails with Google Fonts fetch error
+    (network issue in dev environment, not a code error).
 
 IN PROGRESS:
 - Step 8:  Recurring failure count intentionally remains at 1 seeded asset because the thesis
@@ -337,6 +363,14 @@ NOT STARTED:
 14. staff_training_records.staff_user_id → clearer column name deferred: seed files reference
     staff_user_id; renaming would require coordinated seed + app change (do not edit seed ad hoc).
 
+16. RESOLVED (2026-05-15, migration 00044) — v_open_work_orders and v_overdue_pm zero-data bug.
+    Root cause: views lacked asset_id / department_id columns, causing all department-filtered
+    queries and Viewer WO components to return 0 rows. work_orders has no scheduled_date column —
+    all WO "overdue" metrics now use age > 14d from created_at as proxy (labeled "Aging Work").
+    v_calibration_due uses column 'result' not 'last_result'; calibration failed count queries fixed.
+    StoreMaintenanceBlockers flags table fixed to show asset name instead of raw UUID.
+    After applying migration 00044, regenerate types: npx supabase gen types typescript --linked > src/types/database.ts
+
 15. Ghost migration pattern — migration 00021 was marked as applied in supabase_migrations
     table but its DDL was never executed. Fixed in 2026-05-03 session by repairing 00021
     and 00022 to 'reverted' then running db push. If future migrations fail similarly,
@@ -462,5 +496,6 @@ recompute_equipment_analytics() and recompute_all_equipment_analytics() in migra
 00041 — specification_requests workflow rows
 00042 — PM schedule evidence fields, deferred status, and enriched v_overdue_pm
 00043 — v_calibration_due exposes asset_id for exact Command Center/Calibration drilldowns
+00044 — v_open_work_orders adds asset_id + department_id; v_overdue_pm adds department_id (non-breaking)
 
-NEVER modify 00001–00043. Next migration must be 00044.
+NEVER modify 00001–00044. Next migration must be 00045.

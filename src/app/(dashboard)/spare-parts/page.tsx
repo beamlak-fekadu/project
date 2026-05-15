@@ -28,6 +28,7 @@ import { createSparePartAction, createStockIssueAction, createStockReceiptAction
 import { createClient } from '@/lib/supabase/client';
 import { useRole } from '@/hooks/useRole';
 import { procurementDetail } from '@/app/(dashboard)/command/_lib/command-center-routes';
+import StoreSparePartsStockControl from './_components/StoreSparePartsStockControl';
 
 type PartRow = Record<string, unknown>;
 type ReceiptRow = Record<string, unknown>;
@@ -43,6 +44,15 @@ function normalizeSpareTab(value: string | null): SpareTab | '' {
 }
 
 export default function SparePartsPage() {
+  const { roles } = useRole();
+  const isStoreOnly =
+    roles.includes('store_user') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  if (isStoreOnly) return <StoreSparePartsStockControl />;
+  return <OperationalSparePartsPage />;
+}
+
+function OperationalSparePartsPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const { canManageParts, primaryRole } = useRole();

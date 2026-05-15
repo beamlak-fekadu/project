@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/Toast';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
 import { procurementDetail } from '@/app/(dashboard)/command/_lib/command-center-routes';
 import { useRole } from '@/hooks/useRole';
+import StoreProcurementTracking from './_components/StoreProcurementTracking';
 
 type ProcurementRow = {
   id: string;
@@ -29,6 +30,16 @@ type ProcurementTableRow = ProcurementRow & Record<string, unknown>;
 type ProcurementFilter = 'all' | 'open' | 'requested' | 'approved' | 'ordered' | 'in_transit' | 'delivered' | 'delayed' | 'critical-linked' | 'stock-blockers' | 'replacement-linked';
 
 export default function ProcurementPage() {
+  const { roles } = useRole();
+  const isStoreOnly =
+    roles.includes('store_user') &&
+    !roles.some((r) => r === 'developer' || r === 'admin' || r === 'bme_head' || r === 'technician');
+  const searchParams = useSearchParams();
+  if (isStoreOnly) return <StoreProcurementTracking source={searchParams.get('source')} />;
+  return <OperationalProcurementPage />;
+}
+
+function OperationalProcurementPage() {
   const { toast } = useToast();
   const { canManageParts, primaryRole } = useRole();
   const searchParams = useSearchParams();
