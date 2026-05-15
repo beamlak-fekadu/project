@@ -9,12 +9,13 @@ interface DashboardLayoutProps {
   children: ReactNode;
   userName?: string;
   userRole?: string;
+  userJobTitle?: string | null;
   userRoles?: string[];
   alertCount?: number;
   onLogout?: () => void;
 }
 
-export default function DashboardLayout({ children, userName, userRole, userRoles, alertCount, onLogout }: DashboardLayoutProps) {
+export default function DashboardLayout({ children, userName, userRole, userJobTitle, userRoles, alertCount, onLogout }: DashboardLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -35,6 +36,7 @@ export default function DashboardLayout({ children, userName, userRole, userRole
           <Topbar
             userName={userName}
             userRole={userRole}
+            userJobTitle={userJobTitle}
             alertCount={alertCount}
             onMenuToggle={() => setMobileMenuOpen(true)}
             onLogout={onLogout}

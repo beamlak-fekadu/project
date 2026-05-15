@@ -86,6 +86,7 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
         <DashboardLayout
           userName={profile?.full_name || user.email || 'User'}
           userRole={profile?.primaryRole || 'user'}
+          userJobTitle={profile?.job_title}
           userRoles={userRoles}
           onLogout={handleLogout}
         >

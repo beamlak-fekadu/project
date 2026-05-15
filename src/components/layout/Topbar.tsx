@@ -11,6 +11,7 @@ import { formatRoleName } from '@/utils/roles';
 interface TopbarProps {
   userName?: string;
   userRole?: string;
+  userJobTitle?: string | null;
   alertCount?: number;
   onMenuToggle?: () => void;
   onLogout?: () => void;
@@ -19,10 +20,18 @@ interface TopbarProps {
 export default function Topbar({
   userName = 'User',
   userRole = '',
+  userJobTitle,
   alertCount = 0,
   onMenuToggle,
   onLogout,
 }: TopbarProps) {
+  // Top-right secondary line shows the user's job title (e.g. "Radiologist",
+  // "ICU Head", "Clinical Engineer"). Job titles are FREE TEXT in
+  // profiles.job_title and are display-only — they do not control
+  // authorization. If a profile has no job_title we fall back to the
+  // formatted database role (e.g. "BME Head") so raw lowercase role names
+  // like "bme_head" never appear in the Topbar.
+  const subtitle = userJobTitle?.trim() ? userJobTitle : formatRoleName(userRole);
   return (
     <header className="panel-surface-muted flex h-16 items-center justify-between border-b border-[var(--border-subtle)] px-4 lg:px-6">
       <div className="flex items-center gap-3">
@@ -72,7 +81,7 @@ export default function Topbar({
               </div>
               <div className="hidden text-left md:block">
                 <p className="font-medium">{userName}</p>
-                <p className="text-xs text-[var(--text-muted)]">{formatRoleName(userRole)}</p>
+                <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>
               </div>
             </button>
           }

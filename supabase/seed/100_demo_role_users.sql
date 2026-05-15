@@ -2,8 +2,9 @@
 --
 -- IMPORTANT — Job titles vs database roles:
 --   Job titles are stored in profiles.job_title and are FREE TEXT
---   (e.g. "Clinical Engineer", "Radiologist", "ICU Head", "Biomedical Engineering Head",
---    "Medical Director", "Thesis Developer", "Medical Equipment Store Officer").
+--   (e.g. "Clinical Engineer", "Radiologist", "ICU Head",
+--   "Biomedical Engineering Head", "Medical Director", "Thesis Developer",
+--   "Medical Equipment Store Officer").
 --   They are NOT database roles. Do NOT create roles like clinical_engineer,
 --   radiologist, or icu_head.
 --
@@ -19,6 +20,10 @@
 --   * It upserts the seven demo profiles and FORCES the intended
 --     full_name and job_title (overwriting prior demo values like
 --     "BME Department Head" or "Sr. Tigist Worku / ICU Head Nurse").
+--   * It assigns Tigist Worku to "Intensive Care Unit" and Dr. Fitsum Haile
+--     to "Radiology and Imaging". If "Radiology and Imaging" does NOT exist,
+--     department_id is left NULL (validation will flag this) — Dr. Fitsum is
+--     never silently moved to ICU.
 --   * It clears any pre-existing user_roles for those seven demo
 --     profiles and assigns exactly one intended database role per profile.
 --   * If a demo Auth user is missing, the corresponding profile row is
@@ -53,17 +58,17 @@ SET
   permissions = EXCLUDED.permissions;
 
 -- ============================================================================
--- 2) Demo account mapping
+-- 2) Demo account mapping (department assignment is explicit per account)
 --
---   email                              | full_name           | job_title (free text)         | role (lowercase DB role)
---   -----------------------------------+---------------------+-------------------------------+-------------------------
---   developer@bmerms-demo.local        | BMERMS Developer    | Thesis Developer              | developer
---   bme.head@bmerms-demo.local         | Ermias Tadesse      | Biomedical Engineering Head   | bme_head
---   technician@bmerms-demo.local       | Hanna Gebremedhin   | Clinical Engineer             | technician
---   department.head@bmerms-demo.local  | Tigist Worku        | ICU Head                      | department_head
---   department.user@bmerms-demo.local  | Dr. Fitsum Haile    | Radiologist                   | department_user
---   store.user@bmerms-demo.local       | Ato Biniam Teshome  | Medical Equipment Store Officer | store_user
---   viewer@bmerms-demo.local           | Dr. Amanuel Kifle   | Medical Director              | viewer
+--   email                              | full_name           | job_title (free text)            | role            | department
+--   -----------------------------------+---------------------+----------------------------------+-----------------+-----------------------
+--   developer@bmerms-demo.local        | BMERMS Developer    | Thesis Developer                 | developer       | (none)
+--   bme.head@bmerms-demo.local         | Ermias Tadesse      | Biomedical Engineering Head      | bme_head        | (none)
+--   technician@bmerms-demo.local       | Hanna Gebremedhin   | Clinical Engineer                | technician      | (none)
+--   department.head@bmerms-demo.local  | Tigist Worku        | ICU Head                         | department_head | Intensive Care Unit
+--   department.user@bmerms-demo.local  | Dr. Fitsum Haile    | Radiologist                      | department_user | Radiology and Imaging
+--   store.user@bmerms-demo.local       | Ato Biniam Teshome  | Medical Equipment Store Officer  | store_user      | (none)
+--   viewer@bmerms-demo.local           | Dr. Amanuel Kifle   | Medical Director                 | viewer          | (none)
 --
 -- Reminder: "Clinical Engineer", "Radiologist", "ICU Head",
 -- "Biomedical Engineering Head", "Medical Director" are JOB TITLES.
@@ -74,26 +79,54 @@ WITH demo_accounts AS (
   SELECT *
   FROM (
     VALUES
-      ('developer@bmerms-demo.local',       'BMERMS Developer',    'Thesis Developer',                  'developer'),
-      ('bme.head@bmerms-demo.local',        'Ermias Tadesse',      'Biomedical Engineering Head',       'bme_head'),
-      ('technician@bmerms-demo.local',      'Hanna Gebremedhin',   'Clinical Engineer',                 'technician'),
-      ('department.head@bmerms-demo.local', 'Tigist Worku',        'ICU Head',                          'department_head'),
-      ('department.user@bmerms-demo.local', 'Dr. Fitsum Haile',    'Radiologist',                       'department_user'),
-      ('store.user@bmerms-demo.local',      'Ato Biniam Teshome',  'Medical Equipment Store Officer',   'store_user'),
-      ('viewer@bmerms-demo.local',          'Dr. Amanuel Kifle',   'Medical Director',                  'viewer')
-  ) AS t(email, full_name, job_title, expected_role)
+      ('developer@bmerms-demo.local',       'BMERMS Developer',    'Thesis Developer',                  'developer',       NULL::text),
+      ('bme.head@bmerms-demo.local',        'Ermias Tadesse',      'Biomedical Engineering Head',       'bme_head',        NULL::text),
+      ('technician@bmerms-demo.local',      'Hanna Gebremedhin',   'Clinical Engineer',                 'technician',      NULL::text),
+      ('department.head@bmerms-demo.local', 'Tigist Worku',        'ICU Head',                          'department_head', 'icu'),
+      ('department.user@bmerms-demo.local', 'Dr. Fitsum Haile',    'Radiologist',                       'department_user', 'radiology'),
+      ('store.user@bmerms-demo.local',      'Ato Biniam Teshome',  'Medical Equipment Store Officer',   'store_user',      NULL::text),
+      ('viewer@bmerms-demo.local',          'Dr. Amanuel Kifle',   'Medical Director',                  'viewer',          NULL::text)
+  ) AS t(email, full_name, job_title, expected_role, department_key)
 ),
--- Pick a department to attach the two department-scoped demo accounts to.
--- We prefer an ICU department because Tigist Worku is "ICU Head".
-department_target AS (
+-- ICU department: prefer exact name match, then ICU code, then fuzzy match.
+icu_department AS (
   SELECT id
   FROM departments
   WHERE is_active = true
+    AND (
+      name = 'Intensive Care Unit'
+      OR code = 'ICU'
+      OR name ILIKE '%intensive care%'
+      OR name ILIKE '%ICU%'
+    )
   ORDER BY
-    CASE WHEN code ILIKE '%ICU%' OR name ILIKE '%ICU%' THEN 0 ELSE 1 END,
-    name,
-    id
+    CASE WHEN name = 'Intensive Care Unit' THEN 0
+         WHEN code = 'ICU' THEN 1
+         ELSE 2 END,
+    name
   LIMIT 1
+),
+-- Radiology department: REQUIRE exact "Radiology and Imaging" first; only if
+-- that does not exist, fall back to fuzzy match. If nothing matches, the
+-- subquery returns NULL and department_id is left NULL (NOT ICU).
+radiology_department AS (
+  SELECT id FROM (
+    SELECT id, 0 AS rank
+    FROM departments
+    WHERE is_active = true AND name = 'Radiology and Imaging'
+    UNION ALL
+    SELECT id, 1 AS rank
+    FROM departments
+    WHERE is_active = true
+      AND name <> 'Radiology and Imaging'
+      AND (
+        code = 'RAD'
+        OR name ILIKE '%radiology%'
+        OR name ILIKE '%imaging%'
+      )
+    ORDER BY rank, id
+    LIMIT 1
+  ) AS r
 ),
 -- Resolve auth.users.id by email (NO hardcoded UUIDs).
 auth_resolved AS (
@@ -102,24 +135,25 @@ auth_resolved AS (
          d.job_title,
          d.expected_role,
          au.id AS auth_user_id,
-         CASE
-           WHEN d.email IN ('department.head@bmerms-demo.local', 'department.user@bmerms-demo.local')
-             THEN (SELECT id FROM department_target)
+         CASE d.department_key
+           WHEN 'icu'       THEN (SELECT id FROM icu_department)
+           WHEN 'radiology' THEN (SELECT id FROM radiology_department)
            ELSE NULL
          END AS department_id
   FROM demo_accounts d
   LEFT JOIN auth.users au ON au.email = d.email
 ),
--- Update existing profiles by email. FORCE the intended full_name and
--- job_title so older demo values ("BME Department Head", "Sr. Tigist
--- Worku", "ICU Head Nurse") are overwritten.
+-- Update existing profiles by email. FORCE the intended full_name,
+-- job_title, AND department_id so older demo values are overwritten
+-- (e.g. "BME Department Head", "Sr. Tigist Worku", "ICU Head Nurse",
+-- or Dr. Fitsum previously stuck on ICU).
 updated_profiles AS (
   UPDATE profiles p
   SET
     user_id       = COALESCE(a.auth_user_id, p.user_id),
     full_name     = a.full_name,
     job_title     = a.job_title,
-    department_id = COALESCE(p.department_id, a.department_id),
+    department_id = a.department_id,
     is_active     = true
   FROM auth_resolved a
   WHERE p.email = a.email
@@ -157,20 +191,20 @@ JOIN roles r ON r.name = d.expected_role  -- validates against LOWERCASE DB role
 ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- ============================================================================
--- 3) Validation: confirm name, job title, auth link, and role for each demo
+-- 3) Validation: confirm name, job title, auth link, department, and role
 -- ============================================================================
 WITH demo_accounts AS (
   SELECT *
   FROM (
     VALUES
-      ('developer@bmerms-demo.local',       'BMERMS Developer',    'Thesis Developer',                  'developer'),
-      ('bme.head@bmerms-demo.local',        'Ermias Tadesse',      'Biomedical Engineering Head',       'bme_head'),
-      ('technician@bmerms-demo.local',      'Hanna Gebremedhin',   'Clinical Engineer',                 'technician'),
-      ('department.head@bmerms-demo.local', 'Tigist Worku',        'ICU Head',                          'department_head'),
-      ('department.user@bmerms-demo.local', 'Dr. Fitsum Haile',    'Radiologist',                       'department_user'),
-      ('store.user@bmerms-demo.local',      'Ato Biniam Teshome',  'Medical Equipment Store Officer',   'store_user'),
-      ('viewer@bmerms-demo.local',          'Dr. Amanuel Kifle',   'Medical Director',                  'viewer')
-  ) AS t(email, expected_full_name, expected_job_title, expected_role)
+      ('developer@bmerms-demo.local',       'BMERMS Developer',    'Thesis Developer',                  'developer',       NULL::text),
+      ('bme.head@bmerms-demo.local',        'Ermias Tadesse',      'Biomedical Engineering Head',       'bme_head',        NULL::text),
+      ('technician@bmerms-demo.local',      'Hanna Gebremedhin',   'Clinical Engineer',                 'technician',      NULL::text),
+      ('department.head@bmerms-demo.local', 'Tigist Worku',        'ICU Head',                          'department_head', 'Intensive Care Unit'),
+      ('department.user@bmerms-demo.local', 'Dr. Fitsum Haile',    'Radiologist',                       'department_user', 'Radiology and Imaging'),
+      ('store.user@bmerms-demo.local',      'Ato Biniam Teshome',  'Medical Equipment Store Officer',   'store_user',      NULL::text),
+      ('viewer@bmerms-demo.local',          'Dr. Amanuel Kifle',   'Medical Director',                  'viewer',          NULL::text)
+  ) AS t(email, expected_full_name, expected_job_title, expected_role, expected_department_name)
 )
 SELECT
   d.email,
@@ -186,6 +220,8 @@ SELECT
   p.user_id AS linked_auth_user_uuid,
   (p.user_id = au.id) AS profile_link_matches_auth,
   dep.name AS department_name,
+  d.expected_department_name,
+  (dep.name IS NOT DISTINCT FROM d.expected_department_name) AS has_expected_department,
   d.expected_role,
   ARRAY_REMOVE(ARRAY_AGG(DISTINCT r.name ORDER BY r.name), NULL) AS assigned_roles,
   COUNT(DISTINCT r.name) AS role_count,
@@ -197,5 +233,6 @@ LEFT JOIN departments dep ON dep.id = p.department_id
 LEFT JOIN user_roles ur ON ur.user_id = p.id
 LEFT JOIN roles      r  ON r.id = ur.role_id
 GROUP BY d.email, au.id, p.id, p.full_name, d.expected_full_name,
-         p.job_title, d.expected_job_title, p.user_id, dep.name, d.expected_role
+         p.job_title, d.expected_job_title, p.user_id, dep.name,
+         d.expected_department_name, d.expected_role
 ORDER BY d.email;
