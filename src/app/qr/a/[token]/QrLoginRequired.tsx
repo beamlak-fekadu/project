@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ShieldCheck, KeyRound } from 'lucide-react';
 import LogoMark from '@/components/brand/LogoMark';
+import NetworkStatusPill from '@/components/offline/NetworkStatusPill';
 import { Button } from '@/components/ui';
 import { APP_NAME_SHORT, HOSPITAL_NAME } from '@/constants';
 
@@ -20,6 +21,9 @@ export default function QrLoginRequired({ returnTo }: Props) {
           {APP_NAME_SHORT}
         </p>
         <p className="mt-1 text-xs text-[var(--text-muted)]">{HOSPITAL_NAME}</p>
+        <div className="mt-4">
+          <NetworkStatusPill />
+        </div>
 
         <h1 className="mt-8 text-2xl font-semibold tracking-tight">
           Equipment QR scanned

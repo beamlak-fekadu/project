@@ -4,15 +4,26 @@ import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, PageHeader, Select, Textarea } from '@/components/ui';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import { createProcurementRequestAction } from '@/actions/procurement.actions';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
+import { useRole } from '@/hooks/useRole';
 import { procurementRequestSchema } from '@/utils/validation/operations';
 import { useToast } from '@/components/ui/Toast';
+import type { OfflineActionRunResult } from '@/types/offline';
 
 export default function NewProcurementRequestPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { roles, primaryRole } = useRole();
   const [submitting, setSubmitting] = useState(false);
+  const [offlineResult, setOfflineResult] = useState<OfflineActionRunResult | null>(null);
 
   const prefill = useMemo(() => {
     const itemName = searchParams.get('itemName') ?? 'spare part';
@@ -56,20 +67,46 @@ export default function NewProcurementRequestPage() {
       return;
     }
     setSubmitting(true);
-    const result = await createProcurementRequestAction({
+    const payload = {
       title: parsed.data.title,
       justification: parsed.data.justification,
       status: parsed.data.status,
       priority: parsed.data.priority,
       expected_delivery_date: parsed.data.expected_delivery_date || null,
+      part_id: searchParams.get('partId') ?? searchParams.get('sparePartId') ?? null,
+      current_stock_snapshot: searchParams.get('currentStock'),
+      reorder_level_snapshot: searchParams.get('reorderLevel'),
+      requested_quantity: searchParams.get('suggestedQuantity'),
+      created_by_profile_id: profile?.id ?? null,
+      source: searchParams.get('source') ?? 'manual',
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'store_reorder.create',
+      entityType: 'procurement_requests',
+      assetId: searchParams.get('assetId'),
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/procurement/requests/new',
+      executeOnline: () => createProcurementRequestAction(payload),
+      metadata: {
+        form: 'procurement_request_new',
+        part_id: searchParams.get('partId') ?? searchParams.get('sparePartId') ?? null,
+      },
     });
     setSubmitting(false);
-    if (!result.success) {
+    setOfflineResult(result);
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
       toast('error', result.error ?? 'Failed to create procurement request');
       return;
     }
     toast('success', 'Procurement request created');
-    const id = (result.data as { id?: string } | undefined)?.id;
+    const id = (result.data as { data?: { id?: string } }).data?.id;
     router.push(id ? `/command/drilldown/procurement/${id}` : '/procurement');
   }
 
@@ -92,6 +129,8 @@ export default function NewProcurementRequestPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-5">
+            <OfflineSubmitBanner actionLabel="Reorder request draft" />
+            <OfflineActionResult result={offlineResult} />
             <Input
               label="Title"
               value={form.title}

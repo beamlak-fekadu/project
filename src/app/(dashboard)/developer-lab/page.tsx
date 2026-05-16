@@ -5,7 +5,9 @@ import { createClient } from '@/lib/supabase/server';
 import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeader } from '@/components/ui';
 import DeveloperLabClient, { type LabReplacementRow } from './DeveloperLabClient';
 import QrCoverageSection from './QrCoverageSection';
+import OfflineDiagnosticsPanel from './OfflineDiagnosticsPanel';
 import { getQrCoverageStats, getQrScanCoverageStats } from '@/services/qr.service';
+import { getOfflineSyncServerSummary } from '@/services/offline-sync.service';
 import {
   countLowStock,
   countStockout,
@@ -128,7 +130,7 @@ function countByMissing<T>(rows: T[], predicate: (row: T) => boolean) {
 }
 
 export default async function DeveloperLabPage({ searchParams }: { searchParams: SearchParams }) {
-  await requireRole(['developer', 'admin']);
+  await requireRole(['developer']);
   await searchParams;
   const supabase = await createClient();
 
@@ -431,9 +433,10 @@ export default async function DeveloperLabPage({ searchParams }: { searchParams:
 
   const lastRefresh = refreshLogRes.data as Record<string, unknown> | null;
 
-  const [qrCoverageStats, qrScanStats] = await Promise.all([
+  const [qrCoverageStats, qrScanStats, offlineSyncSummary] = await Promise.all([
     getQrCoverageStats(),
     getQrScanCoverageStats(),
+    getOfflineSyncServerSummary(),
   ]);
 
   return (
@@ -472,6 +475,8 @@ export default async function DeveloperLabPage({ searchParams }: { searchParams:
       </div>
 
       <QrCoverageSection stats={qrCoverageStats} scanStats={qrScanStats} />
+
+      <OfflineDiagnosticsPanel serverSummary={offlineSyncSummary} />
 
       <section className="space-y-3">
         <div>

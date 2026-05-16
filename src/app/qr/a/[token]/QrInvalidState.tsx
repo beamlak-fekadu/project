@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AlertOctagon, ShieldOff, SearchX } from 'lucide-react';
 import LogoMark from '@/components/brand/LogoMark';
+import NetworkStatusPill from '@/components/offline/NetworkStatusPill';
 import { Button } from '@/components/ui';
 import { APP_NAME_SHORT } from '@/constants';
 
@@ -41,6 +42,9 @@ export default function QrInvalidState({ variant, authenticated }: Props) {
         <p className="mt-4 text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">
           {APP_NAME_SHORT}
         </p>
+        <div className="mt-4">
+          <NetworkStatusPill />
+        </div>
 
         <div className="mt-8 flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 text-rose-300">
           <Icon className="h-6 w-6" />

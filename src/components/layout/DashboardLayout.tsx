@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
+import OfflineStatusBanner from '@/components/offline/OfflineStatusBanner';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -37,10 +38,12 @@ export default function DashboardLayout({ children, userName, userRole, userJobT
             userName={userName}
             userRole={userRole}
             userJobTitle={userJobTitle}
+            userRoles={userRoles}
             alertCount={alertCount}
             onMenuToggle={() => setMobileMenuOpen(true)}
             onLogout={onLogout}
           />
+          <OfflineStatusBanner />
         </div>
         <main className="flex-1 overflow-y-auto p-4 pb-6 lg:p-6 lg:pb-8">{children}</main>
       </div>

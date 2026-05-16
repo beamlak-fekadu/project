@@ -12,6 +12,16 @@ import { getPMSchedules } from '@/services/pm.service';
 import { getCalibrationRequests, getUpcomingCalibrations } from '@/services/calibration.service';
 import { useToast } from '@/components/ui/Toast';
 import { useRole } from '@/hooks/useRole';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import {
+  formatCacheAge,
+  getOfflineReadCache,
+  saveOfflineReadCache,
+  type OfflineCacheScope,
+} from '@/lib/offline/cache';
+import { CloudOff } from 'lucide-react';
 import type { WorkOrder, WorkOrderStatus } from '@/types/domain';
 import { ROUTES } from '@/constants';
 import { maintenanceRequestDetail, workOrderDetail } from '@/app/(dashboard)/command/_lib/command-center-routes';
@@ -113,28 +123,69 @@ function queueRank(row: WorkOrderRow) {
 export default function WorkOrdersPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { canManageMaintenance } = useRole();
+  const { canManageMaintenance, isTechnician, primaryRole } = useRole();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const online = useOnlineStatus();
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
   const [unifiedTasks, setUnifiedTasks] = useState<UnifiedTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cacheState, setCacheState] = useState<{ cachedAt: string; isStale: boolean; fromCache: boolean } | null>(null);
   const [filter, setFilter] = useState<FilterId>(() => {
     const requested = searchParams.get('filter') as FilterId | null;
     return requested && FILTERS.some((item) => item.id === requested) ? requested : 'active';
   });
 
+  const profileId = profile?.id ?? null;
+  const technicianScope: OfflineCacheScope | null = useMemo(() => (
+    isTechnician && profileId ? { profileId, roleName: primaryRole, departmentId: profile?.department_id ?? null } : null
+  ), [isTechnician, primaryRole, profile?.department_id, profileId]);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [workOrderRes, pmRes, calRequestRes, calDueRes] = await Promise.all([
-        getWorkOrders(),
-        getPMSchedules(),
-        getCalibrationRequests(),
-        getUpcomingCalibrations(90),
-      ]);
-      const { data, error } = workOrderRes;
-      if (error) toast('error', 'Failed to load work orders');
-      const loadedWorkOrders = (data ?? []) as unknown as WorkOrderRow[];
-      setWorkOrders(loadedWorkOrders);
+      let loadedWorkOrders: WorkOrderRow[] = [];
+      let pmRes: Awaited<ReturnType<typeof getPMSchedules>> | null = null;
+      let calRequestRes: Awaited<ReturnType<typeof getCalibrationRequests>> | null = null;
+      let calDueRes: Awaited<ReturnType<typeof getUpcomingCalibrations>> | null = null;
+      try {
+        const [workOrderRes, pmResLocal, calRequestResLocal, calDueResLocal] = await Promise.all([
+          getWorkOrders(),
+          getPMSchedules(),
+          getCalibrationRequests(),
+          getUpcomingCalibrations(90),
+        ]);
+        const { data, error } = workOrderRes;
+        if (error) toast('error', 'Failed to load work orders');
+        loadedWorkOrders = (data ?? []) as unknown as WorkOrderRow[];
+        pmRes = pmResLocal;
+        calRequestRes = calRequestResLocal;
+        calDueRes = calDueResLocal;
+        setWorkOrders(loadedWorkOrders);
+        if (technicianScope && profileId) {
+          const assigned = loadedWorkOrders.filter((row) => row.assigned_to === profileId);
+          void saveOfflineReadCache('technician.assigned_work', assigned, technicianScope, { sourceRoute: '/work-orders' });
+          setCacheState({ cachedAt: new Date().toISOString(), isStale: false, fromCache: false });
+        }
+      } catch (error) {
+        if (technicianScope) {
+          const cached = await getOfflineReadCache<WorkOrderRow[]>('technician.assigned_work', technicianScope);
+          if (cached) {
+            setWorkOrders(cached.data);
+            setUnifiedTasks([]);
+            setCacheState({ cachedAt: cached.cachedAt, isStale: cached.isStale, fromCache: true });
+            setLoading(false);
+            return;
+          }
+        }
+        toast('error', error instanceof Error ? error.message : 'Failed to load work orders');
+        setLoading(false);
+        return;
+      }
+      if (!pmRes || !calRequestRes || !calDueRes) {
+        setLoading(false);
+        return;
+      }
       const pmRows = (pmRes.data ?? []) as Array<Record<string, unknown>>;
       const calRequests = (calRequestRes.data ?? []) as Array<Record<string, unknown>>;
       const calDue = (calDueRes.data ?? []) as Array<Record<string, unknown>>;
@@ -224,7 +275,7 @@ export default function WorkOrdersPage() {
       setLoading(false);
     }
     void load();
-  }, [canManageMaintenance, toast]);
+  }, [canManageMaintenance, profileId, technicianScope, toast]);
 
   const summary = useMemo(() => {
     const open = workOrders.filter(isActiveWork);
@@ -362,6 +413,17 @@ export default function WorkOrdersPage() {
           ) : <Badge variant="info">Read-only</Badge>
         }
       />
+
+      {(cacheState?.fromCache || !online.isOnline) && cacheState && isTechnician && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Offline cached data — may be stale</p>
+            <p className="mt-0.5">Showing your last-cached assigned work. Last synced {formatCacheAge(cacheState.cachedAt).toLowerCase()}. Reconnect to refresh and see all active work.</p>
+            {cacheState.isStale && <p className="mt-0.5">Cache exceeds the 12-hour freshness window; verify before acting on critical workflows.</p>}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Active Work Orders" value={summary.open} icon={<Wrench className="h-6 w-6" />} color="blue" active={filter === 'active'} onClick={() => setFilter('active')} />

@@ -11,8 +11,15 @@ import Textarea from '@/components/ui/Textarea';
 import Badge from '@/components/ui/Badge';
 import { PageLoader } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import { getWorkOrderById } from '@/services/maintenance.service';
 import { createMaintenanceEventAction } from '@/actions/maintenance.actions';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
+import { useRole } from '@/hooks/useRole';
+import type { OfflineActionRunResult } from '@/types/offline';
 
 type WorkOrderRow = Record<string, unknown> & {
   equipment_assets?: { id?: string; asset_code?: string | null; name?: string | null } | null;
@@ -22,9 +29,13 @@ export default function NewWorkOrderEventPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { roles, primaryRole } = useRole();
   const [workOrder, setWorkOrder] = useState<WorkOrderRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [offlineResult, setOfflineResult] = useState<OfflineActionRunResult | null>(null);
   const [form, setForm] = useState({
     event_type: 'corrective',
     event_date: new Date().toISOString().slice(0, 16),
@@ -60,7 +71,7 @@ export default function NewWorkOrderEventPage() {
     }
     setSubmitting(true);
     const assetId = String(workOrder.asset_id ?? workOrder.equipment_assets?.id ?? '');
-    const result = await createMaintenanceEventAction({
+    const payload = {
       work_order_id: params.id,
       asset_id: assetId,
       event_type: form.event_type,
@@ -70,9 +81,29 @@ export default function NewWorkOrderEventPage() {
       repair_duration_hours: form.repair_duration_hours ? Number(form.repair_duration_hours) : null,
       service_cost: form.service_cost ? Number(form.service_cost) : null,
       notes: [form.notes, form.condition_impact ? `Condition impact: ${form.condition_impact}` : null].filter(Boolean).join('\n') || null,
+      observed_condition: form.condition_impact || null,
+      timestamp: new Date().toISOString(),
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'maintenance_event.log',
+      entityType: 'maintenance_events',
+      entityId: params.id,
+      assetId,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : `/maintenance/work-orders/${params.id}/events/new`,
+      executeOnline: () => createMaintenanceEventAction(payload),
+      metadata: { form: 'work_order_event_new', work_order_id: params.id },
     });
     setSubmitting(false);
-    if (!result.success) {
+    setOfflineResult(result);
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
       toast('error', result.error ?? 'Failed to add work order event');
       return;
     }
@@ -99,6 +130,10 @@ export default function NewWorkOrderEventPage() {
       />
 
       <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-4">
+        <div className="mb-4 space-y-3">
+          <OfflineSubmitBanner actionLabel="Maintenance event" />
+          <OfflineActionResult result={offlineResult} />
+        </div>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Badge variant="info">{String(workOrder.status ?? '').replace(/_/g, ' ')}</Badge>
           <Badge variant={workOrder.priority === 'critical' ? 'error' : workOrder.priority === 'high' ? 'warning' : 'default'}>{String(workOrder.priority ?? 'priority')}</Badge>

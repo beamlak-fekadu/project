@@ -36,6 +36,7 @@ export type Capability =
   | 'nav.reports'
   | 'nav.settings'
   | 'nav.audit'
+  | 'nav.offline_sync'
   | 'nav.compliance'
   // Equipment + assets
   | 'equipment.create'
@@ -98,7 +99,7 @@ const DEVELOPER_CAPS: Capability[] = [
   'nav.developer_lab', 'nav.command', 'nav.calendar', 'nav.equipment', 'nav.maintenance', 'nav.requests',
   'nav.pm', 'nav.calibration', 'nav.work_orders', 'nav.spare_parts', 'nav.logistics', 'nav.procurement',
   'nav.training', 'nav.replacement', 'nav.disposal', 'nav.alerts', 'nav.reports', 'nav.settings', 'nav.audit',
-  'nav.compliance',
+  'nav.compliance', 'nav.offline_sync',
   'equipment.create', 'equipment.edit', 'equipment.delete',
   'maintenance.request.create', 'maintenance.request.approve',
   'work_order.create', 'work_order.assign', 'work_order.start', 'work_order.complete', 'work_order.add_event',

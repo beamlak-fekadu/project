@@ -20,14 +20,20 @@ import Card from '@/components/ui/Card';
 import { CardHeader, CardTitle } from '@/components/ui/Card';
 import { PageLoader } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import {
   getTrainingSessions,
   getStaffTrainingRecords,
   getTrainingRequests,
 } from '@/services/training.service';
 import { createTrainingRequestAction, createTrainingSessionAction } from '@/actions/training.actions';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
 import { getEquipmentList } from '@/services/equipment.service';
 import * as settingsService from '@/services/settings.service';
+import type { OfflineActionRunResult } from '@/types/offline';
 import type { TrainingType, TrainingAttendance } from '@/types/domain';
 import { useRole } from '@/hooks/useRole';
 
@@ -75,7 +81,9 @@ function normalizeTrainingTab(value: string | null): TrainingTab | '' {
 export default function TrainingPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  const { canManageMaintenance, primaryRole } = useRole();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { canManageMaintenance, primaryRole, roles } = useRole();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [assets, setAssets] = useState<{ value: string; label: string }[]>([]);
@@ -87,6 +95,7 @@ export default function TrainingPage() {
 
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestOfflineResult, setRequestOfflineResult] = useState<OfflineActionRunResult | null>(null);
   const [detailSession, setDetailSession] = useState<SessionRow | null>(null);
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
   const [attendeesLoading, setAttendeesLoading] = useState(false);
@@ -191,31 +200,48 @@ export default function TrainingPage() {
   };
 
   const handleCreateRequest = async () => {
-    if (!reqDescription) {
-      toast('warning', 'Description is required');
+    if (reqDescription.trim().length < 10) {
+      toast('warning', 'Description must be at least 10 characters');
       return;
     }
     setSubmitting(true);
-    try {
-      const result = await createTrainingRequestAction({
-        asset_id: reqAssetId || null,
-        requested_by: null,
-        department_id: null,
-        training_type: reqType,
-        description: reqDescription,
-        status: 'pending',
-        notes: reqNotes || null,
-      });
-      if (!result.success) throw new Error(result.error ?? 'Failed to create training request');
-      toast('success', 'Training request submitted');
-      setRequestModalOpen(false);
-      resetRequestForm();
-      loadData();
-    } catch {
-      toast('error', 'Failed to create training request');
-    } finally {
-      setSubmitting(false);
+    const payload = {
+      asset_id: reqAssetId || null,
+      requested_by: null,
+      department_id: profile?.department_id ?? null,
+      training_type: reqType,
+      description: reqDescription.trim(),
+      status: 'pending',
+      notes: reqNotes || null,
+      submitted_by_profile_id: profile?.id ?? null,
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'training_request.create',
+      entityType: 'training_requests',
+      assetId: reqAssetId || null,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/training',
+      executeOnline: () => createTrainingRequestAction(payload),
+      metadata: { form: 'training_request_modal' },
+    });
+    setSubmitting(false);
+    setRequestOfflineResult(result);
+
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
     }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      toast('error', result.error ?? 'Failed to create training request');
+      return;
+    }
+    toast('success', 'Training request submitted');
+    setRequestModalOpen(false);
+    resetRequestForm();
+    loadData();
   };
 
   function scheduleFromRequest(row: RequestRow) {
@@ -608,6 +634,8 @@ export default function TrainingPage() {
         }
       >
         <div className="space-y-4">
+          <OfflineSubmitBanner actionLabel="Training request" />
+          <OfflineActionResult result={requestOfflineResult} />
           <Select label="Training Type" options={trainingTypeOptions} value={reqType} onChange={(e) => setReqType(e.target.value as TrainingType)} />
           <Select label="Asset (optional)" options={assets} placeholder="Select asset" value={reqAssetId} onChange={(e) => setReqAssetId(e.target.value)} />
           <Textarea label="Description *" value={reqDescription} onChange={(e) => setReqDescription(e.target.value)} placeholder="Describe the training needed..." />

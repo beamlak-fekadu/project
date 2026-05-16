@@ -16,13 +16,18 @@ import {
 import { getEquipmentById } from '@/services/equipment.service';
 import { formatEquipmentCondition, getConditionBadgeClass } from '@/utils/equipment/condition-labels';
 import { assignWorkOrder, createMaintenanceEventAction, reassignWorkOrder, updateWorkOrderAction } from '@/actions/maintenance.actions';
-import { syncOfflineWorkOrderActionsAction } from '@/actions/offline-sync.actions';
-import { enqueueOfflineAction, getOfflineQueue, markOfflineActionFailed, removeOfflineAction, type OfflineWorkOrderAction } from '@/lib/offline/technician-queue';
+import { getOfflineQueue, runOfflineCapableAction } from '@/lib/offline/queue';
 import { getAll } from '@/services/settings.service';
 import { getActiveTechnicians, ASSIGNABLE_TECHNICIANS_EMPTY_STATE } from '@/services/users.service';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import { AskAiButton } from '@/components/assistant/AskAiButton';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { useRole } from '@/hooks/useRole';
+import { useOfflineSync } from '@/components/offline/SyncEngineProvider';
+import type { OfflineActionRunResult, OfflineQueueRecord } from '@/types/offline';
 import type {
   WorkOrder, WorkOrderStatus, MaintenanceEvent, FailureCode, MaintenanceActionCode, Profile,
 } from '@/types/domain';
@@ -72,7 +77,10 @@ export default function WorkOrderDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { isDeveloper, isAdmin, isBmeHead } = useRole();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { isDeveloper, isAdmin, isBmeHead, roles, primaryRole } = useRole();
+  const { startSync } = useOfflineSync();
   const canManageAssignment = isDeveloper || isAdmin || isBmeHead;
 
   const [wo, setWO] = useState<WOWithJoins | null>(null);
@@ -95,10 +103,14 @@ export default function WorkOrderDetailPage() {
   const [eventForm, setEventForm] = useState(emptyEventForm);
   const [failureCodes, setFailureCodes] = useState<FailureCode[]>([]);
   const [actionCodes, setActionCodes] = useState<MaintenanceActionCode[]>([]);
-  const [queuedActions, setQueuedActions] = useState<OfflineWorkOrderAction[]>([]);
+  const [queuedActions, setQueuedActions] = useState<OfflineQueueRecord[]>([]);
+  const [startIntentResult, setStartIntentResult] = useState<OfflineActionRunResult | null>(null);
+  const [completionDraftResult, setCompletionDraftResult] = useState<OfflineActionRunResult | null>(null);
+  const [eventOfflineResult, setEventOfflineResult] = useState<OfflineActionRunResult | null>(null);
 
-  const refreshQueuedActions = useCallback(() => {
-    setQueuedActions(getOfflineQueue().filter((item) => item.workOrderId === id));
+  const refreshQueuedActions = useCallback(async () => {
+    const queue = await getOfflineQueue();
+    setQueuedActions(queue.filter((item) => item.entity_id === id || String(item.payload?.work_order_id ?? '') === id));
   }, [id]);
 
   const loadWO = useCallback(async () => {
@@ -155,7 +167,7 @@ export default function WorkOrderDetailPage() {
         }).catch(() => undefined),
       ]);
 
-      refreshQueuedActions();
+      await refreshQueuedActions();
       setLoading(false);
     }
     init();
@@ -214,35 +226,61 @@ export default function WorkOrderDetailPage() {
     }
   }
 
-  function queueStatusUpdate(status: WorkOrderStatus) {
-    enqueueOfflineAction({
-      type: 'update_status',
-      workOrderId: id,
-      payload: { status, queued_at: new Date().toISOString() },
+  async function saveWorkStartIntent() {
+    if (!wo) return;
+    setActionLoading(true);
+    const payload = {
+      work_order_id: id,
+      asset_id: wo.asset_id,
+      status: 'in_progress',
+      started_at: new Date().toISOString(),
+      note: 'Technician recorded intent to start work from offline-capable work order page.',
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'work_order.start_intent',
+      entityType: 'work_orders',
+      entityId: id,
+      assetId: wo.asset_id,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : `/maintenance/work-orders/${id}`,
+      executeOnline: () => updateWorkOrderAction(id, {
+        status: 'in_progress',
+        started_at: payload.started_at,
+      }),
+      metadata: { form: 'work_order_detail_start_intent' },
     });
-    refreshQueuedActions();
-    toast('success', 'Status update queued for sync');
+    setActionLoading(false);
+    setStartIntentResult(result);
+    await refreshQueuedActions();
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      toast('error', result.error ?? 'Failed to save start intent');
+      return;
+    }
+    toast('success', 'Work started');
+    await loadWO();
   }
 
   async function syncQueuedActions() {
-    const queue = getOfflineQueue().filter((item) => item.workOrderId === id);
-    if (queue.length === 0) {
+    if (queuedActions.length === 0) {
       toast('info', 'No queued actions for this work order');
       return;
     }
 
     setActionLoading(true);
-    const result = await syncOfflineWorkOrderActionsAction(queue);
-    const results = result.data ?? [];
-    const failedActions = results.filter((item) => item.status === 'failed').length;
-    for (const item of results) {
-      if (item.status === 'synced' || item.status === 'skipped') removeOfflineAction(item.id);
-      if (item.status === 'failed') markOfflineActionFailed(item.id, item.error ?? 'Sync failed');
-    }
+    const result = await startSync();
     await loadWO();
-    refreshQueuedActions();
-    if (failedActions > 0) {
-      toast('warning', `${failedActions} queued action(s) failed to sync`);
+    await refreshQueuedActions();
+    if (!result) {
+      toast('warning', 'Sync will run when the network is online');
+    } else if (result.failed > 0 || result.conflicts > 0) {
+      toast('warning', `${result.failed + result.conflicts} queued action(s) need attention`);
     } else {
       toast('success', 'Queued actions synchronized');
     }
@@ -304,7 +342,7 @@ export default function WorkOrderDetailPage() {
   async function handleCreateEvent() {
     if (!wo) return;
     setActionLoading(true);
-    const result = await createMaintenanceEventAction({
+    const payload = {
       work_order_id: wo.id,
       asset_id: wo.asset_id,
       event_type: eventForm.event_type,
@@ -319,8 +357,26 @@ export default function WorkOrderDetailPage() {
       notes: eventForm.notes || null,
       completed_by: null,
       completion_date: null,
+      timestamp: new Date().toISOString(),
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'maintenance_event.log',
+      entityType: 'maintenance_events',
+      entityId: wo.id,
+      assetId: wo.asset_id,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : `/maintenance/work-orders/${id}`,
+      executeOnline: () => createMaintenanceEventAction(payload),
+      metadata: { form: 'work_order_detail_event_modal', work_order_id: id },
     });
-    if (!result.success) {
+    setEventOfflineResult(result);
+    await refreshQueuedActions();
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+    } else if (result.status === 'failed' || result.status === 'conflict') {
       toast('error', result.error ?? 'Failed to log event');
     } else {
       toast('success', 'Maintenance event logged');
@@ -328,6 +384,53 @@ export default function WorkOrderDetailPage() {
       await loadEvents(wo.asset_id);
     }
     setActionLoading(false);
+  }
+
+  async function saveCompletionDraft() {
+    if (!wo) return;
+    setActionLoading(true);
+    const payload = {
+      work_order_id: id,
+      asset_id: wo.asset_id,
+      completion_outcome: completionOutcome,
+      final_equipment_condition: finalCondition,
+      note: `Completion draft: ${completionOutcome.replace(/_/g, ' ')}; final condition ${finalCondition.replace(/_/g, ' ')}.`,
+      created_at: new Date().toISOString(),
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'work_order.complete_draft',
+      entityType: 'work_orders',
+      entityId: id,
+      assetId: wo.asset_id,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : `/maintenance/work-orders/${id}`,
+      executeOnline: () => createMaintenanceEventAction({
+        work_order_id: id,
+        asset_id: wo.asset_id,
+        event_type: 'corrective',
+        action_taken: 'Completion draft saved for online validation',
+        notes: payload.note,
+        completion_date: null,
+      }),
+      metadata: { form: 'work_order_completion_draft' },
+    });
+    setActionLoading(false);
+    setCompletionDraftResult(result);
+    await refreshQueuedActions();
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      toast('error', result.error ?? 'Failed to save completion draft');
+      return;
+    }
+    toast('success', 'Completion draft saved');
+    setCompletionModalOpen(false);
+    await loadEvents(wo.asset_id);
   }
 
   if (loading || !wo) {
@@ -550,9 +653,9 @@ export default function WorkOrderDetailPage() {
                     Complete Work
                   </Button>
                 )}
-                <Button size="sm" variant="secondary" onClick={() => queueStatusUpdate('in_progress')}>
+                <Button size="sm" variant="secondary" onClick={saveWorkStartIntent} loading={actionLoading}>
                   <WifiOff className="h-4 w-4" />
-                  Queue Offline Start
+                  Save Start Intent
                 </Button>
                 <Button size="sm" variant="outline" onClick={syncQueuedActions} loading={actionLoading}>
                   <RefreshCcw className="h-4 w-4" />
@@ -568,6 +671,16 @@ export default function WorkOrderDetailPage() {
             </CardFooter>
           )}
         </Card>
+
+        {(startIntentResult || completionDraftResult || eventOfflineResult) && (
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              <OfflineActionResult result={startIntentResult} />
+              <OfflineActionResult result={completionDraftResult} />
+              <OfflineActionResult result={eventOfflineResult} />
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -606,16 +719,18 @@ export default function WorkOrderDetailPage() {
             <CardContent>
               <div className="divide-y divide-[var(--border-subtle)]">
                 {queuedActions.map((action) => (
-                  <div key={action.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+                  <div key={action.client_action_id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
                     <div>
-                      <p className="font-medium text-[var(--foreground)]">{action.type.replace(/_/g, ' ')}</p>
+                      <p className="font-medium text-[var(--foreground)]">{action.action_type.replace(/_/g, ' ')}</p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        {new Date(action.createdAt).toLocaleString()}
-                        {action.retryCount ? ` · retries ${action.retryCount}` : ''}
-                        {action.lastError ? ` · ${action.lastError}` : ''}
+                        {new Date(action.created_at).toLocaleString()}
+                        {action.retry_count ? ` · retries ${action.retry_count}` : ''}
+                        {action.last_error ? ` · ${action.last_error}` : ''}
                       </p>
                     </div>
-                    <Badge variant={action.lastError ? 'warning' : 'info'}>{action.lastError ? 'Retry needed' : 'Pending'}</Badge>
+                    <Badge variant={action.sync_status === 'conflict' ? 'error' : action.sync_status === 'failed' ? 'warning' : 'info'}>
+                      {action.sync_status === 'queued' ? 'Pending sync' : action.sync_status.replace(/_/g, ' ')}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -775,6 +890,10 @@ export default function WorkOrderDetailPage() {
         footer={
           <>
             <Button variant="outline" onClick={() => setCompletionModalOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={saveCompletionDraft} loading={actionLoading}>
+              <WifiOff className="h-4 w-4" />
+              Save Draft
+            </Button>
             <Button onClick={handleCompleteWorkOrder} loading={actionLoading}>
               <CheckCircle className="h-4 w-4" />
               Confirm Completion
@@ -783,6 +902,8 @@ export default function WorkOrderDetailPage() {
         }
       >
         <div className="space-y-4">
+          <OfflineSubmitBanner actionLabel="Completion draft" />
+          <OfflineActionResult result={completionDraftResult} />
           <p className="text-sm text-[var(--text-muted)]">
             Select the resolution outcome and the equipment&apos;s final condition. This is used to update the equipment record and analytics.
           </p>
@@ -862,6 +983,10 @@ export default function WorkOrderDetailPage() {
           </>
         }
       >
+        <div className="mb-4 space-y-3">
+          <OfflineSubmitBanner actionLabel="Maintenance event" />
+          <OfflineActionResult result={eventOfflineResult} />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
             label="Event Type"

@@ -12,6 +12,7 @@ export interface OfflineWorkOrderAction {
 }
 
 const STORAGE_KEY = 'memis.offline.workorder.queue.v1';
+let fallbackCounter = 0;
 
 function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -34,10 +35,21 @@ export function saveOfflineQueue(items: OfflineWorkOrderAction[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
+function createLegacyOfflineActionId() {
+  if (globalThis.crypto?.randomUUID) return `off-${globalThis.crypto.randomUUID()}`;
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(bytes);
+    return `off-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  }
+  fallbackCounter += 1;
+  return `off-${Date.now().toString(36)}-${fallbackCounter.toString(36)}`;
+}
+
 export function enqueueOfflineAction(action: Omit<OfflineWorkOrderAction, 'id' | 'createdAt'>) {
   const queue = getOfflineQueue();
   const next: OfflineWorkOrderAction = {
-    id: `off-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: createLegacyOfflineActionId(),
     createdAt: new Date().toISOString(),
     ...action,
   };

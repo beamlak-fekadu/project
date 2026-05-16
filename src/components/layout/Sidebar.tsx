@@ -8,14 +8,14 @@ import { hasCapability, type Capability } from '@/lib/rbac';
 import {
   ChevronLeft, ChevronRight, Monitor, FileText, PackageCheck, Wrench, CalendarCheck, CalendarDays, Gauge,
   Package, Boxes, GraduationCap, Trash2, Activity, ShieldAlert, CheckCircle, BarChart3,
-  ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText, Bell, LayoutDashboard,
+  ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText, Bell, LayoutDashboard, RefreshCw,
 } from 'lucide-react';
 import LogoMark from '@/components/brand/LogoMark';
 
 const iconMap: Record<string, React.ElementType> = {
   LayoutDashboard, Bell, Monitor, FileText, PackageCheck, Wrench, CalendarCheck, CalendarDays, Gauge,
   Package, Boxes, GraduationCap, Trash2, Activity, ShieldAlert, CheckCircle, BarChart3,
-  ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText,
+  ArrowUpDown, FileBarChart, Users, Settings, ClipboardList, Headphones, BrainCircuit, Shield, MessageSquareText, RefreshCw,
 };
 
 interface SidebarProps {

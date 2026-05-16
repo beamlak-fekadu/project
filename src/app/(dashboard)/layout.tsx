@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { PageLoader } from '@/components/ui/Spinner';
 import { ToastProvider } from '@/components/ui/Toast';
 import { AssistantProvider } from '@/components/assistant/AssistantProvider';
+import { SyncEngineProvider } from '@/components/offline/SyncEngineProvider';
 import { NAV_SECTIONS } from '@/constants';
 import type { RoleName } from '@/types/roles';
 
@@ -82,6 +83,18 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
   }
 
   const handleLogout = async () => {
+    try {
+      const cache = await import('@/lib/offline/cache');
+      if (profile?.id && profile?.primaryRole) {
+        await cache.clearOfflineReadCache({
+          profileId: profile.id,
+          roleName: profile.primaryRole,
+          departmentId: profile.department_id ?? null,
+        });
+      }
+    } catch {
+      // best-effort cache clear; offline cache may not be initialized
+    }
     await signOut();
     router.push('/login');
   };
@@ -93,26 +106,28 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
 
   return (
     <ToastProvider>
-      <AssistantProvider>
-        <DashboardLayout
-          userName={profile?.full_name || user.email || 'User'}
-          userRole={profile?.primaryRole || 'user'}
-          userJobTitle={profile?.job_title}
-          userRoles={userRoles}
-          onLogout={handleLogout}
-        >
-          {hasRouteAccess ? (
-            children
-          ) : (
-            <div className="mx-auto max-w-xl rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-6">
-              <p className="text-lg font-semibold text-[var(--foreground)]">Access restricted</p>
-              <p className="mt-2 text-sm text-[var(--text-muted)]">
-                Your current role does not have permission to open this module directly.
-              </p>
-            </div>
-          )}
-        </DashboardLayout>
-      </AssistantProvider>
+      <SyncEngineProvider>
+        <AssistantProvider>
+          <DashboardLayout
+            userName={profile?.full_name || user.email || 'User'}
+            userRole={profile?.primaryRole || 'user'}
+            userJobTitle={profile?.job_title}
+            userRoles={userRoles}
+            onLogout={handleLogout}
+          >
+            {hasRouteAccess ? (
+              children
+            ) : (
+              <div className="mx-auto max-w-xl rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] p-6">
+                <p className="text-lg font-semibold text-[var(--foreground)]">Access restricted</p>
+                <p className="mt-2 text-sm text-[var(--text-muted)]">
+                  Your current role does not have permission to open this module directly.
+                </p>
+              </div>
+            )}
+          </DashboardLayout>
+        </AssistantProvider>
+      </SyncEngineProvider>
     </ToastProvider>
   );
 }

@@ -16,6 +16,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import LogoMark from '@/components/brand/LogoMark';
+import NetworkStatusPill from '@/components/offline/NetworkStatusPill';
 import { Badge, EmptyState, Tabs } from '@/components/ui';
 import { ConditionBadge } from '@/components/ui/StatusBadge';
 import {
@@ -37,6 +38,7 @@ import type {
   QrWorkOrderRow,
 } from '@/services/qr-context.service';
 import QrRoleActions, { type QrAction } from './components/QrRoleActions';
+import QrOfflineActions from './components/QrOfflineActions';
 
 type Props = {
   asset: QrLandingAsset;
@@ -627,6 +629,8 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
   const canSeeDecisionSupport = ['developer', 'bme_head', 'viewer'].includes(context.roleCategory);
   const displayName = profile.full_name ?? profile.email ?? 'Authenticated user';
   const conditionIsValid = asset.condition && VALID_CONDITIONS.includes(asset.condition);
+  const assignedWork = context.workOrders.assignedToMe[0] ?? context.workOrders.open[0] ?? null;
+  const firstStockIssue = context.parts.stockIssues[0] ?? null;
 
   const tabs = [
     {
@@ -679,6 +683,7 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
+            <NetworkStatusPill />
             <Badge variant="info">{displayName}</Badge>
             <Badge variant="default">{profile.job_title ?? roleLabel(context.roleCategory)}</Badge>
             <Badge variant="purple">{roleLabel(context.roleCategory)}</Badge>
@@ -750,6 +755,21 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
               <QrRoleActions actions={actions} />
             </section>
 
+            <QrOfflineActions
+              asset={{
+                id: asset.id,
+                assetCode: asset.asset_code,
+                name: asset.name,
+                departmentId: asset.department_id,
+                qrToken: asset.qr_token,
+              }}
+              profile={profile}
+              roleCategory={context.roleCategory}
+              assignedWorkOrderId={assignedWork?.id ?? null}
+              stockPartId={firstStockIssue?.part_id ?? null}
+              stockPartName={firstStockIssue?.part_name ?? null}
+            />
+
             <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
               <MetricCard label="Open Requests" value={String(context.requests.open.length)} tone={context.requests.open.length > 0 ? 'warning' : 'success'} />
               <MetricCard label="Open Work Orders" value={String(context.workOrders.open.length)} tone={context.workOrders.open.length > 0 ? 'warning' : 'success'} />
@@ -777,7 +797,7 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
 
         <footer className="mt-10 border-t border-[var(--border-subtle)] pt-4 text-[10px] text-[var(--text-muted)]">
           <p>
-            Online QR experience. Offline/PWA logging is future work outside the current Phase 4 scope.
+            QR asset context is live when online. Phase 2 offline capture queues selected notes and request drafts only; QR scan logging remains online-only.
           </p>
         </footer>
       </div>

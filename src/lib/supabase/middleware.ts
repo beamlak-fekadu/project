@@ -5,7 +5,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 // landing page (src/app/qr/a/[token]) instead of bouncing through /login.
 // The route itself only reveals asset details after authentication +
 // role/department checks; the unauthenticated branch shows no asset data.
-const PUBLIC_PATHS = ['/login', '/reset-password', '/auth/callback', '/qr'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/reset-password',
+  '/auth/callback',
+  '/qr',
+  '/offline',
+  '/sw.js',
+  '/manifest.webmanifest',
+  '/offline-health.txt',
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });

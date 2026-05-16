@@ -939,6 +939,13 @@ export type Database = {
           photo_url: string | null
           purchase_cost: number | null
           purchase_date: string | null
+          qr_generated_at: string | null
+          qr_label_attached_at: string | null
+          qr_label_printed_at: string | null
+          qr_label_replaced_at: string | null
+          qr_label_status: string
+          qr_token: string | null
+          qr_token_regenerated_at: string | null
           serial_number: string | null
           service_contract_expiry: string | null
           source: string | null
@@ -964,6 +971,13 @@ export type Database = {
           photo_url?: string | null
           purchase_cost?: number | null
           purchase_date?: string | null
+          qr_generated_at?: string | null
+          qr_label_attached_at?: string | null
+          qr_label_printed_at?: string | null
+          qr_label_replaced_at?: string | null
+          qr_label_status?: string
+          qr_token?: string | null
+          qr_token_regenerated_at?: string | null
           serial_number?: string | null
           service_contract_expiry?: string | null
           source?: string | null
@@ -989,6 +1003,13 @@ export type Database = {
           photo_url?: string | null
           purchase_cost?: number | null
           purchase_date?: string | null
+          qr_generated_at?: string | null
+          qr_label_attached_at?: string | null
+          qr_label_printed_at?: string | null
+          qr_label_replaced_at?: string | null
+          qr_label_status?: string
+          qr_token?: string | null
+          qr_token_regenerated_at?: string | null
           serial_number?: string | null
           service_contract_expiry?: string | null
           source?: string | null
@@ -1317,6 +1338,77 @@ export type Database = {
             columns: ["weights_profile_id"]
             isOneToOne: false
             referencedRelation: "scoring_weights"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      equipment_qr_scans: {
+        Row: {
+          action_taken: string | null
+          asset_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          online_status: string
+          role_name: string | null
+          scan_source: string
+          scanned_at: string
+          scanned_by: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action_taken?: string | null
+          asset_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          online_status?: string
+          role_name?: string | null
+          scan_source?: string
+          scanned_at?: string
+          scanned_by?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action_taken?: string | null
+          asset_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          online_status?: string
+          role_name?: string | null
+          scan_source?: string
+          scanned_at?: string
+          scanned_by?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_qr_scans_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "equipment_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_qr_scans_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "v_equipment_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_qr_scans_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "v_maintenance_risk_context"
+            referencedColumns: ["asset_id"]
+          },
+          {
+            foreignKeyName: "equipment_qr_scans_scanned_by_fkey"
+            columns: ["scanned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2680,36 +2772,69 @@ export type Database = {
         Row: {
           action_type: string
           actor_user_id: string | null
+          asset_id: string | null
           client_action_id: string
+          conflict_reason: string | null
+          conflict_type: string | null
           created_at: string
           entity_id: string | null
           entity_type: string
+          error_message: string | null
           id: string
           payload: Json
+          reported_status: string | null
+          resolution_status: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          retry_count: number | null
+          role_name: string | null
+          source_route: string | null
           sync_status: string
           synced_at: string | null
         }
         Insert: {
           action_type: string
           actor_user_id?: string | null
+          asset_id?: string | null
           client_action_id: string
+          conflict_reason?: string | null
+          conflict_type?: string | null
           created_at?: string
           entity_id?: string | null
           entity_type: string
+          error_message?: string | null
           id?: string
           payload: Json
+          reported_status?: string | null
+          resolution_status?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          retry_count?: number | null
+          role_name?: string | null
+          source_route?: string | null
           sync_status?: string
           synced_at?: string | null
         }
         Update: {
           action_type?: string
           actor_user_id?: string | null
+          asset_id?: string | null
           client_action_id?: string
+          conflict_reason?: string | null
+          conflict_type?: string | null
           created_at?: string
           entity_id?: string | null
           entity_type?: string
+          error_message?: string | null
           id?: string
           payload?: Json
+          reported_status?: string | null
+          resolution_status?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          retry_count?: number | null
+          role_name?: string | null
+          source_route?: string | null
           sync_status?: string
           synced_at?: string | null
         }
@@ -2717,6 +2842,13 @@ export type Database = {
           {
             foreignKeyName: "offline_sync_events_actor_user_id_fkey"
             columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offline_sync_events_resolved_by_fkey"
+            columns: ["resolved_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

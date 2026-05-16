@@ -1,11 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ClipboardCheck, AlertCircle, CheckCircle2, Clock, ShieldAlert, XCircle } from 'lucide-react';
 import { PageHeader, Badge, StatCard } from '@/components/ui';
+import OfflineQueuedBadge from '@/components/offline/OfflineQueuedBadge';
+import { OFFLINE_QUEUE_CHANGED_EVENT } from '@/lib/offline/db';
+import { getOfflineQueue } from '@/lib/offline/queue';
 import { MISSING_DEPARTMENT_MESSAGE, type DepartmentRoleType } from '@/utils/department/department-scope';
 import { deptCreateMaintenanceRequest, deptCreateCalibrationRequest, deptCreateTrainingRequest, deptRequestDetail, deptMaintenanceRequestDetail } from '@/utils/department/department-evidence-links';
+import type { OfflineQueueRecord } from '@/types/offline';
 import type { RequestHubRow } from '../_lib/requests-hub-data';
 
 interface Props {
@@ -25,6 +29,26 @@ const STATUS_OPEN = new Set(['pending', 'approved', 'assigned', 'in_progress', '
 export default function DepartmentRequestsPage({ rows, departmentId, departmentName, profileId, roleType }: Props) {
   const isHead = roleType === 'department_head';
   const [tab, setTab] = useState<Tab>(isHead ? 'all' : 'mine');
+  const [localRequests, setLocalRequests] = useState<OfflineQueueRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const loadLocalRequests = async () => {
+      const queue = await getOfflineQueue();
+      if (!active) return;
+      setLocalRequests(queue.filter((action) => {
+        if (!['maintenance_request.create', 'department_issue.report', 'calibration_request.create', 'training_request.create'].includes(action.action_type)) return false;
+        if (profileId && action.created_by_profile_id && action.created_by_profile_id !== profileId) return false;
+        return true;
+      }));
+    };
+    void loadLocalRequests();
+    window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, loadLocalRequests);
+    return () => {
+      active = false;
+      window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, loadLocalRequests);
+    };
+  }, [profileId]);
 
   const counts = useMemo(() => {
     let open = 0, myOpen = 0, pending = 0, inProgress = 0, completed = 0, rejected = 0, critical = 0;
@@ -124,6 +148,40 @@ export default function DepartmentRequestsPage({ rows, departmentId, departmentN
         <Link href={deptCreateCalibrationRequest(null)} className="rounded-md border border-[var(--border-subtle)] px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--foreground)]">Create Calibration Request</Link>
         <Link href={deptCreateTrainingRequest(null)} className="rounded-md border border-[var(--border-subtle)] px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--foreground)]">Request Training</Link>
       </div>
+
+      {localRequests.length > 0 && (
+        <div className="panel-surface rounded-xl p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--foreground)]">Local Offline Requests</h2>
+              <p className="text-xs text-[var(--text-muted)]">These rows are saved on this device and are not live server requests until they sync.</p>
+            </div>
+            <Badge variant="info">{localRequests.length} local</Badge>
+          </div>
+          <div className="divide-y divide-[var(--border-subtle)]/60">
+            {localRequests.map((action) => (
+              <div key={action.client_action_id} className="grid gap-2 py-3 text-sm md:grid-cols-[1.4fr_1fr_auto] md:items-center">
+                <div>
+                  <p className="font-medium text-[var(--foreground)]">
+                    {action.action_type === 'training_request.create'
+                      ? String(action.payload.description ?? 'Training request')
+                      : action.action_type === 'calibration_request.create'
+                        ? String(action.payload.notes ?? 'Calibration request')
+                        : String(action.payload.fault_description ?? 'Maintenance request')}
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {action.action_type.replace(/_/g, ' ')} · {new Date(action.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Asset: {String(action.asset_id ?? action.payload.asset_id ?? 'Resolve during sync')}
+                </p>
+                <OfflineQueuedBadge status={action.sync_status} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="panel-surface overflow-x-auto rounded-xl">
         <table className="min-w-[1080px] w-full text-sm">

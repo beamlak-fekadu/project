@@ -49,6 +49,7 @@ import {
 import { equipmentDetail, replacementEvidence, replacementReportPrefill } from './_lib/command-center-routes';
 import { isReplacementCandidate } from '@/utils/decision-support/replacement-thresholds';
 import ViewerExecutiveCommandCenter from './_components/ViewerExecutiveCommandCenter';
+import OfflineCacheRegistrar from '@/components/offline/OfflineCacheRegistrar';
 import {
   fetchViewerExecutiveMetrics,
   fetchViewerDeptReadiness,
@@ -533,13 +534,29 @@ export default async function CommandCenterPage() {
       replacementReviewCandidates: 0, strongReplacementCandidates: 0,
       highRiskAssets: 0, recurringFailureFlags: 0, departmentsAtRisk: 0,
     };
+    const viewerSnapshot = {
+      metrics: { ...vMetrics, departmentsAtRisk },
+      departments: vDepartments,
+      criticalRisks: vCriticalRisks,
+      generatedAt: now,
+    };
     return (
-      <ViewerExecutiveCommandCenter
-        metrics={{ ...vMetrics, departmentsAtRisk }}
-        departments={vDepartments}
-        criticalRisks={vCriticalRisks}
-        generatedAt={now}
-      />
+      <>
+        {profileId && (
+          <OfflineCacheRegistrar
+            cacheKey="viewer.executive_summary"
+            scope={{ profileId, roleName: primaryRole, departmentId: departmentId ?? null }}
+            data={viewerSnapshot}
+            sourceRoute="/command"
+          />
+        )}
+        <ViewerExecutiveCommandCenter
+          metrics={{ ...vMetrics, departmentsAtRisk }}
+          departments={vDepartments}
+          criticalRisks={vCriticalRisks}
+          generatedAt={now}
+        />
+      </>
     );
   }
 
@@ -691,8 +708,26 @@ export default async function CommandCenterPage() {
 
   // ── FULL REDESIGN (developer / admin / bme_head) ──────────────────────────
   if (isFullDesign) {
+    const bmeSnapshot = {
+      equipmentSummary,
+      readiness,
+      readinessReconciliation,
+      wip,
+      triageTotalItems: triage.totalItems,
+      replacementTopRows: replacement.rows.slice(0, 10),
+      bands,
+      generatedAt: now,
+    };
     return (
       <div className="space-y-8">
+        {profileId && primaryRole !== 'developer' && (
+          <OfflineCacheRegistrar
+            cacheKey="bme_head.operational_summary"
+            scope={{ profileId, roleName: primaryRole, departmentId: departmentId ?? null }}
+            data={bmeSnapshot}
+            sourceRoute="/command"
+          />
+        )}
         {/* ── SECTION 0: Live Operational Header ───────────────────────── */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>

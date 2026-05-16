@@ -9,6 +9,14 @@ import { getEquipmentList } from '@/services/equipment.service';
 import { getOpenMaintenanceRequests, getOpenWorkOrders } from '@/services/maintenance.service';
 import { useProfile } from '@/hooks/useProfile';
 import { useAuth } from '@/hooks/useAuth';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import {
+  formatCacheAge,
+  getOfflineReadCache,
+  saveOfflineReadCache,
+  type OfflineCacheScope,
+} from '@/lib/offline/cache';
+import { CloudOff } from 'lucide-react';
 import {
   formatEquipmentCondition,
   getConditionBadgeClass,
@@ -79,6 +87,7 @@ type Quick = '' | 'needs_repair' | 'non_functional' | 'under_maintenance' | 'cri
 export default function DepartmentEquipmentOverview() {
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useProfile(user?.id);
+  const online = useOnlineStatus();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<EnrichedRow[]>([]);
   const [search, setSearch] = useState('');
@@ -86,34 +95,59 @@ export default function DepartmentEquipmentOverview() {
   const [filterCondition, setFilterCondition] = useState('');
   const [quickFilter, setQuickFilter] = useState<Quick>('');
   const [page, setPage] = useState(1);
+  const [cacheState, setCacheState] = useState<{ cachedAt: string; isStale: boolean; fromCache: boolean } | null>(null);
   const PAGE_SIZE = 20;
 
   const departmentId = profile?.department_id ?? null;
   const departmentName = profile?.department_id ? (rows[0]?.departments?.name ?? null) : null;
+  const primaryRole = ((profile as { primaryRole?: string } | null)?.primaryRole) ?? 'department_user';
+
+  const profileId = profile?.id ?? null;
+  const cacheScope: OfflineCacheScope | null = useMemo(() => (
+    profileId ? { profileId, roleName: primaryRole, departmentId: departmentId ?? null } : null
+  ), [departmentId, primaryRole, profileId]);
 
   useEffect(() => {
-    if (profileLoading || !departmentId) return;
+    if (profileLoading || !departmentId || !cacheScope) return;
     let cancelled = false;
     async function load() {
-      const [equipRes, reqRes, woRes] = await Promise.all([
-        getEquipmentList({}),
-        getOpenMaintenanceRequests(),
-        getOpenWorkOrders(),
-      ]);
-      if (cancelled) return;
-      const all = (equipRes.data ?? []) as unknown as AssetRow[];
-      const dept = all.filter((r) => r.departments?.id === departmentId);
-      const reqMap = new Map<string, OpenReq>();
-      for (const r of (reqRes.data as Array<OpenReq> | null) ?? []) if (!reqMap.has(r.asset_id)) reqMap.set(r.asset_id, r);
-      const woMap = new Map<string, OpenWO>();
-      for (const r of (woRes.data as Array<OpenWO> | null) ?? []) if (!woMap.has(r.asset_id)) woMap.set(r.asset_id, r);
-      const enriched: EnrichedRow[] = dept.map((r) => ({ ...r, openRequest: reqMap.get(r.id), openWorkOrder: woMap.get(r.id) }));
-      setRows(enriched);
-      setLoading(false);
+      let loadedFromLive = false;
+      try {
+        const [equipRes, reqRes, woRes] = await Promise.all([
+          getEquipmentList({}),
+          getOpenMaintenanceRequests(),
+          getOpenWorkOrders(),
+        ]);
+        if (cancelled) return;
+        const all = (equipRes.data ?? []) as unknown as AssetRow[];
+        const dept = all.filter((r) => r.departments?.id === departmentId);
+        const reqMap = new Map<string, OpenReq>();
+        for (const r of (reqRes.data as Array<OpenReq> | null) ?? []) if (!reqMap.has(r.asset_id)) reqMap.set(r.asset_id, r);
+        const woMap = new Map<string, OpenWO>();
+        for (const r of (woRes.data as Array<OpenWO> | null) ?? []) if (!woMap.has(r.asset_id)) woMap.set(r.asset_id, r);
+        const enriched: EnrichedRow[] = dept.map((r) => ({ ...r, openRequest: reqMap.get(r.id), openWorkOrder: woMap.get(r.id) }));
+        setRows(enriched);
+        setLoading(false);
+        loadedFromLive = true;
+        const cachedAt = new Date().toISOString();
+        await saveOfflineReadCache('department.equipment', enriched, cacheScope!, { sourceRoute: '/equipment' });
+        setCacheState({ cachedAt, isStale: false, fromCache: false });
+      } catch {
+        if (!loadedFromLive && cacheScope) {
+          const cached = await getOfflineReadCache<EnrichedRow[]>('department.equipment', cacheScope);
+          if (!cancelled && cached) {
+            setRows(cached.data);
+            setLoading(false);
+            setCacheState({ cachedAt: cached.cachedAt, isStale: cached.isStale, fromCache: true });
+            return;
+          }
+        }
+        if (!cancelled) setLoading(false);
+      }
     }
     void load();
     return () => { cancelled = true; };
-  }, [departmentId, profileLoading]);
+  }, [cacheScope, departmentId, profileLoading]);
 
   const counts = useMemo(() => {
     let functional = 0, needsRepair = 0, nonFunctional = 0, underMaintenance = 0, critical = 0, openReq = 0, openWO = 0;
@@ -180,6 +214,17 @@ export default function DepartmentEquipmentOverview() {
         breadcrumbs={[{ label: 'Department Dashboard', href: '/command' }, { label: 'Department Equipment' }]}
         actions={<Badge variant="info">Department view</Badge>}
       />
+
+      {(cacheState?.fromCache || !online.isOnline) && cacheState && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Offline cached data — may be stale</p>
+            <p className="mt-0.5">Last synced {formatCacheAge(cacheState.cachedAt).toLowerCase()}. Reconnect to refresh from BMERMS.</p>
+            {cacheState.isStale && <p className="mt-0.5">Cache exceeds the 12-hour freshness window; verify before acting on critical workflows.</p>}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <SummaryCard label="Total Assets" value={counts.total} icon={<Monitor className="h-4 w-4" />} color="blue" onClick={() => { setQuickFilter(''); setFilterCondition(''); }} active={quickFilter === '' && !filterCondition} />

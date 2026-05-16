@@ -233,6 +233,18 @@ const sections: ReportSection[] = [
         icon: <Boxes className="h-5 w-5" />,
         iconBg: 'text-slate-400 bg-slate-500/15',
       },
+      {
+        type: 'offline-sync-evidence',
+        title: 'Offline Sync Evidence Report',
+        purpose:
+          'Server-side offline activity, conflicts, retries, resolutions, and role/user breakdown from offline_sync_events.',
+        evidenceTag: 'Offline activity',
+        charts: 0,
+        tables: 3,
+        icon: <FileText className="h-5 w-5" />,
+        iconBg: 'text-amber-400 bg-amber-500/15',
+        adminOnly: true,
+      },
     ],
   },
 ];

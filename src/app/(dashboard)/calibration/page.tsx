@@ -19,6 +19,10 @@ import Textarea from '@/components/ui/Textarea';
 import Table from '@/components/ui/Table';
 import { PageLoader } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { useRole } from '@/hooks/useRole';
 import {
   getCalibrationRecords,
@@ -31,8 +35,10 @@ import {
   countOpenCalibrationRequests,
 } from '@/utils/decision-support/canonical-counts';
 import { createCalibrationRecordAction, createCalibrationRequestAction } from '@/actions/calibration.actions';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
 import { getEquipmentList } from '@/services/equipment.service';
 import * as settingsService from '@/services/settings.service';
+import type { OfflineActionRunResult } from '@/types/offline';
 import type { CalibrationResult, CalibrationRequestStatus, Urgency } from '@/types/domain';
 
 const resultVariant: Record<CalibrationResult, 'success' | 'error' | 'warning'> = {
@@ -140,7 +146,9 @@ function normalizeCalibrationTab(value: string | null): CalibrationTab | '' {
 
 export default function CalibrationPage() {
   const { toast } = useToast();
-  const { canManageMaintenance, primaryRole } = useRole();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { canManageMaintenance, primaryRole, roles } = useRole();
   const searchParams = useSearchParams();
   const [records, setRecords] = useState<CalRecord[]>([]);
   const [requests, setRequests] = useState<CalRequest[]>([]);
@@ -161,6 +169,7 @@ export default function CalibrationPage() {
   const [recordModalOpen, setRecordModalOpen] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [requestOfflineResult, setRequestOfflineResult] = useState<OfflineActionRunResult | null>(null);
 
   // Record form
   const [recAssetId, setRecAssetId] = useState('');
@@ -278,25 +287,43 @@ export default function CalibrationPage() {
       return;
     }
     setSubmitting(true);
-    try {
-      const result = await createCalibrationRequestAction({
-        asset_id: reqAssetId,
-        requested_by: null,
-        calibration_type_id: reqTypeId || null,
-        urgency: reqUrgency,
-        status: 'pending' as CalibrationRequestStatus,
-        notes: reqNotes || null,
-      });
-      if (!result.success) throw new Error(result.error ?? 'Failed to create calibration request');
-      toast('success', 'Calibration request submitted');
-      setRequestModalOpen(false);
-      resetRequestForm();
-      loadData();
-    } catch {
-      toast('error', 'Failed to create calibration request');
-    } finally {
-      setSubmitting(false);
+    const payload = {
+      asset_id: reqAssetId,
+      requested_by: null,
+      calibration_type_id: reqTypeId || null,
+      urgency: reqUrgency,
+      status: 'pending' as CalibrationRequestStatus,
+      notes: reqNotes || null,
+      submitted_by_profile_id: profile?.id ?? null,
+      department_id: profile?.department_id ?? null,
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'calibration_request.create',
+      entityType: 'calibration_requests',
+      assetId: reqAssetId,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/calibration',
+      executeOnline: () => createCalibrationRequestAction(payload),
+      metadata: { form: 'calibration_request_modal' },
+    });
+    setSubmitting(false);
+    setRequestOfflineResult(result);
+
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
     }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      toast('error', result.error ?? 'Failed to create calibration request');
+      return;
+    }
+    toast('success', 'Calibration request submitted');
+    setRequestModalOpen(false);
+    resetRequestForm();
+    loadData();
   };
 
   const resetRecordForm = () => {
@@ -867,6 +894,8 @@ export default function CalibrationPage() {
         }
       >
         <div className="space-y-4">
+          <OfflineSubmitBanner actionLabel="Calibration request" />
+          <OfflineActionResult result={requestOfflineResult} />
           <Select label="Asset *" options={assets} placeholder="Select asset" value={reqAssetId} onChange={(e) => setReqAssetId(e.target.value)} />
           <Select label="Calibration Type" options={calTypes} placeholder="Select type" value={reqTypeId} onChange={(e) => setReqTypeId(e.target.value)} />
           <Select

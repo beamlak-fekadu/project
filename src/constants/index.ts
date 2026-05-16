@@ -50,6 +50,7 @@ export const ROUTES = {
   ALERTS: '/alerts',
   HELPDESK: '/helpdesk',
   DEVELOPER_LAB: '/developer-lab',
+  OFFLINE_SYNC: '/offline-sync',
   SETTINGS: '/settings',
   USERS: '/users',
   SECURITY: '/security',
@@ -145,6 +146,7 @@ export const NAV_SECTIONS = [
     items: [
       { label: 'Settings', href: ROUTES.SETTINGS, icon: 'Settings', capability: 'nav.settings', roles: ['developer', 'admin', 'bme_head'] },
       { label: 'Audit Log', href: ROUTES.AUDIT, icon: 'FileText', capability: 'nav.audit', roles: ['developer', 'admin', 'bme_head'] },
+      { label: 'Sync Review Center', href: ROUTES.OFFLINE_SYNC, icon: 'RefreshCw', capability: 'nav.offline_sync', roles: ['developer', 'admin', 'bme_head'] },
     ],
   },
 ] as const;

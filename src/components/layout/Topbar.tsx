@@ -7,11 +7,13 @@ import Dropdown from '@/components/ui/Dropdown';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { formatRoleName } from '@/utils/roles';
+import SyncStatusIndicator from '@/components/offline/SyncStatusIndicator';
 
 interface TopbarProps {
   userName?: string;
   userRole?: string;
   userJobTitle?: string | null;
+  userRoles?: string[];
   alertCount?: number;
   onMenuToggle?: () => void;
   onLogout?: () => void;
@@ -21,6 +23,7 @@ export default function Topbar({
   userName = 'User',
   userRole = '',
   userJobTitle,
+  userRoles = [],
   alertCount = 0,
   onMenuToggle,
   onLogout,
@@ -62,6 +65,7 @@ export default function Topbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <SyncStatusIndicator userRoles={userRoles} />
         <AssistantLauncher />
         <ThemeToggle />
         <Button variant="ghost" size="icon" className="relative">

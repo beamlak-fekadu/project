@@ -6,6 +6,7 @@ import { APP_NAME_SHORT, APP_NAME_FULL, HOSPITAL_NAME } from '@/constants';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import ThemeScript from '@/components/theme/ThemeScript';
 import { getServerThemeFromPreference, isThemePreference, THEME_COOKIE_KEY } from '@/components/theme/theme-contract';
+import ServiceWorkerRegister from '@/components/offline/ServiceWorkerRegister';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -20,6 +21,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: `${APP_NAME_SHORT} - ${APP_NAME_FULL}`,
   description: `${APP_NAME_FULL} for ${HOSPITAL_NAME}`,
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icons/bmerms-icon.svg',
+    apple: '/icons/bmerms-icon.svg',
+  },
 };
 
 export default async function RootLayout({
@@ -41,7 +47,10 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <ThemeScript />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <ServiceWorkerRegister />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -1,7 +1,7 @@
 # AGENTS.md — BMERMS Codebase Reference for AI Agents
 
-Last updated: 2026-05-15 (QR Scan Logging and Evidence — Phase 6)
-Branch: QR
+Last updated: 2026-05-16 (Offline Capability — Phase 3 Completion: cached views + migration 00046)
+Branch: Offline
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
 This file is the canonical technical reference for any AI agent working in this repo.
@@ -1233,6 +1233,101 @@ One active corrective maintenance request per asset is the rule.
 
 ---
 
+## Offline Capability — Phase 1 Foundation (2026-05-16)
+
+1. Offline/PWA is separate from QR. QR is complete through six phases; do not alter QR token generation, QR landing, QR labels, QR coverage, or QR scan evidence for offline work.
+2. Phase 1 implements infrastructure only:
+   - PWA manifest: `public/manifest.webmanifest`
+   - Service worker: `public/sw.js`
+   - Registration: `src/components/offline/ServiceWorkerRegister.tsx`
+   - Offline fallback: `src/app/offline/page.tsx`
+   - Connectivity: `src/hooks/useOnlineStatus.ts`
+   - Dashboard banner/indicator: `OfflineStatusBanner`, `SyncStatusIndicator`
+   - IndexedDB queue: `src/lib/offline/db.ts`, `src/lib/offline/queue.ts`
+   - Types/model: `src/types/offline.ts`
+   - Sync skeleton: `src/lib/offline/sync-engine.ts`, `SyncEngineProvider`
+   - Role foundation: `src/lib/offline/offline-permissions.ts`
+   - Diagnostics: Developer Lab `OfflineDiagnosticsPanel`
+   - Design doc: `documents/offline-capability-design.md`
+3. Service worker strategy is intentionally conservative: cache `/offline`, manifest, icons, health probe, and static assets. Do not cache authenticated server-rendered pages, Supabase auth/API responses, service-role data, sensitive reports, or broad operational datasets in Phase 1.
+4. Offline works only after the device opens BMERMS once online. PC/phone installation is optional; the service worker registration is what enables the cached shell.
+5. New serious offline actions must use IndexedDB, not localStorage. Existing legacy `technician-queue.ts` remains only for the older work-order page and now uses Web Crypto IDs. Do not use `Math.random` for offline IDs.
+6. Queue actions are not marked synced without server confirmation. Failed/conflict actions must remain visible and retryable/reviewable; do not silently delete them.
+7. Phase 1 defines action categories but does not wire production workflows. Online-only actions include procurement/disposal approvals, QR token regeneration, user/settings/security changes, analytics refresh, final work-order closure/assignment, and replacement decisions.
+8. Existing `offline_sync_events` has only pending/synced/failed. Conflict evidence is stored as `sync_status='failed'` with `payload.conflict_reason`; asset_id, role_name, queued_at, source_route, and errors are also stored in payload until a future migration expands the table.
+9. Developer Lab diagnostics must show Unknown for unavailable browser/service-worker/cache state. Do not hardcode healthy statuses or fake queue rows.
+10. Offline phases: Phase 1 Foundation/App Shell/Sync Infrastructure; Phase 2 Offline-Capable Role Workflows; Phase 3 Conflict Handling/Cached Read Views/Sync Evidence.
+
+## Offline Capability — Phase 2 Role Workflows (2026-05-16)
+
+1. Phase 2 implements useful offline capture for selected real workflows while keeping authority actions online-only.
+2. Replay handler registry: `src/lib/offline/handlers/index.ts`. Domain handler files: `maintenance.ts`, `department-requests.ts`, and `store.ts`.
+3. Server replay action: `syncOfflineQueuedActionAction()` in `src/actions/offline-sync.actions.ts`. It reloads the current authenticated profile, checks role offline permission, validates asset/QR/department scope when needed, calls existing server actions, and writes sync-event evidence.
+4. Supported replay action types: `maintenance_request.create`, `department_issue.report`, `maintenance_event.log`, `qr_note.create`, `calibration_request.create`, `training_request.create`, `store_reorder.create`, `stock_receipt.draft`, `stock_issue.draft`, `work_order.start_intent`, `work_order.complete_draft`.
+5. Integrated UI surfaces:
+   - `/maintenance/requests/new`
+   - `/maintenance/work-orders/[id]`
+   - `/maintenance/work-orders/[id]/events/new`
+   - `/calibration`
+   - `/training`
+   - `/requests` department view local queued rows
+   - `/procurement/requests/new`
+   - `/spare-parts` operational stock modals and store stock-control draft panel
+   - `/qr/a/[token]` capture panels by role
+6. Role behavior:
+   - technicians: maintenance note/event, corrective request, parts-needed note, start intent, completion draft
+   - department users/heads: maintenance/problem report, calibration request, training request
+   - store users: reorder, receipt draft, issue draft
+   - BME Head/Admin: draft notes only where exposed; no final approvals offline
+   - viewer: no offline writes
+   - developer: diagnostics/retry/inspect only; no fake production test actions
+7. Conflict rules already used: missing/deleted asset, revoked QR token, wrong department, duplicate request, terminal work order, already-started work order, invalid stock quantity, inactive/missing spare part, insufficient stock, closed linked work order, and receipt drafts requiring procurement linkage unsupported by current schema.
+8. Do not mark an offline action synced unless the handler receives server acceptance. Do not delete failed/conflict rows. Do not queue online-only actions such as procurement/disposal approval, QR token regeneration, analytics refresh, user/settings/security changes, replacement decisions, final assignment, or final work-order closure.
+9. Phase 3 (2026-05-16) implements: full conflict engine, Sync Review Center, retry/resolution workflow, scoped cached read views, richer sync evidence reporting, Developer Lab diagnostics finalization, and an admin/bme_head Offline Sync Evidence report. Browser notification decisions and Background Sync API dependence are intentionally still out of scope.
+
+## Offline Capability — Phase 3 Conflict Handling, Sync Review, Cached Reads (2026-05-16)
+
+1. Phase 3 is the final planned offline phase. Phase 1 (app shell + IndexedDB queue + sync skeleton) and Phase 2 (workflow handlers) remain in place; Phase 3 adds safety + reviewability.
+2. Conflict engine + validation: `src/lib/offline/conflicts.ts` (`OfflineConflictDetail`, `OfflineConflictType`, `buildConflictDetail`, `deriveConflictDetail`, `inferConflictTypeFromReason`, `conflictTypeLabel`) and `src/lib/offline/validation.ts` (typed helpers per conflict type). Original payload is never removed.
+3. Conflict types: asset_missing/asset_deleted/department_scope_mismatch/duplicate_open_request/work_order_completed/work_order_status_changed/insufficient_stock/procurement_state_changed/stock_already_received/unsupported_action/permission_denied/stale_server_state/unknown_sync_error/invalid_payload/part_missing/part_inactive. Resolution statuses: conflict/under_review/resolved_synced/resolved_discarded/resolved_manual.
+4. `OfflineQueueRecord` carries `conflict_detail`, `resolution_status`, `resolution_note`, `resolved_at`, `resolved_by`. New IndexedDB statuses: `under_review`, `resolved_discarded` (in addition to queued/syncing/synced/failed/conflict).
+5. IndexedDB DB version bumped to 2. New `offline_read_cache` store for scoped cached reads — do not bump DB version again unless absolutely necessary (re-test upgrade path with seeded users).
+6. Sync Review Center route: `/offline-sync` (`src/app/(dashboard)/offline-sync/page.tsx` + `SyncReviewCenterClient.tsx`). Gate: `admin` + `bme_head` (developer always passes via `requireRole`). Sidebar entry capability: `nav.offline_sync` (defined in `src/lib/rbac.ts`, granted to developer/admin/bme_head).
+7. Local queue actions in Sync Review Center: Details modal (read-only), Open exact record, Retry, Mark Under Review, Manual Resolve (confirm dialog), Discard (confirm dialog). Raw payload is NEVER editable in the UI. Fixes happen on the source record then a retry, or the local draft is discarded.
+8. Server resolution audit: `recordOfflineConflictResolutionAction(input)` writes `audit_logs` row and appends an `offline_sync_events` row with `reported_status` and `resolution_status` inside payload. Use this whenever resolving a conflict in the Sync Review Center.
+9. Local queue helpers added in `src/lib/offline/queue.ts`: `markUnderReview`, `markResolvedDiscarded`, `markResolvedManual`, and `retryOfflineAction(id, { allowConflict })`. `clearSyncedActions()` now also clears `resolved_discarded` rows from IndexedDB. Conflict and pending_not_supported rows are NEVER auto-retried.
+10. Cached read views: `src/lib/offline/cache.ts` exports `saveOfflineReadCache`, `getOfflineReadCache`, `clearOfflineReadCache`, `getCacheSummary`, `isCacheFresh`, `formatCacheAge`, plus `OfflineCacheScope` and `RoleCachedView`. Storage key includes `profile_id::role_name::department_id::cache_key`. Default freshness window is 12 hours.
+11. Logout clears the current profile's caches in `src/app/(dashboard)/layout.tsx`. Do not switch to a global `clearOfflineReadCache()` on logout — multi-user shared devices must not lose another user's cached data.
+12. Department equipment is the first cached read view wired in Phase 3 (`DepartmentEquipmentOverview`): cache fallback when live load fails, with the standard amber "Offline cached data — may be stale" banner and last-synced age. The scaffolding (`saveOfflineReadCache` + `getOfflineReadCache` + `OfflineCacheRegistrar`) is reusable for technician/store/viewer/BME Head views — opt in narrowly, do NOT auto-cache every page.
+13. offline_sync_events: schema still pending/synced/failed only. Phase 3 stores `reported_status`, `conflict_detail`, `resolution_status`, `retry_count`, `role_name`, `source_route`, `asset_id`, `masked_qr_token`, `error_message` inside payload. Phase 3 uses `phase: 'offline.phase3.workflow-replay'` / `'offline.phase3.resolution'`. Service helpers in `src/services/offline-sync.service.ts` (`enrichSyncEvent`, `getOfflineSyncServerSummary`, `listOfflineSyncEvents`) reconstruct the richer view server-side.
+14. Global sync indicator (`src/components/offline/SyncStatusIndicator.tsx`) now shows Needs Review count + Sync Review link for privileged users and last-sync-run summary. Do not move review/diagnostics links to non-privileged users.
+15. Developer Lab Offline Diagnostics (`OfflineDiagnosticsPanel.tsx`) finalized: app shell version from `caches.keys()`, Offline Read Cache section, Local↔Server Mismatch Warnings, links to Sync Review Center and Offline Sync Evidence report. Keep the unknown-state honesty rule (no fake healthy badges).
+16. Offline evidence report at `/reports/offline-sync-evidence` (admin/bme_head). Reads only `offline_sync_events`. Has CSV export with snapshot metadata header + print/save-as-PDF. Surfaced from `/reports` as `adminOnly` under Resource/Procurement/People.
+17. Strict non-goals preserved: no browser notifications, no Background Sync API dependence, no offline procurement/disposal/user/settings/security/QR-token-admin actions, no offline analytics refresh/replacement decisions/final work-order closure or assignment, no fake reports, no fake cached data, no forced unsafe sync, no cross-user cache leakage, no all-hospital fallback for department cache, no viewer offline writes, no schema migration.
+18. Static checks performed: no `service_role` in offline code, no `Math.random` in offline code, no fake/mock cached data, viewer write handlers absent, online-only actions still rejected at enqueue time and replay time. Manual checks (browser DevTools, multi-user logout/login isolation, live conflict scenarios) deferred to QA.
+
+## Offline Capability — Phase 3 Completion Pass (2026-05-16)
+
+1. All four documented next-step cached views wired:
+   - Technician assigned work in `/work-orders` (cache key `technician.assigned_work`).
+   - Store stock list in `/spare-parts` (cache key `store.stock_list`).
+   - Viewer executive snapshot in `/command` (cache key `viewer.executive_summary`).
+   - BME Head operational summary in `/command` (cache key `bme_head.operational_summary`).
+   Each falls back to its IndexedDB cache on live load failure and renders the standard amber stale banner with last-synced age.
+2. Server-rendered pages (`/command`) persist their snapshot via `OfflineCacheRegistrar` client component. Client pages (`/work-orders`, `/spare-parts`, `/equipment`) read and write cache inline in their useEffect data loader.
+3. `/offline` fallback page now also renders `CachedSnapshotList`, a small client that lists this device's cached views (scoped to the current profile/role/department) and links back to the operational routes.
+4. Migration 00046 — `offline_sync_events` Phase 3 schema:
+   - New columns: `reported_status`, `resolution_status`, `conflict_type`, `conflict_reason`, `error_message`, `role_name`, `source_route`, `asset_id`, `retry_count`, `resolved_by`, `resolved_at`.
+   - CHECK on `sync_status` relaxed to accept all Phase 3 statuses while still accepting legacy `pending|synced|failed`.
+   - New CHECK on `resolution_status` constrains it to the resolution enum.
+   - Indexes: created_at DESC, (actor_user_id, created_at DESC), action_type, conflict_type, reported_status, asset_id.
+   - One-shot backfill copies the most important payload fields into the new columns for historical rows (idempotent).
+   - RLS UPDATE policy reaffirmed for `bme_head` alongside admin/developer/technician so Sync Review Center can patch resolution columns.
+5. `recordOfflineSyncEventAction` writes BOTH the new columns and the payload mirror. `recordOfflineConflictResolutionAction` writes resolution_status/resolved_by/resolved_at/role_name into columns. Service `enrichSyncEvent` prefers columns when present, falls back to payload for pre-migration rows.
+6. After applying migration 00046 with `supabase db push --linked`, regenerate Supabase types: `npx supabase gen types typescript --linked > src/types/database.ts`. The insert path uses `as never` casts until types are regenerated. Next migration must be 00047.
+7. IndexedDB v1→v2 upgrade path verified: `onupgradeneeded` uses an explicit `oldVersion` check. v0→v1 creates `offline_actions`; v1→v2 adds `offline_read_cache` WITHOUT touching the existing queue store. Queued offline actions survive the upgrade.
+8. Build, tsc, and lint clean. Manual browser validation (multi-user logout/login cache isolation, IDB v1→v2 with pre-existing queue, post-migration event insertion) deferred to QA.
+
 ## Known bugs — do not repeat these
 
 1. task-data-loaders.ts previously checked role 'engineer' — fixed to 'technician'.
@@ -1282,14 +1377,14 @@ One active corrective maintenance request per asset is the rule.
 
 ## What not to do
 
-- Do not use localStorage or sessionStorage (except the existing offline queue in technician-queue.ts)
+- Do not use localStorage or sessionStorage for new offline capability; serious offline actions use IndexedDB
 - Do not import recharts — it is not installed
 - Do not add gradients to visualizations — flat colors only (CSS variables)
 - Do not add decorative orbs, blur effects, or glassmorphism
 - Do not use useEffect for initial data fetching in server components
 - Do not create a Supabase client outside of src/lib/supabase/
 - Do not modify seed files (supabase/seed/)
-- Do not modify migrations 00001–00035; next migration is 00036
+- Do not modify migrations 00001–00045; next migration is 00046
 - Do not add npm dependencies without checking existing packages first
   (chart.js, jsPDF, jspdf-autotable, lucide-react, zod, date-fns are all available)
 - Do not use rounded-2xl on cards — rounded-lg maximum

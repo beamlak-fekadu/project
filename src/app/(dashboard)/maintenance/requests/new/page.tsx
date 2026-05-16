@@ -5,12 +5,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Save, AlertTriangle } from 'lucide-react';
 import { PageHeader, Card, CardHeader, CardTitle, CardContent, Button, Select, Textarea } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import { getEquipmentList } from '@/services/equipment.service';
 import { getOpenCorrectiveRequestForAsset } from '@/services/maintenance.service';
 import { createMaintenanceRequestAction } from '@/actions/maintenance.actions';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
+import { useRole } from '@/hooks/useRole';
 import { formatRequestStatus } from '@/utils/maintenance/request-status';
 import type { EquipmentAsset, Urgency } from '@/types/domain';
 import { maintenanceRequestSchema } from '@/utils/validation/operations';
+import type { OfflineActionRunResult } from '@/types/offline';
 
 // Reported condition options stored in maintenance_requests.reported_condition (migration 00038).
 // functional_issue = equipment operates but issue observed (no condition change to equipment_assets).
@@ -33,10 +40,14 @@ export default function NewMaintenanceRequestPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { roles, primaryRole } = useRole();
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [offlineResult, setOfflineResult] = useState<OfflineActionRunResult | null>(null);
   const [form, setForm] = useState(() => {
     const source = searchParams.get('source') ?? '';
     const type = searchParams.get('type');
@@ -118,28 +129,47 @@ export default function NewMaintenanceRequestPage() {
     }
 
     const selectedAsset = assets.find((item) => item.id === form.asset_id);
-    if (!selectedAsset?.department_id) {
+    if (!selectedAsset?.department_id && navigator.onLine) {
       toast('error', 'Selected asset does not have a department');
       return;
     }
 
     setSubmitting(true);
-    const result = await createMaintenanceRequestAction({
+    const actionPayload = {
       asset_id: form.asset_id,
       requested_by: null,
-      department_id: selectedAsset.department_id,
+      department_id: selectedAsset?.department_id ?? profile?.department_id ?? null,
       fault_description: parsed.data.fault_description.trim(),
       urgency: parsed.data.urgency,
       status: 'pending',
       notes: parsed.data.notes?.trim() || null,
       reported_condition: form.reported_condition || null,
       reported_condition_source: form.source || 'manual',
+    };
+    const result = await runOfflineCapableAction({
+      actionType: form.source === 'department' ? 'department_issue.report' : 'maintenance_request.create',
+      entityType: 'maintenance_requests',
+      entityId: null,
+      assetId: form.asset_id,
+      payload: actionPayload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/maintenance/requests/new',
+      executeOnline: () => createMaintenanceRequestAction(actionPayload),
+      metadata: { form: 'maintenance_request_new', request_source: form.source || 'manual' },
     });
     setSubmitting(false);
+    setOfflineResult(result);
 
-    if (!result.success) {
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+
+    if (result.status === 'failed') {
       // Handle duplicate prevented by server action (race condition or direct POST)
-      const resultData = result.data as { reason?: string; existingRequestId?: string; existingRequestNumber?: string; existingRequestStatus?: string } | undefined;
+      const resultData = (result as { data?: { reason?: string; existingRequestId?: string; existingRequestNumber?: string; existingRequestStatus?: string } }).data;
       if (resultData?.reason === 'duplicate_open_request' && resultData.existingRequestId) {
         toast('warning', `Duplicate prevented: ${resultData.existingRequestNumber ?? 'open request'} already exists for this equipment.`);
         router.push(`/maintenance/requests/${resultData.existingRequestId}?duplicatePrevented=1`);
@@ -149,8 +179,12 @@ export default function NewMaintenanceRequestPage() {
       return;
     }
 
-    toast('success', 'Maintenance request created');
-    router.push(`/maintenance/requests/${(result.data as { id: string }).id}`);
+    if (result.status === 'success') {
+      toast('success', 'Maintenance request created');
+      const created = result.data as { data?: { id?: string } };
+      const id = created.data?.id;
+      router.push(id ? `/maintenance/requests/${id}` : '/requests');
+    }
   }
 
   return (
@@ -205,6 +239,8 @@ export default function NewMaintenanceRequestPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
+            <OfflineSubmitBanner actionLabel="Maintenance request" />
+            <OfflineActionResult result={offlineResult} />
             <div className="relative">
               <Select
                 label="Equipment Asset *"

@@ -1,0 +1,19 @@
+{
+  "name": "BMERMS - Biomedical Equipment Management",
+  "short_name": "BMERMS",
+  "description": "Biomedical equipment management and decision-support system for hospital operations.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eef2f8",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/bmerms-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

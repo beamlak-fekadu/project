@@ -18,6 +18,8 @@ import Textarea from '@/components/ui/Textarea';
 import Table from '@/components/ui/Table';
 import { PageLoader } from '@/components/ui/Spinner';
 import { useToast } from '@/components/ui/Toast';
+import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
+import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import {
   getSpareParts,
   getLowStockParts,
@@ -26,9 +28,13 @@ import { getProcurementPipeline } from '@/services/procurement.service';
 import { countLowStock, countStockout, countOpenProcurement } from '@/utils/decision-support/canonical-counts';
 import { createSparePartAction, createStockIssueAction, createStockReceiptAction } from '@/actions/spare-parts.actions';
 import { createClient } from '@/lib/supabase/client';
+import { runOfflineCapableAction } from '@/lib/offline/queue';
+import { useAuth } from '@/hooks/useAuth';
+import { useProfile } from '@/hooks/useProfile';
 import { useRole } from '@/hooks/useRole';
 import { procurementDetail } from '@/app/(dashboard)/command/_lib/command-center-routes';
 import StoreSparePartsStockControl from './_components/StoreSparePartsStockControl';
+import type { OfflineActionRunResult } from '@/types/offline';
 
 type PartRow = Record<string, unknown>;
 type ReceiptRow = Record<string, unknown>;
@@ -55,7 +61,9 @@ export default function SparePartsPage() {
 function OperationalSparePartsPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  const { canManageParts, primaryRole } = useRole();
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+  const { canManageParts, primaryRole, roles } = useRole();
   const [parts, setParts] = useState<PartRow[]>([]);
   const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
   const [issues, setIssues] = useState<IssueRow[]>([]);
@@ -75,6 +83,8 @@ function OperationalSparePartsPage() {
   const [addPartOpen, setAddPartOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [issueOpen, setIssueOpen] = useState(false);
+  const [receiptOfflineResult, setReceiptOfflineResult] = useState<OfflineActionRunResult | null>(null);
+  const [issueOfflineResult, setIssueOfflineResult] = useState<OfflineActionRunResult | null>(null);
 
   // Add Part form
   const [partCode, setPartCode] = useState('');
@@ -176,28 +186,53 @@ function OperationalSparePartsPage() {
       toast('warning', 'Part and quantity are required');
       return;
     }
-    setSubmitting(true);
-    try {
-      const result = await createStockReceiptAction({
-        part_id: recPartId,
-        quantity: parseInt(recQuantity),
-        received_by: null,
-        received_date: new Date().toISOString().split('T')[0],
-        supplier_id: recSupplier || null,
-        invoice_ref: recInvoice || null,
-        unit_cost: recUnitCost ? parseFloat(recUnitCost) : null,
-        notes: recNotes || null,
-      });
-      if (!result.success) throw new Error(result.error ?? 'Failed to record receipt');
-      toast('success', 'Stock receipt recorded');
-      setReceiptOpen(false);
-      resetReceiptForm();
-      loadData();
-    } catch {
-      toast('error', 'Failed to record receipt');
-    } finally {
-      setSubmitting(false);
+    const quantity = parseInt(recQuantity, 10);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast('warning', 'Quantity must be greater than zero');
+      return;
     }
+    setSubmitting(true);
+    const partSnapshot = parts.find((part) => String(part.id ?? '') === recPartId) as PartRow | undefined;
+    const payload = {
+      part_id: recPartId,
+      quantity,
+      received_by: null,
+      received_date: new Date().toISOString().split('T')[0],
+      supplier_id: recSupplier || null,
+      invoice_ref: recInvoice || null,
+      unit_cost: recUnitCost ? parseFloat(recUnitCost) : null,
+      notes: recNotes || null,
+      current_stock_snapshot: typeof partSnapshot?.current_stock === 'number' ? partSnapshot.current_stock : null,
+      reorder_level_snapshot: typeof partSnapshot?.reorder_level === 'number' ? partSnapshot.reorder_level : null,
+      part_name_snapshot: typeof partSnapshot?.name === 'string' ? partSnapshot.name : null,
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'stock_receipt.draft',
+      entityType: 'stock_receipts',
+      entityId: recPartId,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/spare-parts',
+      executeOnline: () => createStockReceiptAction(payload),
+      metadata: { form: 'stock_receipt_modal' },
+    });
+    setSubmitting(false);
+    setReceiptOfflineResult(result);
+
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      toast('error', result.error ?? 'Failed to record receipt');
+      return;
+    }
+    toast('success', 'Stock receipt recorded');
+    setReceiptOpen(false);
+    resetReceiptForm();
+    loadData();
   };
 
   const handleIssue = async () => {
@@ -205,30 +240,52 @@ function OperationalSparePartsPage() {
       toast('warning', 'Part and quantity are required');
       return;
     }
-    setSubmitting(true);
-    try {
-      const result = await createStockIssueAction({
-        part_id: issPartId,
-        quantity: parseInt(issQuantity),
-        issued_to_event_id: null,
-        issued_by: null,
-        issue_date: new Date().toISOString().split('T')[0],
-        department_id: issDepartment || null,
-        notes: issNotes || null,
-      });
-      if (!result.success) throw new Error(result.error ?? 'Failed to record issue');
-      toast('success', 'Stock issue recorded');
-      setIssueOpen(false);
-      resetIssueForm();
-      loadData();
-    } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err
-        ? (err as { message: string }).message
-        : 'Failed to record issue';
-      toast('error', message);
-    } finally {
-      setSubmitting(false);
+    const quantity = parseInt(issQuantity, 10);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast('warning', 'Quantity must be greater than zero');
+      return;
     }
+    setSubmitting(true);
+    const partSnapshot = parts.find((part) => String(part.id ?? '') === issPartId) as PartRow | undefined;
+    const payload = {
+      part_id: issPartId,
+      quantity,
+      issued_to_event_id: null,
+      issued_by: null,
+      issue_date: new Date().toISOString().split('T')[0],
+      department_id: issDepartment || null,
+      notes: issNotes || null,
+      local_stock_snapshot: typeof partSnapshot?.current_stock === 'number' ? partSnapshot.current_stock : null,
+      part_name_snapshot: typeof partSnapshot?.name === 'string' ? partSnapshot.name : null,
+    };
+    const result = await runOfflineCapableAction({
+      actionType: 'stock_issue.draft',
+      entityType: 'stock_issues',
+      entityId: issPartId,
+      payload,
+      createdByProfileId: profile?.id ?? null,
+      roleName: primaryRole,
+      roleNames: roles,
+      sourceRoute: typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/spare-parts',
+      executeOnline: () => createStockIssueAction(payload),
+      metadata: { form: 'stock_issue_modal' },
+    });
+    setSubmitting(false);
+    setIssueOfflineResult(result);
+
+    if (result.status === 'queued') {
+      toast('success', 'Saved offline — will sync when connection returns.');
+      return;
+    }
+    if (result.status === 'failed' || result.status === 'conflict') {
+      const message = result.error ?? 'Failed to record issue';
+      toast('error', message);
+      return;
+    }
+    toast('success', 'Stock issue recorded');
+    setIssueOpen(false);
+    resetIssueForm();
+    loadData();
   };
 
   const resetPartForm = () => {
@@ -672,6 +729,8 @@ function OperationalSparePartsPage() {
         }
       >
         <div className="space-y-4">
+          <OfflineSubmitBanner actionLabel="Stock receipt draft" />
+          <OfflineActionResult result={receiptOfflineResult} />
           <Select label="Part *" options={partOptions} placeholder="Select part" value={recPartId} onChange={(e) => setRecPartId(e.target.value)} />
           <Input label="Quantity *" type="number" value={recQuantity} onChange={(e) => setRecQuantity(e.target.value)} />
           <Input label="Invoice Reference" value={recInvoice} onChange={(e) => setRecInvoice(e.target.value)} />
@@ -693,6 +752,8 @@ function OperationalSparePartsPage() {
         }
       >
         <div className="space-y-4">
+          <OfflineSubmitBanner actionLabel="Stock issue draft" />
+          <OfflineActionResult result={issueOfflineResult} />
           <Select label="Part *" options={partOptions} placeholder="Select part" value={issPartId} onChange={(e) => setIssPartId(e.target.value)} />
           <Input label="Quantity *" type="number" value={issQuantity} onChange={(e) => setIssQuantity(e.target.value)} />
           <Input label="Department" value={issDepartment} onChange={(e) => setIssDepartment(e.target.value)} placeholder="Department or purpose" />
