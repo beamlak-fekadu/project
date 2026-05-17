@@ -160,18 +160,73 @@ export async function runNotificationRuleCheckAction(): Promise<ActionResult> {
 
 export async function createTestNotificationToSelfAction(): Promise<ActionResult> {
   try {
-    const { profile, error } = await getActionContext(['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer']);
-    if (error || !profile) return { success: false, error };
-    await createNotificationEvent({
-      event_type: 'system.test_notification',
-      priority: 'medium',
-      payload: {
-        target_profile_id: profile.id,
-        message: `Test notification at ${new Date().toLocaleString()}.`,
-      },
-    });
+    const { supabase, profile, error } = await getActionContext(['developer', 'admin', 'bme_head', 'technician', 'department_head', 'department_user', 'store_user', 'viewer']);
+    if (error || !profile) return { success: false, error: error ?? 'Not authenticated' };
+
+    // Direct insert path. We intentionally do NOT go through the engine's
+    // event → rule fan-out for this test: this guarantees a visible row in
+    // public.notifications immediately, even if the rule path or
+    // notification_events RLS misfires. recipient_profile_id must be the
+    // current profile.id (NOT auth.uid()), so the bell drawer picks it up.
+    const timestamp = new Date().toLocaleString();
+    const notificationPayload = {
+      recipient_profile_id: profile.id,
+      recipient_role: profile.roleNames?.[0] ?? null,
+      title: 'Test notification',
+      message: `This is a test notification created at ${timestamp}. It confirms the in-app notification path is working.`,
+      priority: 'info' as const,
+      category: 'system' as const,
+      source_type: 'system.test_notification',
+      source_id: null,
+      event_id: null,
+      asset_id: null,
+      department_id: profile.department_id ?? null,
+      action_href: '/notifications',
+      action_label: 'Open Notifications',
+      status: 'unread' as const,
+      dedupe_key: null,
+      metadata: { test: true, created_by_profile_id: profile.id, generated_at: new Date().toISOString() },
+    };
+
+    const insert = await supabase
+      .from('notifications')
+      .insert(notificationPayload as never)
+      .select('id')
+      .single();
+
+    if (insert.error) {
+      console.error('[notifications] test-to-self insert failed:', insert.error.message);
+      return { success: false, error: insert.error.message };
+    }
+
+    const insertedId = (insert.data as { id?: string } | null)?.id ?? null;
+
+    // Best-effort: also create a notification_events row for diagnostics so the
+    // Developer Lab "events today" counter reflects this test. Failure here
+    // must not affect the success of the test notification itself.
+    try {
+      await supabase.from('notification_events').insert({
+        event_type: 'system.test_notification',
+        source_table: 'notifications',
+        source_id: insertedId,
+        asset_id: null,
+        department_id: profile.department_id ?? null,
+        priority: 'info',
+        payload: {
+          target_profile_id: profile.id,
+          notification_id: insertedId,
+          message: `Test notification at ${timestamp}.`,
+        },
+        processing_status: 'processed',
+        processed_at: new Date().toISOString(),
+        created_by: profile.id,
+      } as never);
+    } catch (eventErr) {
+      console.error('[notifications] best-effort test event insert failed:', eventErr);
+    }
+
     revalidateMany(notificationPaths);
-    return { success: true };
+    return { success: true, data: { notification_id: insertedId } };
   } catch (err) {
     return actionError(err, 'Failed to send test notification');
   }
