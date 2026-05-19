@@ -1,3 +1,5 @@
+import { PageSkeleton } from './skeletons';
+
 interface SpinnerProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
@@ -14,10 +16,9 @@ export default function Spinner({ size = 'md', className = '' }: SpinnerProps) {
   );
 }
 
+// Page-level loading state. Resembles the standard dashboard layout (header +
+// KPI grid + table) so perceived load time feels closer to real content than a
+// centered spinner. Every existing `PageLoader` consumer inherits the upgrade.
 export function PageLoader() {
-  return (
-    <div className="flex min-h-[400px] items-center justify-center">
-      <Spinner size="lg" />
-    </div>
-  );
+  return <PageSkeleton />;
 }

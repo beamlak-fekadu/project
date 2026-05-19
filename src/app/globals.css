@@ -264,6 +264,88 @@ body,
   opacity: 1;
 }
 
+/* ── Global cursor rules ────────────────────────────────────────────────────
+   Make cursor behavior consistent system-wide without touching every page:
+   - clickable/navigational elements get the pointer hand
+   - disabled clickable elements get not-allowed
+   - text inputs / contenteditable get the I-beam
+   - bare static text falls back to the platform default
+   `:where()` keeps specificity at 0,0,0 so component-level classes
+   (e.g. `cursor-default`, `cursor-text`) always win.
+   ──────────────────────────────────────────────────────────────────────── */
+:where(button, a[href], [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], summary, label[for], select) {
+  cursor: pointer;
+}
+:where(button:disabled, button[aria-disabled='true'], a[aria-disabled='true'], [role='button'][aria-disabled='true']) {
+  cursor: not-allowed;
+}
+:where(input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']), textarea, [contenteditable='true']) {
+  cursor: text;
+}
+:where(input[type='checkbox'], input[type='radio'], input[type='range']) {
+  cursor: pointer;
+}
+
+/* ── Skeleton shimmer ───────────────────────────────────────────────────────
+   Used by `src/components/ui/skeletons/*`. Single keyframe; no JS required.
+   Respects `prefers-reduced-motion`.
+   ──────────────────────────────────────────────────────────────────────── */
+@keyframes bmedis-skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position: -200% 0;
+  animation: bmedis-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background-image: none;
+  }
+}
+
+/* ── Route navigation progress bar ──────────────────────────────────────────
+   Subtle thin bar that fades in at the top of the layout while a Next.js
+   route transition is pending. Driven by `NavigationProgress` (client) and
+   hidden by default. Honors reduced-motion.
+   ──────────────────────────────────────────────────────────────────────── */
+@keyframes bmedis-nav-progress {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(20%); }
+  100% { transform: translateX(100%); }
+}
+.nav-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 80;
+  background: linear-gradient(90deg, transparent, var(--brand), var(--brand-2), transparent);
+  background-size: 200% 100%;
+  transform: translateX(-100%);
+  animation: bmedis-nav-progress 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress-bar {
+    animation: none;
+    transform: none;
+    opacity: 0.7;
+  }
+}
+
 /* ── Reduced motion respect ─────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .stat-card-pressable,

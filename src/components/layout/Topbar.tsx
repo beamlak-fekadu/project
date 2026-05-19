@@ -40,8 +40,8 @@ export default function Topbar({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={transitions.default}
-      className="panel-surface-muted flex h-16 min-w-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-3 sm:px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      className="panel-surface-muted flex h-16 min-w-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 sm:px-4 lg:gap-3 lg:px-6">
+      <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
@@ -61,15 +61,27 @@ export default function Topbar({
         </div>
       </div>
 
-      <div className="hidden min-w-[260px] items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-muted)] backdrop-blur lg:flex lg:min-w-[360px]">
+      {/* Search bar — capped width, shrinks gracefully on tablet, icon-only on mobile.
+          The desktop tile keeps the ⌘K hint but never dominates the topbar. */}
+      <button
+        type="button"
+        aria-label="Search equipment, requests, work orders"
+        className="ml-auto hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--foreground)] sm:flex md:hidden"
+      >
         <Search className="h-4 w-4" />
-        <span className="truncate">Search equipment, requests, work orders...</span>
-        <span className="ml-auto rounded border border-[var(--border-subtle)] bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-subtle)]">
+      </button>
+      <div className="ml-auto hidden min-w-0 max-w-[280px] flex-1 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-muted)] backdrop-blur md:flex lg:max-w-[360px] xl:max-w-[420px]">
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="hidden lg:inline">Search equipment, requests, work orders…</span>
+          <span className="lg:hidden">Search…</span>
+        </span>
+        <span className="ml-auto hidden shrink-0 rounded border border-[var(--border-subtle)] bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-subtle)] lg:inline">
           ⌘K
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 md:ml-2">
         <SyncStatusIndicator userRoles={userRoles} />
         <AssistantLauncher />
         <ThemeToggle />

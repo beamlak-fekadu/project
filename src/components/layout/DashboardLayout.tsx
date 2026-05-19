@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import NavigationProgress from './NavigationProgress';
 import { AssistantPanel } from '@/components/assistant/AssistantPanel';
 import OfflineStatusBanner from '@/components/offline/OfflineStatusBanner';
 import { pageFade, drawerSlideLeft, transitions } from '@/lib/ui/motion-presets';
@@ -40,6 +41,7 @@ export default function DashboardLayout({ children, userName, userRole, userJobT
 
   return (
     <div className="app-shell flex h-screen overflow-hidden">
+      <NavigationProgress />
       <AnimatePresence>
         {mobileMenuOpen && (
           <div className="no-print fixed inset-0 z-40 lg:hidden">
