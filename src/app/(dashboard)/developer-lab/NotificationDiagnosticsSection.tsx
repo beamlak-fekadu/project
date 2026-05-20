@@ -18,12 +18,14 @@ import {
   createTestNotificationToSelfAction,
   fetchTelegramBotUpdatesAction,
   getNotificationDiagnosticsAction,
+  getTelegramWebhookSetupAction,
   listDeliveriesAction,
   listRuleLogsAction,
   runNotificationRuleCheckAction,
   saveTelegramConnectionAction,
   sendSampleRoleNotificationAction,
   sendTelegramTestMessageAction,
+  setTelegramWebhookAction,
   testTelegramBotAction,
 } from '@/actions/notifications.actions';
 import type {
@@ -40,6 +42,20 @@ const SAMPLE_VARIANTS: Array<{ id: string; label: string; description: string }>
   { id: 'viewer_readiness', label: 'Viewer — readiness risk', description: 'Management-only service readiness signal.' },
   { id: 'developer_system', label: 'Developer — rule failed', description: 'Developer-only system signal.' },
 ];
+
+interface WebhookSetup {
+  expected_webhook_url: string;
+  secret_token_configured: boolean;
+  registered_webhook_url: string | null;
+  registered_url_matches_expected: boolean | null;
+  pending_update_count: number;
+  last_error_date: string | null;
+  last_error_message: string | null;
+  ip_address: string | null;
+  max_connections: number | null;
+  allowed_updates: string[] | null;
+  info_error: string | null;
+}
 
 interface TelegramUpdate {
   update_id: number;
@@ -76,6 +92,7 @@ export default function NotificationDiagnosticsSection() {
   const [deliveries, setDeliveries] = useState<NotificationDeliveryRow[]>([]);
   const [ruleLogs, setRuleLogs] = useState<NotificationRuleLogRow[]>([]);
   const [updates, setUpdates] = useState<TelegramUpdate[]>([]);
+  const [webhook, setWebhook] = useState<WebhookSetup | null>(null);
   const [chatIdInput, setChatIdInput] = useState('');
   const [profileIdInput, setProfileIdInput] = useState('');
   const [usernameInput, setUsernameInput] = useState('');
@@ -85,10 +102,11 @@ export default function NotificationDiagnosticsSection() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, deliveryRes, ruleRes] = await Promise.all([
+      const [d, deliveryRes, ruleRes, webhookRes] = await Promise.all([
         getNotificationDiagnosticsAction(),
         listDeliveriesAction({}),
         listRuleLogsAction({}),
+        getTelegramWebhookSetupAction(),
       ]);
       if (d.success && d.data) setDiagnostics(d.data as NotificationDiagnostics);
       if (deliveryRes.success && Array.isArray(deliveryRes.data)) {
@@ -96,6 +114,9 @@ export default function NotificationDiagnosticsSection() {
       }
       if (ruleRes.success && Array.isArray(ruleRes.data)) {
         setRuleLogs(ruleRes.data as NotificationRuleLogRow[]);
+      }
+      if (webhookRes.success && webhookRes.data) {
+        setWebhook(webhookRes.data as WebhookSetup);
       }
     } finally {
       setLoading(false);
@@ -153,6 +174,18 @@ export default function NotificationDiagnosticsSection() {
       const data = res.data as { events_created?: number; errors?: string[] } | null;
       toast('success', `Created ${data?.events_created ?? 0} event(s)`);
     }
+    void fetchAll();
+  }, [fetchAll, toast]);
+
+  const handleRegisterWebhook = useCallback(async () => {
+    setWorking(true);
+    const res = await setTelegramWebhookAction();
+    setWorking(false);
+    if (!res.success) {
+      toast('error', res.error ?? 'setWebhook failed');
+      return;
+    }
+    toast('success', 'Telegram webhook registered');
     void fetchAll();
   }, [fetchAll, toast]);
 
@@ -251,6 +284,87 @@ export default function NotificationDiagnosticsSection() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-[var(--brand)]" />
+            <p className="text-sm font-semibold text-[var(--foreground)]">
+              Telegram bot webhook (required for /start /help /reset to reply)
+            </p>
+          </div>
+          {!webhook ? (
+            <p className="text-xs text-[var(--text-muted)]">Loading…</p>
+          ) : (
+            <div className="space-y-2 text-xs">
+              <StatLine label="Expected webhook URL" value={webhook.expected_webhook_url} />
+              <StatLine
+                label="Registered webhook URL"
+                value={webhook.registered_webhook_url ?? 'not set'}
+              />
+              <StatLine
+                label="Registered matches expected"
+                value={
+                  webhook.registered_url_matches_expected == null
+                    ? '—'
+                    : webhook.registered_url_matches_expected
+                      ? 'yes'
+                      : 'no — bot replies will not arrive'
+                }
+              />
+              <StatLine
+                label="Secret token configured (server)"
+                value={webhook.secret_token_configured ? 'yes' : 'no'}
+              />
+              <StatLine label="Pending updates" value={webhook.pending_update_count} />
+              <StatLine
+                label="Last delivery error"
+                value={webhook.last_error_message ?? '—'}
+              />
+              {webhook.last_error_date && (
+                <StatLine label="Last error at" value={webhook.last_error_date} />
+              )}
+              {webhook.info_error && (
+                <div className="rounded-md border border-amber-500/60 bg-amber-500/10 p-2 text-amber-400">
+                  Could not read webhook info from Telegram: {webhook.info_error}
+                </div>
+              )}
+              <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] p-2">
+                <p className="mb-1 font-semibold text-[var(--foreground)]">
+                  Manual setup (one-time)
+                </p>
+                <p className="text-[var(--text-muted)]">
+                  Run this from a trusted shell — never paste your bot token into a chat or
+                  client-side log:
+                </p>
+                <pre className="mt-1 overflow-x-auto whitespace-pre text-[11px] text-[var(--text-muted)]">
+{`curl -X POST \\
+  "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \\
+  -H "Content-Type: application/json" \\
+  -d '{"url":"${webhook.expected_webhook_url}"${webhook.secret_token_configured ? `,\n      "secret_token":"$TELEGRAM_WEBHOOK_SECRET"` : ''}}'`}
+                </pre>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={working}
+                  onClick={() => void handleRegisterWebhook()}
+                >
+                  <Wrench className="mr-2 h-4 w-4" /> Register webhook now
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => void fetchAll()}>
+                  <RefreshCw className="mr-2 h-4 w-4" /> Recheck webhook info
+                </Button>
+              </div>
+              <p className="text-[var(--text-muted)]">
+                If commands appear in Telegram but the bot stays silent, the webhook is either
+                unset or pointing at a stale URL. Set it once per deployment.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="space-y-3">

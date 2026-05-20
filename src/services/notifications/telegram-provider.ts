@@ -258,6 +258,96 @@ export async function getTelegramBotUpdates(): Promise<{
   return { ok: true, updates };
 }
 
+export interface TelegramWebhookInfo {
+  url: string | null;
+  has_custom_certificate: boolean;
+  pending_update_count: number;
+  last_error_date: string | null;
+  last_error_message: string | null;
+  ip_address: string | null;
+  max_connections: number | null;
+  allowed_updates: string[] | null;
+}
+
+export async function getTelegramWebhookInfo(): Promise<{
+  ok: boolean;
+  info?: TelegramWebhookInfo;
+  error?: string;
+}> {
+  const token = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
+  if (!token) return { ok: false, error: 'bot_token_missing' };
+  const url = `${TELEGRAM_API_BASE}/bot${token}/getWebhookInfo`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    const data = (await response.json()) as {
+      ok?: boolean;
+      result?: {
+        url?: string;
+        has_custom_certificate?: boolean;
+        pending_update_count?: number;
+        last_error_date?: number;
+        last_error_message?: string;
+        ip_address?: string;
+        max_connections?: number;
+        allowed_updates?: string[];
+      };
+      description?: string;
+    };
+    if (!response.ok || !data?.ok || !data.result) {
+      return { ok: false, error: data?.description || `HTTP ${response.status}` };
+    }
+    const r = data.result;
+    return {
+      ok: true,
+      info: {
+        url: r.url && r.url.length > 0 ? r.url : null,
+        has_custom_certificate: Boolean(r.has_custom_certificate),
+        pending_update_count: r.pending_update_count ?? 0,
+        last_error_date:
+          r.last_error_date != null ? new Date(r.last_error_date * 1000).toISOString() : null,
+        last_error_message: r.last_error_message ?? null,
+        ip_address: r.ip_address ?? null,
+        max_connections: r.max_connections ?? null,
+        allowed_updates: r.allowed_updates ?? null,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'unknown_error' };
+  }
+}
+
+export async function setTelegramWebhook(params: {
+  url: string;
+  secretToken?: string | null;
+}): Promise<{ ok: boolean; description?: string; error?: string }> {
+  const token = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
+  if (!token) return { ok: false, error: 'bot_token_missing' };
+  const url = `${TELEGRAM_API_BASE}/bot${token}/setWebhook`;
+  const body: Record<string, unknown> = {
+    url: params.url,
+    allowed_updates: ['message'],
+  };
+  if (params.secretToken && params.secretToken.trim().length > 0) {
+    body.secret_token = params.secretToken.trim();
+  }
+  const result = await postJsonWithTimeout<{
+    ok?: boolean;
+    description?: string;
+    result?: boolean;
+  }>(url, body);
+  if (!result.ok) {
+    return { ok: false, error: result.data?.description || result.error || 'setWebhook_failed' };
+  }
+  const data = result.data;
+  if (!data?.ok) {
+    return { ok: false, error: data?.description || 'setWebhook_not_ok' };
+  }
+  return { ok: true, description: data.description };
+}
+
 export async function testTelegramBot(): Promise<{
   ok: boolean;
   botUsername?: string;

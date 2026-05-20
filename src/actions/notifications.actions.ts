@@ -24,11 +24,14 @@ import {
   emitNotificationEvent,
 } from '@/services/notifications/notification-engine';
 import {
+  getAppBaseUrl,
   getTelegramBotUpdates,
+  getTelegramWebhookInfo,
   isTelegramConfigured,
   isTelegramMonitorConfigured,
   getTelegramMonitorChatId,
   sendTelegramMessage,
+  setTelegramWebhook,
   testTelegramBot,
 } from '@/services/notifications/telegram-provider';
 import { deliverTelegramIfEligible } from '@/services/notifications/notification-delivery.service';
@@ -434,6 +437,79 @@ export async function fetchTelegramBotUpdatesAction(): Promise<ActionResult> {
     return { success: true, data: result.updates ?? [] };
   } catch (err) {
     return actionError(err, 'Failed to fetch Telegram updates');
+  }
+}
+
+function buildWebhookUrl(): string {
+  const base = getAppBaseUrl();
+  return `${base.replace(/\/+$/, '')}/api/telegram/webhook`;
+}
+
+export async function getTelegramWebhookSetupAction(): Promise<ActionResult> {
+  try {
+    const { error } = await getActionContextForCapability('developer.diagnostics');
+    if (error) return { success: false, error };
+    const expectedUrl = buildWebhookUrl();
+    const secretConfigured = (process.env.TELEGRAM_WEBHOOK_SECRET ?? '').trim().length > 0;
+
+    let info: Awaited<ReturnType<typeof getTelegramWebhookInfo>>['info'] | null = null;
+    let infoError: string | null = null;
+    if (isTelegramConfigured()) {
+      const res = await getTelegramWebhookInfo();
+      if (res.ok && res.info) info = res.info;
+      else infoError = res.error ?? 'getWebhookInfo_failed';
+    } else {
+      infoError = 'Telegram is disabled or bot token is missing.';
+    }
+
+    const registeredMatches = info?.url ? info.url === expectedUrl : null;
+
+    return {
+      success: true,
+      data: {
+        expected_webhook_url: expectedUrl,
+        secret_token_configured: secretConfigured,
+        registered_webhook_url: info?.url ?? null,
+        registered_url_matches_expected: registeredMatches,
+        pending_update_count: info?.pending_update_count ?? 0,
+        last_error_date: info?.last_error_date ?? null,
+        last_error_message: info?.last_error_message ?? null,
+        ip_address: info?.ip_address ?? null,
+        max_connections: info?.max_connections ?? null,
+        allowed_updates: info?.allowed_updates ?? null,
+        info_error: infoError,
+      },
+    };
+  } catch (err) {
+    return actionError(err, 'Failed to load Telegram webhook setup');
+  }
+}
+
+export async function setTelegramWebhookAction(): Promise<ActionResult> {
+  try {
+    const { error } = await getActionContextForCapability('developer.diagnostics');
+    if (error) return { success: false, error };
+    if (!isTelegramConfigured()) {
+      return { success: false, error: 'Telegram is disabled or bot token is missing.' };
+    }
+    const expectedUrl = buildWebhookUrl();
+    const secret = (process.env.TELEGRAM_WEBHOOK_SECRET ?? '').trim();
+    const res = await setTelegramWebhook({
+      url: expectedUrl,
+      secretToken: secret.length > 0 ? secret : null,
+    });
+    if (!res.ok) return { success: false, error: res.error ?? 'setWebhook_failed' };
+    revalidateMany(['/developer-lab']);
+    return {
+      success: true,
+      data: {
+        url: expectedUrl,
+        secret_token_configured: secret.length > 0,
+        description: res.description ?? null,
+      },
+    };
+  } catch (err) {
+    return actionError(err, 'Failed to register Telegram webhook');
   }
 }
 
