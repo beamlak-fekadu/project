@@ -47,9 +47,9 @@ export function ScoreExplanation({ details, children, showIcon = true }: Props) 
         {showIcon && <Info className="h-3 w-3" />}
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-[90] flex">
           <button type="button" className="flex-1 bg-black/45" aria-label="Close score explanation" onClick={() => setOpen(false)} />
-          <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--background)] p-5 shadow-xl">
+          <aside className="h-dvh w-full max-w-xl overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--background)] p-4 pb-[max(env(safe-area-inset-bottom),1rem)] shadow-xl sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Score explanation</p>

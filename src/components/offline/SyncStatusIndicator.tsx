@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, RefreshCw, Wifi, WifiOff } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOfflineSync } from './SyncEngineProvider';
 
 type Props = {
@@ -42,21 +42,39 @@ export default function SyncStatusIndicator({ userRoles = [] }: Props) {
         ? Wifi
         : WifiOff;
 
+  useEffect(() => {
+    if (!open) return;
+    function handleMajorOverlayOpen(event: Event) {
+      const detail = (event as CustomEvent<{ source?: string }>).detail;
+      if (detail?.source !== 'sync-status') setOpen(false);
+    }
+    window.addEventListener('bmedis:major-overlay-open', handleMajorOverlayOpen);
+    return () => window.removeEventListener('bmedis:major-overlay-open', handleMajorOverlayOpen);
+  }, [open]);
+
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
-        className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors ${statusTone(sync.summary, sync.isOnline, sync.isSyncing)}`}
+        onClick={() => {
+          setOpen((value) => {
+            const next = !value;
+            if (next) {
+              window.dispatchEvent(new CustomEvent('bmedis:major-overlay-open', { detail: { source: 'sync-status' } }));
+            }
+            return next;
+          });
+        }}
+        className={`inline-flex h-10 w-10 items-center justify-center gap-2 rounded-full border px-0 text-xs font-medium transition-colors sm:h-9 sm:w-auto sm:px-3 ${statusTone(sync.summary, sync.isOnline, sync.isSyncing)}`}
         title="Offline queue and sync status"
+        aria-label={`Offline sync status: ${label}`}
       >
         <Icon className={`h-3.5 w-3.5 ${sync.isSyncing ? 'animate-spin' : ''}`} />
         <span className="hidden sm:inline">{label}</span>
-        <span className="sm:hidden">{sync.isOnline ? 'Online' : 'Offline'}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-3 text-sm shadow-lg">
+        <div className="fixed left-2 right-2 top-[4.25rem] z-[75] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-3 text-sm shadow-lg sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:max-h-[70vh] sm:w-80">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-semibold text-[var(--foreground)]">Offline Sync</p>
@@ -71,7 +89,7 @@ export default function SyncStatusIndicator({ userRoles = [] }: Props) {
             )}
           </div>
 
-          <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
             <div className="rounded-md border border-[var(--border-subtle)] p-2">
               <p className="text-[var(--text-muted)]">Queued</p>
               <p className="text-base font-semibold text-[var(--foreground)]">{sync.summary.queued}</p>
@@ -101,7 +119,7 @@ export default function SyncStatusIndicator({ userRoles = [] }: Props) {
             </p>
           )}
 
-          <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <button
               type="button"
               onClick={() => void sync.startSync()}
@@ -110,7 +128,7 @@ export default function SyncStatusIndicator({ userRoles = [] }: Props) {
             >
               Retry queued
             </button>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {canOpenReview ? (
                 <Link
                   href="/offline-sync"

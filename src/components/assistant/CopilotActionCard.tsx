@@ -151,7 +151,7 @@ export function CopilotActionCard({ draft, messageId }: CopilotActionCardProps) 
           <Link
             href={draft.primaryRoute}
             target="_blank"
-            className="inline-flex items-center gap-1 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs hover:border-[var(--assistant-accent-soft)]"
+            className="inline-flex min-h-9 items-center gap-1 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs hover:border-[var(--assistant-accent-soft)]"
           >
             <ExternalLink className="h-3 w-3" />
             {draft.primaryRouteLabel ?? 'Open record'}

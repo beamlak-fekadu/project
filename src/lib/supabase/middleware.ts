@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/sw.js',
   '/manifest.webmanifest',
   '/offline-health.txt',
+  '/api/telegram',
 ];
 
 export async function updateSession(request: NextRequest) {

@@ -37,7 +37,7 @@ export function AssistantLauncher() {
     <button
       onClick={() => openAssistant()}
       aria-label={`Open ${ASSISTANT_NAME}`}
-      className={`assistant-launcher inline-flex items-center gap-2 rounded-full border border-[var(--assistant-accent-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--foreground)] transition-shadow ${
+      className={`assistant-launcher inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-full border border-[var(--assistant-accent-soft)] px-2 text-sm font-semibold text-[var(--foreground)] transition-shadow sm:h-9 sm:px-3 ${
         pulsing
           ? 'ring-2 ring-[var(--assistant-accent)] ring-offset-2 ring-offset-transparent shadow-[0_0_18px_var(--assistant-glow)]'
           : ''

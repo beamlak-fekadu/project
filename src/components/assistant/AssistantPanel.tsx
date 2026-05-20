@@ -141,6 +141,15 @@ export function AssistantPanel() {
     container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages, sending]);
 
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isOpen]);
+
   const onInputKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = async (event) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
@@ -169,15 +178,15 @@ export function AssistantPanel() {
         style={{ height: '100dvh' }}
       >
         <div className="assistant-panel-surface flex h-full min-h-0 flex-col text-[var(--foreground)]">
-          <div className="flex items-center justify-between border-b border-[var(--assistant-accent-soft)] px-4 py-3">
-            <div className="inline-flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 border-b border-[var(--assistant-accent-soft)] px-3 py-3 sm:px-4">
+            <div className="inline-flex min-w-0 items-center gap-2">
               <MessageSquareText className="h-4 w-4 text-[var(--assistant-accent)]" />
-              <p className="text-sm font-semibold">{ASSISTANT_NAME}</p>
+              <p className="truncate text-sm font-semibold">{ASSISTANT_NAME}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={startNewSession}>
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <Button variant="ghost" size="sm" onClick={startNewSession} className="px-2">
                 <Plus className="h-4 w-4" />
-                New chat
+                <span className="hidden sm:inline">New chat</span>
               </Button>
               <Button variant="ghost" size="icon" onClick={closeAssistant} aria-label="Close assistant">
                 <X className="h-4 w-4" />
@@ -185,16 +194,16 @@ export function AssistantPanel() {
             </div>
           </div>
 
-          <div className="border-b border-[var(--border-subtle)] px-4 py-3">
+          <div className="border-b border-[var(--border-subtle)] px-3 py-3 sm:px-4">
             <AssistantContextChips moduleLabel={moduleLabel} contextRefs={contextRefs} onClear={clearContextRefs} />
             {(selectedEntityContext || registeredPageContext?.pageSummary) && (
-              <p className="mt-2 text-xs text-[var(--text-muted)]">
+              <p className="mt-2 line-clamp-2 break-words text-xs text-[var(--text-muted)]">
                 {selectedEntityContext ? `Context: ${selectedEntityContext}` : registeredPageContext?.pageSummary}
               </p>
             )}
           </div>
 
-          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:px-4">
             {messages.length === 0 ? (
               <EmptyState
                 title="Ask for maintenance, PM, analytics, or troubleshooting help"
@@ -240,7 +249,7 @@ export function AssistantPanel() {
             </AnimatePresence>
           </div>
 
-          <div className="space-y-3 border-t border-[var(--assistant-accent-soft)] px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <div className="shrink-0 space-y-3 border-t border-[var(--assistant-accent-soft)] px-3 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:px-4">
             {usageStatus && (
               <div className={`rounded-md border px-2 py-1 text-xs ${
                 usageStatus.hardLimited
@@ -268,14 +277,14 @@ export function AssistantPanel() {
               variants={cardStagger}
               initial="initial"
               animate="animate"
-              className="flex flex-wrap gap-2"
+              className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
             >
               {quickPrompts.map((prompt) => (
                 <motion.button
                   key={prompt}
                   variants={cardItem}
                   onClick={() => setDraftInput(prompt)}
-                  className="rounded-full border border-[var(--assistant-accent-soft)] px-3 py-1 text-xs text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
+                  className="max-w-[78vw] shrink-0 rounded-full border border-[var(--assistant-accent-soft)] px-3 py-1.5 text-left text-xs text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--foreground)] sm:max-w-none sm:shrink"
                 >
                   {prompt}
                 </motion.button>

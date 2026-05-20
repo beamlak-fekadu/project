@@ -408,12 +408,12 @@ export default function NotificationsPage() {
       />
 
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-3">
+        <CardContent className="flex min-w-0 flex-wrap items-center gap-3">
           <Filter className="h-4 w-4 text-[var(--text-muted)]" />
           <select
             value={filters.priority}
             onChange={(e) => setFilters((f) => ({ ...f, priority: e.target.value as FilterState['priority'] }))}
-            className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs"
+            className="h-10 min-w-[8rem] flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs sm:h-9 sm:flex-none"
             aria-label="Filter by priority"
           >
             {PRIORITY_OPTIONS.map((p) => (
@@ -423,7 +423,7 @@ export default function NotificationsPage() {
           <select
             value={filters.category}
             onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value as FilterState['category'] }))}
-            className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs"
+            className="h-10 min-w-[8rem] flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs sm:h-9 sm:flex-none"
             aria-label="Filter by category"
           >
             {CATEGORY_OPTIONS.map((c) => (
@@ -433,7 +433,7 @@ export default function NotificationsPage() {
           <select
             value={filters.status}
             onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value as FilterState['status'] }))}
-            className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs"
+            className="h-10 min-w-[8rem] flex-1 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs sm:h-9 sm:flex-none"
             aria-label="Filter by status"
           >
             {STATUS_OPTIONS.map((s) => (
@@ -445,7 +445,7 @@ export default function NotificationsPage() {
             placeholder="Search title or message…"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            className="h-9 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs"
+            className="h-10 min-w-full rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-2 text-xs sm:h-9 sm:min-w-[16rem]"
             aria-label="Search notifications"
           />
           <button
@@ -455,7 +455,7 @@ export default function NotificationsPage() {
           >
             Reset
           </button>
-          <span className="ml-auto text-[11px] text-[var(--text-subtle)]">
+          <span className="text-[11px] text-[var(--text-subtle)] sm:ml-auto">
             Showing {filtered.length} of {notifications.length}
           </span>
         </CardContent>

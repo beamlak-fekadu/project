@@ -14,7 +14,7 @@ export default function QrLoginRequired({ returnTo }: Props) {
   // never embed asset details or scan metadata on the unauthenticated screen.
   const loginHref = `/login?returnTo=${encodeURIComponent(returnTo)}`;
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--foreground)]">
+    <main className="min-h-dvh bg-[var(--background)] px-4 py-8 text-[var(--foreground)]">
       <div className="mx-auto flex max-w-md flex-col items-center text-center">
         <LogoMark size={64} />
         <p className="mt-4 text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">

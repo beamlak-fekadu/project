@@ -40,22 +40,22 @@ export default function Topbar({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={transitions.default}
-      className="panel-surface-muted flex h-16 min-w-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 sm:px-4 lg:gap-3 lg:px-6">
-      <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
+      className="panel-surface-muted flex h-16 min-w-0 items-center gap-1.5 border-b border-[var(--border-subtle)] px-2 sm:gap-2 sm:px-4 lg:gap-3 lg:px-6">
+      <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-3">
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
             aria-label="Open navigation menu"
-            className="rounded-lg p-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] lg:hidden"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] lg:hidden"
           >
             <Menu className="h-5 w-5" />
           </button>
         )}
         <div className="min-w-0">
-          <p className="truncate text-[10px] uppercase tracking-[0.12em] text-[var(--text-subtle)]">
+          <p className="hidden truncate text-[10px] uppercase tracking-[0.12em] text-[var(--text-subtle)] sm:block">
             {HOSPITAL_NAME}
           </p>
-          <h2 className="truncate text-sm font-semibold tracking-tight text-[var(--foreground)]">
+          <h2 className="truncate text-sm font-semibold tracking-tight text-[var(--foreground)] sm:text-sm">
             {APP_NAME_SHORT}
           </h2>
         </div>
@@ -66,7 +66,7 @@ export default function Topbar({
       <button
         type="button"
         aria-label="Search equipment, requests, work orders"
-        className="ml-auto hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--foreground)] sm:flex md:hidden"
+        className="ml-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--foreground)] md:hidden"
       >
         <Search className="h-4 w-4" />
       </button>
@@ -81,7 +81,7 @@ export default function Topbar({
         </span>
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 md:ml-2">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2 md:ml-2">
         <SyncStatusIndicator userRoles={userRoles} />
         <AssistantLauncher />
         <ThemeToggle />
@@ -91,7 +91,7 @@ export default function Topbar({
           trigger={
             <button
               aria-label={`Account: ${userName}`}
-              className="flex max-w-[40vw] items-center gap-2 rounded-lg px-2 py-2 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--surface-1)] sm:max-w-none sm:px-3"
+              className="flex max-w-[2.75rem] items-center gap-2 rounded-lg px-1 py-2 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--surface-1)] sm:max-w-none sm:px-2 md:px-3"
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white" style={{ background: 'var(--brand-gradient)' }}>
                 <User className="h-4 w-4" />

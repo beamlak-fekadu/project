@@ -29,7 +29,7 @@ const MotionCard = forwardRef<HTMLDivElement, MotionCardProps>(function MotionCa
       ref={ref}
       variants={cardItem}
       {...(interactive ? subtleHover : {})}
-      className={`panel-surface rounded-2xl ${padding} ${className ?? ''}`.trim()}
+      className={`panel-surface min-w-0 rounded-2xl ${padding} ${className ?? ''}`.trim()}
       {...rest}
     >
       {children}

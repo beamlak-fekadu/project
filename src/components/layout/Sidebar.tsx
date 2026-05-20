@@ -92,7 +92,7 @@ export default function Sidebar({ userRoles = ['admin'], onNavigate, drawerMode 
 
   return (
     <aside
-      className={`panel-surface-muted flex h-screen flex-col border-r border-[var(--border-subtle)] transition-all duration-200 ${
+      className={`panel-surface-muted flex h-dvh max-w-[85vw] flex-col border-r border-[var(--border-subtle)] transition-all duration-200 ${
         drawerMode
           ? 'w-[85vw] max-w-xs'
           : effectiveCollapsed
@@ -117,7 +117,7 @@ export default function Sidebar({ userRoles = ['admin'], onNavigate, drawerMode 
             type="button"
             onClick={onNavigate}
             aria-label="Close navigation"
-            className="rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
           >
             <X className="h-5 w-5" />
           </button>
@@ -126,7 +126,7 @@ export default function Sidebar({ userRoles = ['admin'], onNavigate, drawerMode 
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
@@ -168,7 +168,7 @@ export default function Sidebar({ userRoles = ['admin'], onNavigate, drawerMode 
                     key={item.href}
                     href={item.href}
                     onClick={onNavigate}
-                    className={`mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                    className={`mb-0.5 flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                       !isChatbotItem && active
                         ? 'bg-[var(--brand-soft)] font-medium text-[var(--brand)] shadow-sm'
                         : !isChatbotItem
@@ -182,7 +182,7 @@ export default function Sidebar({ userRoles = ['admin'], onNavigate, drawerMode 
                       strokeWidth={active ? 2 : 1.75}
                     />
                     {!effectiveCollapsed && (
-                      <span>
+                      <span className="min-w-0 truncate">
                         {isStoreOnly && STORE_LABEL_OVERRIDES[item.href]
                           ? STORE_LABEL_OVERRIDES[item.href]
                           : isDepartmentOnly && DEPARTMENT_LABEL_OVERRIDES[item.href]

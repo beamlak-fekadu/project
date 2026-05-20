@@ -81,7 +81,7 @@ export default function StatCard({
         onClick={onClick}
         aria-pressed={active}
         aria-label={ariaLabel ?? `${label}: ${value}`}
-        className={`panel-surface filter-card-pressable text-left rounded-2xl p-5 w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-0 ${
+        className={`panel-surface filter-card-pressable min-w-0 text-left rounded-2xl p-4 sm:p-5 w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-0 ${
           active ? 'filter-card-active' : ''
         }`}
       >
@@ -92,7 +92,7 @@ export default function StatCard({
 
   return (
     <div
-      className={`panel-surface rounded-2xl p-5 ${active ? 'filter-card-active' : ''}`}
+      className={`panel-surface min-w-0 rounded-2xl p-4 sm:p-5 ${active ? 'filter-card-active' : ''}`}
     >
       {content}
     </div>

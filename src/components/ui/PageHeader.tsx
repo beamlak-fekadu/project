@@ -20,9 +20,9 @@ export default function PageHeader({ title, description, descriptionInfo, breadc
   return (
     <div className="mb-6">
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="mb-2 flex items-center gap-1 text-sm text-[var(--text-muted)]">
+        <nav className="mb-2 flex min-w-0 items-center gap-1 overflow-x-auto pb-1 text-sm text-[var(--text-muted)]">
           {breadcrumbs.map((bc, i) => (
-            <span key={i} className="flex items-center gap-1">
+            <span key={i} className="flex shrink-0 items-center gap-1">
               {i > 0 && <span>/</span>}
               {bc.href ? (
                 <Link href={bc.href} className="hover:text-[var(--foreground)]">{bc.label}</Link>
@@ -33,7 +33,7 @@ export default function PageHeader({ title, description, descriptionInfo, breadc
           ))}
         </nav>
       )}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="break-words text-xl font-bold text-[var(--foreground)] sm:text-2xl">{title}</h1>
@@ -43,7 +43,7 @@ export default function PageHeader({ title, description, descriptionInfo, breadc
             <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p>
           )}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{actions}</div>}
       </div>
     </div>
   );

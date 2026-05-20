@@ -66,7 +66,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="assistant-bubble-user max-w-[85%] rounded-2xl px-3 py-2">
+        <div className="assistant-bubble-user max-w-[94%] rounded-2xl px-3 py-2 sm:max-w-[85%]">
           <div className="mb-1 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
             <UserCircle2 className="h-3.5 w-3.5" />
             You
@@ -80,7 +80,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
   if (!assistant) {
     return (
       <div className="flex justify-start">
-        <div className="assistant-bubble-assistant max-w-[90%] rounded-2xl px-3 py-2">
+        <div className="assistant-bubble-assistant max-w-[96%] rounded-2xl px-3 py-2 sm:max-w-[90%]">
           <div className="mb-1 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
             <Bot className="h-3.5 w-3.5 text-[var(--assistant-accent)]" />
             {ASSISTANT_NAME}
@@ -111,7 +111,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
 
   return (
     <div className="flex justify-start">
-      <div className="assistant-bubble-assistant max-w-[92%] rounded-2xl px-3.5 py-3">
+      <div className="assistant-bubble-assistant max-w-[98%] rounded-2xl px-3 py-3 sm:max-w-[92%] sm:px-3.5">
         <div className="mb-1.5 inline-flex items-center gap-2 text-xs text-[var(--text-muted)]">
           <Bot className="h-3.5 w-3.5 text-[var(--assistant-accent)]" />
           <span>{ASSISTANT_NAME}</span>

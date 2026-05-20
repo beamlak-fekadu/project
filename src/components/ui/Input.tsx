@@ -19,10 +19,10 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
 
     const defaultInputClass =
-      'block w-full rounded-xl border px-3 py-2 text-sm shadow-sm transition-[color,box-shadow,border-color] placeholder:text-[var(--text-muted)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
+      'block min-h-10 w-full min-w-0 rounded-xl border px-3 py-2 text-sm shadow-sm transition-[color,box-shadow,border-color] placeholder:text-[var(--text-muted)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50';
 
     const minimalInputClass =
-      'block w-full rounded-none border-0 border-b border-[var(--border-subtle)] bg-transparent px-0 py-2.5 text-sm shadow-none transition-[color,box-shadow,border-color] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50';
+      'block min-h-10 w-full min-w-0 rounded-none border-0 border-b border-[var(--border-subtle)] bg-transparent px-0 py-2.5 text-sm shadow-none transition-[color,box-shadow,border-color] placeholder:text-[var(--text-muted)] focus:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50';
 
     const defaultStateClass = error
       ? 'border-red-400/70 bg-[var(--surface-2)] text-[var(--foreground)] focus:border-red-400 focus:ring-2 focus:ring-red-400 focus:ring-offset-0'
@@ -40,7 +40,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         : `${defaultInputClass} ${defaultStateClass} ${iconInputPad} ${className}`;
 
     return (
-      <div className="w-full">
+      <div className="min-w-0 w-full">
         {label && (
           <label
             htmlFor={inputId}
@@ -49,7 +49,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             {label}
           </label>
         )}
-        <div className="relative">
+        <div className="relative min-w-0">
           {icon && (
             <div
               className={`pointer-events-none absolute inset-y-0 left-0 flex items-center text-[var(--text-muted)] ${appearance === 'default' ? 'pl-3' : ''}`}

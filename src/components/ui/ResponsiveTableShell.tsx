@@ -28,14 +28,14 @@ export default function ResponsiveTableShell({
         bare
           ? ''
           : 'panel-surface rounded-2xl border border-[var(--border-subtle)]'
-      } ${className ?? ''}`}
+      } min-w-0 max-w-full ${className ?? ''}`}
     >
       {caption && (
         <div className="border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--text-muted)]">
           {caption}
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div className="max-w-full overflow-x-auto overscroll-x-contain">
         {/* Inner wrapper gets a min-width so columns don't collapse on mobile */}
         <div className="min-w-full">{children}</div>
       </div>

@@ -367,9 +367,9 @@ function MetricCard({ label, value, sub, tone }: { label: string; value: string;
           ? 'border-cyan-500/40 bg-cyan-500/10'
           : 'border-[var(--border-subtle)] bg-[var(--surface-1)]';
   return (
-    <div className={`rounded-lg border p-3 ${toneClass}`}>
+    <div className={`min-w-0 rounded-lg border p-3 ${toneClass}`}>
       <p className="text-xs text-[var(--text-muted)]">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-[var(--foreground)]">{value}</p>
+      <p className="mt-1 break-words text-lg font-semibold text-[var(--foreground)]">{value}</p>
       {sub && <p className="mt-1 text-[10px] text-[var(--text-muted)]">{sub}</p>}
     </div>
   );
@@ -377,10 +377,10 @@ function MetricCard({ label, value, sub, tone }: { label: string; value: string;
 
 function SectionHeader({ icon, title, description }: { icon: ReactNode; title: string; description?: string }) {
   return (
-    <div className="mb-3 flex items-start gap-2">
+    <div className="mb-3 flex min-w-0 items-start gap-2">
       <div className="mt-0.5 text-[var(--brand)]">{icon}</div>
-      <div>
-        <h3 className="text-sm font-semibold text-[var(--foreground)]">{title}</h3>
+      <div className="min-w-0">
+        <h3 className="break-words text-sm font-semibold text-[var(--foreground)]">{title}</h3>
         {description && <p className="text-xs text-[var(--text-muted)]">{description}</p>}
       </div>
     </div>
@@ -800,14 +800,14 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
   ];
 
   return (
-    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+    <main className="min-h-dvh overflow-x-hidden bg-[var(--background)] pb-24 text-[var(--foreground)] sm:pb-0">
       <motion.div
         variants={pageFade}
         initial="initial"
         animate="animate"
         className="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-10"
       >
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-3 sm:gap-3 sm:pb-4">
+        <header className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:pb-4">
           <div className="flex min-w-0 items-center gap-2">
             <LogoMark size={32} />
             <div className="min-w-0">
@@ -817,7 +817,7 @@ export default function QrAssetLandingPage({ asset, profile, context }: Props) {
               <p className="truncate text-[0.62rem] text-[var(--text-muted)]">{HOSPITAL_NAME}</p>
             </div>
           </div>
-          <div className="flex flex-wrap justify-end gap-1.5 sm:gap-2">
+          <div className="flex min-w-0 flex-wrap gap-1.5 sm:justify-end sm:gap-2">
             <NetworkStatusPill />
             <Badge variant="info">{displayName}</Badge>
             <Badge variant="default">{profile.job_title ?? roleLabel(context.roleCategory)}</Badge>

@@ -38,11 +38,11 @@ export default function Modal({ open, onClose, title, children, footer, size = '
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
-      <div className={`flex max-h-[100dvh] w-full ${sizeMap[size]} flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-xl dark:bg-gray-900`}>
-        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4 dark:border-gray-800">
+      <div className={`flex max-h-[calc(100dvh-env(safe-area-inset-top))] w-full min-w-0 ${sizeMap[size]} flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90dvh] sm:rounded-xl dark:bg-gray-900`}>
+        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4 dark:border-gray-800">
           <h2 className="min-w-0 truncate text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close dialog"><X className="h-5 w-5" /></Button>
         </div>

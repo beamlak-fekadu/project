@@ -795,9 +795,9 @@ export default function CommandCenterInteractive({
       </Modal>
 
       {wipPanelOpen && (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-[70] flex">
           <button type="button" className="flex-1 bg-black/40" aria-label="Close panel backdrop" onClick={() => setWipPanelOpen(false)} />
-          <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--background)] p-5">
+          <aside className="h-dvh w-full max-w-xl overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--background)] p-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:p-5">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-[var(--foreground)]">{wipKind === 'work_orders' ? 'Open work orders' : wipKind === 'overdue_pm' ? 'Overdue PM items' : 'Calibration due items'}</h3>
               <Button variant="ghost" size="icon" onClick={() => setWipPanelOpen(false)}><X className="h-4 w-4" /></Button>

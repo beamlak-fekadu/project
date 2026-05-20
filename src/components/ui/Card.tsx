@@ -9,14 +9,14 @@ interface CardProps {
 export default function Card({ children, className = '', padding = true, variant = 'glass' }: CardProps) {
   const base = variant === 'solid' ? 'panel-surface-solid' : 'panel-surface';
   return (
-    <div className={`${base} rounded-2xl ${padding ? 'p-6' : ''} ${className}`}>
+    <div className={`${base} min-w-0 rounded-2xl ${padding ? 'p-4 sm:p-6' : ''} ${className}`}>
       {children}
     </div>
   );
 }
 
 export function CardHeader({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mb-4 flex items-center justify-between ${className}`}>{children}</div>;
+  return <div className={`mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between ${className}`}>{children}</div>;
 }
 
 export function CardTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -37,7 +37,7 @@ export function CardContent({ children, className = '' }: { children: React.Reac
 
 export function CardFooter({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`mt-4 flex items-center gap-2 border-t border-[var(--border-subtle)] pt-4 ${className}`}>
+    <div className={`mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] pt-4 ${className}`}>
       {children}
     </div>
   );

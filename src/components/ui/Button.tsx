@@ -35,10 +35,10 @@ const variantStyles: Record<Variant, string> = {
 };
 
 const sizeStyles: Record<Size, string> = {
-  sm: 'px-3 py-1.5 text-sm',
-  md: 'px-4 py-2 text-sm',
-  lg: 'px-6 py-3 text-base',
-  icon: 'p-2',
+  sm: 'min-h-9 px-3 py-1.5 text-sm sm:min-h-0',
+  md: 'min-h-10 px-4 py-2 text-sm sm:min-h-0',
+  lg: 'min-h-11 px-6 py-3 text-base sm:min-h-0',
+  icon: 'min-h-10 min-w-10 p-2 sm:min-h-0 sm:min-w-0',
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(

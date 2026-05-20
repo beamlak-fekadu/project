@@ -39,7 +39,7 @@ export default function SearchInput({ value: externalValue, onChange, placeholde
   };
 
   return (
-    <div className="relative w-full max-w-sm">
+    <div className="relative min-w-0 w-full max-w-sm">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
       <input
         type="text"

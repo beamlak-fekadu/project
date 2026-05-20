@@ -24,16 +24,16 @@ export default function SectionHeader({
   className,
 }: SectionHeaderProps) {
   return (
-    <div className={`mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className ?? ''}`}>
+    <div className={`mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className ?? ''}`}>
       <div className="min-w-0">
         {eyebrow && (
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--brand)]">
             {eyebrow}
           </p>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {icon && <span className="text-[var(--text-muted)]">{icon}</span>}
-          <h2 className="text-base font-semibold tracking-tight text-[var(--foreground)]">
+          <h2 className="min-w-0 break-words text-base font-semibold tracking-tight text-[var(--foreground)]">
             {title}
           </h2>
         </div>
@@ -41,7 +41,7 @@ export default function SectionHeader({
           <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">{description}</p>
         )}
       </div>
-      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
+      {action && <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">{action}</div>}
     </div>
   );
 }

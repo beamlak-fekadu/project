@@ -101,6 +101,9 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const openAssistant = (options?: AssistantLaunchOptions) => {
     setIsOpen(true);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bmedis:major-overlay-open', { detail: { source: 'assistant' } }));
+    }
     void fetch('/api/chat')
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {

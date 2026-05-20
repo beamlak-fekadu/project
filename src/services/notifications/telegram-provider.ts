@@ -146,6 +146,54 @@ export async function sendTelegramMessage(
   };
 }
 
+/** Command replies (/start, /help, /reset) — token only; not gated on TELEGRAM_NOTIFICATIONS_ENABLED. */
+export async function sendTelegramCommandReply(
+  chatId: string,
+  text: string,
+): Promise<TelegramSendResult> {
+  const token = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim();
+  if (!token) {
+    return { ok: false, status: 'skipped', skipReason: 'bot_token_missing' };
+  }
+  if (!chatId || chatId.trim().length === 0) {
+    return { ok: false, status: 'skipped', skipReason: 'no_chat_id' };
+  }
+
+  const safeText = String(text ?? '').slice(0, 3800);
+  const url = `${TELEGRAM_API_BASE}/bot${token}/sendMessage`;
+  const result = await postJsonWithTimeout<TelegramSendApiResponse>(url, {
+    chat_id: chatId,
+    text: safeText,
+    disable_web_page_preview: false,
+  });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      status: 'failed',
+      error: result.data?.description || result.error || 'telegram_send_failed',
+      rawStatus: result.status,
+    };
+  }
+  const data = result.data;
+  if (!data?.ok) {
+    return {
+      ok: false,
+      status: 'failed',
+      error: data?.description || 'telegram_response_not_ok',
+      rawStatus: result.status,
+    };
+  }
+  return {
+    ok: true,
+    status: 'sent',
+    providerMessageId: data.result?.message_id != null
+      ? String(data.result.message_id)
+      : null,
+    rawStatus: result.status,
+  };
+}
+
 export interface TelegramBotUpdate {
   update_id: number;
   chat_id?: string;

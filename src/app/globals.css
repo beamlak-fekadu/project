@@ -172,12 +172,40 @@ body,
   max-width: 100%;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 /* ── Mobile utilities ──────────────────────────────────────────────────────
    Helpers used by the dashboard shell to keep mobile usable without breaking
    the desktop layout. Keep these in sync with the V4 theme tokens. */
 .table-scroll-shell {
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.panel-surface,
+.panel-surface-muted,
+.panel-surface-solid {
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  [class*="overflow-x-auto"],
+  [class*="table-scroll-shell"] {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 .mobile-only { display: block; }
@@ -190,7 +218,7 @@ body,
 /* ── App shell — ambient color backdrop ──────────────────────────────────── */
 .app-shell {
   background: var(--ambient-bg);
-  min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 

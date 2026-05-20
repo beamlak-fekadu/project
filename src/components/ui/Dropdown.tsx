@@ -33,7 +33,7 @@ export default function Dropdown({ trigger, items, align = 'right' }: DropdownPr
           we keep this wrapper passive so we don't nest interactive roles. */}
       <div onClick={() => setOpen(!open)} className="cursor-pointer">{trigger}</div>
       {open && (
-        <div className={`absolute z-50 mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${align === 'right' ? 'right-0' : 'left-0'}`}>
+        <div className={`absolute z-[75] mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${align === 'right' ? 'right-0' : 'left-0'}`}>
           {items.map((item, i) => (
             <button
               key={i}

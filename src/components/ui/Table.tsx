@@ -27,7 +27,7 @@ export default function Table<T extends Record<string, unknown> = Record<string,
   columns, data, keyField = 'id', sortKey, sortDir, onSort, onRowClick, emptyMessage = 'No data found', loading,
 }: TableProps<T>) {
   return (
-    <div className="panel-surface-muted table-scroll-shell w-full max-w-full overflow-x-auto rounded-lg">
+    <div className="panel-surface-muted table-scroll-shell w-full max-w-full overflow-x-auto overscroll-x-contain rounded-lg">
       <table className="min-w-full divide-y divide-[var(--border-subtle)]">
         <thead className="bg-[var(--surface-3)]/60">
           <tr>

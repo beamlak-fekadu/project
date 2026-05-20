@@ -18,7 +18,7 @@ export function QrLandingClientShell({ children }: { children: ReactNode }) {
   return (
     <AssistantProvider>
       {children}
-      <div className="no-print fixed bottom-4 right-4 z-[81]">
+      <div className="no-print fixed bottom-[max(env(safe-area-inset-bottom),1rem)] right-3 z-[81] sm:right-4">
         <AssistantLauncher />
       </div>
       <AssistantPanel />

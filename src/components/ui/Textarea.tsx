@@ -11,7 +11,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, error, className = '', id, ...props }, ref) => {
     const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-');
     return (
-      <div className="w-full">
+      <div className="min-w-0 w-full">
         {label && (
           <label htmlFor={textareaId} className="mb-1 block text-sm font-medium text-[var(--foreground)]">
             {label}
@@ -20,7 +20,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={ref}
           id={textareaId}
-          className={`block w-full rounded-xl border px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-70 ${
+          className={`block min-h-24 w-full min-w-0 rounded-xl border px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-70 ${
             error
               ? 'border-red-400/70 bg-[var(--surface-2)] text-[var(--foreground)] focus:border-red-400 focus:ring-red-400'
               : 'border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--foreground)] focus:border-[var(--brand)] focus:ring-[var(--brand)]'

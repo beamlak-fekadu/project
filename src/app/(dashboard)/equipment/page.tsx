@@ -742,18 +742,18 @@ function OperationalEquipmentListPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <input
           type="text"
           placeholder="Search by name, asset code, serial number…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          className="h-9 w-64 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-3 text-sm text-[var(--foreground)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+          className="h-10 min-w-full rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-3 text-sm text-[var(--foreground)] placeholder-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] sm:h-9 sm:min-w-0 sm:w-64"
         />
         <select
           value={filterDept}
           onChange={(e) => handleFilterChange('department_id', e.target.value)}
-          className="h-9 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+          className="h-10 min-w-[9rem] flex-1 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] sm:h-9 sm:flex-none"
         >
           <option value="">All Departments</option>
           {departments.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
@@ -761,7 +761,7 @@ function OperationalEquipmentListPage() {
         <select
           value={filterCat}
           onChange={(e) => handleFilterChange('category_id', e.target.value)}
-          className="h-9 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+          className="h-10 min-w-[9rem] flex-1 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] sm:h-9 sm:flex-none"
         >
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -769,7 +769,7 @@ function OperationalEquipmentListPage() {
         <select
           value={filterCondition}
           onChange={(e) => handleFilterChange('condition', e.target.value)}
-          className="h-9 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+          className="h-10 min-w-[9rem] flex-1 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] sm:h-9 sm:flex-none"
         >
           <option value="">All Conditions</option>
           {EQUIPMENT_CONDITION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -778,7 +778,7 @@ function OperationalEquipmentListPage() {
           <select
             value={filterQrStatus}
             onChange={(e) => handleFilterChange('qr_status', e.target.value)}
-            className="h-9 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)]"
+            className="h-10 min-w-[9rem] flex-1 rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-2 text-sm text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] sm:h-9 sm:flex-none"
           >
             <option value="">All QR Statuses</option>
             {QR_STATUS_FILTERS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -792,7 +792,7 @@ function OperationalEquipmentListPage() {
             Clear filters
           </button>
         )}
-        <span className="ml-auto text-xs text-[var(--text-muted)]">
+        <span className="text-xs text-[var(--text-muted)] sm:ml-auto">
           {filteredRows.length} of {allRows.length} assets
         </span>
       </div>
@@ -868,7 +868,7 @@ function OperationalEquipmentListPage() {
       {/* Table */}
       <div className="panel-surface overflow-hidden rounded-lg">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[980px] w-full text-sm">
             <thead className="border-b border-[var(--surface-3)] bg-[var(--surface-2)]">
               <tr>
                 {canManageQr && (
@@ -1072,7 +1072,7 @@ function OperationalEquipmentListPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-[var(--surface-3)] px-4 py-3">
+          <div className="flex flex-col gap-3 border-t border-[var(--surface-3)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-xs text-[var(--text-muted)]">
               Page {page} of {totalPages} — {filteredRows.length} assets
             </span>

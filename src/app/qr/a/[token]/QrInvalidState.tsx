@@ -36,7 +36,7 @@ const COPY: Record<Variant, { title: string; body: string; icon: typeof AlertOct
 export default function QrInvalidState({ variant, authenticated }: Props) {
   const { title, body, icon: Icon } = COPY[variant];
   return (
-    <main className="min-h-screen bg-[var(--background)] px-4 py-8 text-[var(--foreground)]">
+    <main className="min-h-dvh bg-[var(--background)] px-4 py-8 text-[var(--foreground)]">
       <div className="mx-auto flex max-w-md flex-col items-center text-center">
         <LogoMark size={56} />
         <p className="mt-4 text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">

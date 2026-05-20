@@ -6,6 +6,7 @@ import { Bell, Check, CheckCheck, Inbox, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { attentionPulse, slideUp, transitions } from '@/lib/ui/motion-presets';
 import { useDrawerA11y } from '@/hooks/useDrawerA11y';
+import { useAssistantContext } from '@/components/assistant/AssistantProvider';
 import {
   getMyNotificationsAction,
   getMyNotificationSummaryAction,
@@ -50,6 +51,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function NotificationBell() {
+  const { closeAssistant } = useAssistantContext();
   const [summary, setSummary] = useState<NotificationSummary>({
     unread_total: 0,
     unread_critical: 0,
@@ -90,6 +92,16 @@ export default function NotificationBell() {
     if (!open) return;
     void loadList();
   }, [open, loadList]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleMajorOverlayOpen(event: Event) {
+      const detail = (event as CustomEvent<{ source?: string }>).detail;
+      if (detail?.source !== 'notifications') setOpen(false);
+    }
+    window.addEventListener('bmedis:major-overlay-open', handleMajorOverlayOpen);
+    return () => window.removeEventListener('bmedis:major-overlay-open', handleMajorOverlayOpen);
+  }, [open]);
 
   // Outside-click closes the drawer (kept here because the wrapperRef covers
   // both the trigger and the panel; the a11y hook only handles the panel).
@@ -138,11 +150,20 @@ export default function NotificationBell() {
     <div ref={wrapperRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((value) => {
+            const next = !value;
+            if (next) {
+              closeAssistant();
+              window.dispatchEvent(new CustomEvent('bmedis:major-overlay-open', { detail: { source: 'notifications' } }));
+            }
+            return next;
+          });
+        }}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)]"
+        className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-1)] hover:text-[var(--foreground)] sm:h-9 sm:w-9"
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
@@ -177,10 +198,10 @@ export default function NotificationBell() {
           role="dialog"
           aria-modal="false"
           aria-label="Notifications drawer"
-          className="panel-surface-solid absolute right-0 top-11 z-50 w-[min(92vw,380px)] rounded-xl border border-[var(--border-subtle)] shadow-xl"
+          className="panel-surface-solid fixed left-2 right-2 top-[4.25rem] z-[75] max-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border-subtle)] shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[min(92vw,380px)]"
         >
-          <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-            <div>
+          <div className="flex items-start justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-[var(--foreground)]">Notifications</p>
               <p className="text-[11px] text-[var(--text-muted)]">
                 {unreadCount > 0
@@ -188,7 +209,7 @@ export default function NotificationBell() {
                   : 'You are all caught up.'}
               </p>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               {unreadCount > 0 && (
                 <button
                   type="button"
@@ -211,7 +232,7 @@ export default function NotificationBell() {
             </div>
           </div>
 
-          <div className="max-h-[60vh] overflow-y-auto">
+          <div className="max-h-[calc(100dvh-11rem)] overflow-y-auto sm:max-h-[60vh]">
             {loading && notifications.length === 0 && (
               <div className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">Loading…</div>
             )}
@@ -236,8 +257,8 @@ export default function NotificationBell() {
                     {n.priority}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-[var(--foreground)]" title={n.title}>
+                    <div className="flex flex-wrap items-start justify-between gap-1.5">
+                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-[var(--foreground)]" title={n.title}>
                         {n.title}
                       </p>
                       <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
@@ -247,7 +268,7 @@ export default function NotificationBell() {
                     <p className="mt-1 line-clamp-2 text-xs leading-snug text-[var(--text-muted)]">
                       {n.message}
                     </p>
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       {n.action_href && (
                         <Link
                           href={n.action_href}

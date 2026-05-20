@@ -30,14 +30,14 @@ export default function Tabs({ tabs, defaultTab, activeTab, onChange }: TabsProp
   return (
     <div>
       <div className="border-b border-[var(--border-subtle)]">
-        <nav className="-mb-px flex gap-4 overflow-x-auto" role="tablist">
+        <nav className="-mb-px flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-px sm:gap-4" role="tablist">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               role="tab"
               aria-selected={currentActive === tab.id}
               onClick={() => handleChange(tab.id)}
-              className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+              className={`min-h-10 shrink-0 whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
                 currentActive === tab.id
                   ? 'border-[var(--brand)] text-[var(--brand)]'
                   : 'border-transparent text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--foreground)]'

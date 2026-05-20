@@ -27,9 +27,9 @@ export default function FilterBar({ filters, values, onChange, onReset }: Filter
   const hasActiveFilters = Object.values(values).some((v) => v !== '');
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex w-full min-w-0 flex-wrap items-end gap-3">
       {filters.map((f) => (
-        <div key={f.key} className="w-44">
+        <div key={f.key} className="min-w-[9rem] flex-1 sm:w-44 sm:flex-none">
           <Select
             label={f.label}
             options={f.options}

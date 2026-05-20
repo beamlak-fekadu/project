@@ -728,11 +728,11 @@ export default function SyncReviewCenterClient({ serverSummary, serverEvents, is
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
           onClick={() => setActiveRecord(null)}
         >
           <div
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-4"
+            className="max-h-[100dvh] w-full max-w-2xl overflow-y-auto rounded-t-xl border border-[var(--border-subtle)] bg-[var(--surface-solid)] p-4 pb-[max(env(safe-area-inset-bottom),1rem)] sm:max-h-[90dvh] sm:rounded-lg"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 flex items-start justify-between gap-3">
@@ -749,7 +749,7 @@ export default function SyncReviewCenterClient({ serverSummary, serverEvents, is
               </button>
             </div>
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                 <div><span className="text-[var(--text-muted)]">Action:</span> {activeRecord.action_type}</div>
                 <div><span className="text-[var(--text-muted)]">Status:</span> {activeRecord.sync_status}</div>
                 <div><span className="text-[var(--text-muted)]">Created:</span> {formatDateTime(activeRecord.created_at)}</div>

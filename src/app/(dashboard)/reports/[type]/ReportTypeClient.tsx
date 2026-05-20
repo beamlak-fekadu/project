@@ -1923,13 +1923,13 @@ export default function ReportTypeClient() {
 
         {/* Filters — no-print */}
         {(filterDefs.length > 0 || showDateFilters) && (
-          <div className="no-print mb-4 flex flex-wrap items-end gap-4">
+          <div className="no-print mb-4 flex min-w-0 flex-wrap items-end gap-4">
             {filterDefs.length > 0 && (
               <FilterBar filters={filterDefs} values={filterValues} onChange={handleFilterChange} onReset={handleFilterReset} />
             )}
             {showDateFilters && (
-              <div className="flex items-end gap-3">
-                <div className="w-44">
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
+                <div className="w-full sm:w-44">
                   <label className="mb-1 block text-sm font-medium text-[var(--text-muted)]">From</label>
                   <input
                     type="date"
@@ -1938,7 +1938,7 @@ export default function ReportTypeClient() {
                     onChange={(e) => handleFilterChange('date_from', e.target.value)}
                   />
                 </div>
-                <div className="w-44">
+                <div className="w-full sm:w-44">
                   <label className="mb-1 block text-sm font-medium text-[var(--text-muted)]">To</label>
                   <input
                     type="date"
