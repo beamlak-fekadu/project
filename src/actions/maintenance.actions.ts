@@ -264,10 +264,34 @@ export async function updateRequestStatusAction(id: string, status: string): Pro
     if (error || !profile) return { success: false, error };
     const parsedStatus = z.enum(['pending', 'approved', 'assigned', 'in_progress', 'completed', 'rejected', 'canceled']).parse(status);
     const oldRow = await supabase.from('maintenance_requests').select('*').eq('id', id).maybeSingle();
+    if (oldRow.error) return { success: false, error: oldRow.error.message };
+    if (!oldRow.data) {
+      return { success: false, error: 'Request could not be updated because no matching request was found.' };
+    }
     const updateData: Record<string, unknown> = { status: parsedStatus };
     if (parsedStatus === 'completed') updateData.resolved_at = new Date().toISOString();
-    const result = await supabase.from('maintenance_requests').update(updateData as never).eq('id', id).select('*').single();
+    // .maybeSingle() (not .single()) so an RLS-filtered or already-deleted
+    // row returns data=null instead of raising "Cannot coerce the result to
+    // a single JSON object". We translate that to a clear user message and
+    // log the raw PostgREST error for developers.
+    const result = await supabase
+      .from('maintenance_requests')
+      .update(updateData as never)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
     if (result.error) return { success: false, error: result.error.message };
+    if (!result.data) {
+      console.error('[maintenance] status update returned 0 rows; likely RLS UPDATE policy excludes role', {
+        requestId: id,
+        attemptedStatus: parsedStatus,
+        profileId: profile.id,
+      });
+      return {
+        success: false,
+        error: 'You do not have permission to change this request, or the request no longer exists.',
+      };
+    }
     await logServerAuditEvent({ supabase, profileId: profile.id, action: 'maintenance_request.status_update', entityType: 'maintenance_requests', entityId: id, oldValues: oldRow.data as Record<string, unknown> | null, newValues: result.data as Record<string, unknown> });
 
     try {
@@ -304,8 +328,35 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
     const { supabase, profile, error } = await getActionContextForCapability('work_order.create');
     if (error || !profile) return { success: false, error };
     const data = { ...normalizeWorkOrder(payload), work_order_number: `WO-${Date.now().toString(36).toUpperCase()}`, status: (payload.status as string | undefined) ?? 'open' };
-    const result = await supabase.from('work_orders').insert(data as never).select('*').single();
+    // Idempotency: if this WO is being created from a maintenance request and
+    // a non-terminal WO already exists for that request, return the existing
+    // one instead of creating a duplicate. This protects against double-clicks
+    // on the "Create Work Order" button after approval.
+    if (data.request_id) {
+      const existing = await supabase
+        .from('work_orders')
+        .select('*')
+        .eq('request_id', data.request_id)
+        .not('status', 'in', '(completed,canceled)')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!existing.error && existing.data && existing.data.length > 0) {
+        return { success: true, data: { ...(existing.data[0] as Record<string, unknown>), duplicate_prevented: true } };
+      }
+    }
+    const result = await supabase.from('work_orders').insert(data as never).select('*').maybeSingle();
     if (result.error) return { success: false, error: result.error.message };
+    if (!result.data) {
+      console.error('[maintenance] work order insert returned 0 rows; likely RLS INSERT policy excludes role', {
+        requestId: data.request_id,
+        assetId: data.asset_id,
+        profileId: profile.id,
+      });
+      return {
+        success: false,
+        error: 'You do not have permission to create a work order, or the linked record is missing.',
+      };
+    }
     await logServerAuditEvent({ supabase, profileId: profile.id, action: 'work_order.create', entityType: 'work_orders', entityId: (result.data as { id?: string }).id ?? null, newValues: result.data as Record<string, unknown> });
 
     // R17: when a WO is created from a maintenance request, flip the request
@@ -345,9 +396,10 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
             .update({ status: nextStatus } as never)
             .eq('id', current.id as string)
             .select('id, status, request_number, requested_by, department_id, asset_id')
-            .single();
-          if (update.error) {
-            requestStatusSyncWarning = update.error.message;
+            .maybeSingle();
+          if (update.error || !update.data) {
+            const syncErrorMessage = update.error?.message ?? 'Request status sync returned 0 rows (likely blocked by RLS).';
+            requestStatusSyncWarning = syncErrorMessage;
             await logServerAuditEvent({
               supabase,
               profileId: profile.id,
@@ -357,7 +409,7 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
               details: {
                 work_order_id: woRow.id ?? null,
                 attempted_status: nextStatus,
-                error: update.error.message,
+                error: syncErrorMessage,
               },
             });
           } else {

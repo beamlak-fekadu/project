@@ -1,6 +1,6 @@
 # AGENTS.md — BMEDIS Codebase Reference for AI Agents
 
-Last updated: 2026-05-21 (Hotfix: migration 00066 fixes equipment_assets INSERT. fn_trigger_refresh_fmea_risk_score() (from 00036) now branches on TG_TABLE_NAME — equipment_assets uses NEW.id/OLD.id; other asset-bearing tables keep NEW.asset_id. RLS: legacy `manage_equipment` and the manually-applied `"Privileged users can insert equipment assets"` are dropped; `equipment_assets_privileged_write` (developer/admin/bme_head, FOR ALL with WITH CHECK) is canonical. Next migration is 00067.)
+Last updated: 2026-05-21 (Hotfix: migration 00067 fixes maintenance approval workflow. `manage_maintenance_requests` (UPDATE) and `manage_work_orders` (FOR ALL) now include bme_head; root cause of "Cannot coerce the result to a single JSON object" on Approve. updateRequestStatusAction + createWorkOrderAction + R17 sync hardened to use .maybeSingle() and translate 0-row RLS blocks into user-facing messages; createWorkOrderAction now returns the existing linked WO with duplicate_prevented=true instead of double-creating. Earlier hotfix 00066: equipment_assets INSERT path. Next migration is 00068.)
 Branch: system_fix
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
@@ -1574,7 +1574,7 @@ One active corrective maintenance request per asset is the rule.
 - Do not use useEffect for initial data fetching in server components
 - Do not create a Supabase client outside of src/lib/supabase/
 - Do not modify seed files (supabase/seed/)
-- Do not modify migrations 00001–00066; next migration is 00067
+- Do not modify migrations 00001–00067; next migration is 00068
 - Do not add npm dependencies without checking existing packages first
   (chart.js, jsPDF, jspdf-autotable, lucide-react, zod, date-fns are all available)
 - Do not use rounded-2xl on cards — rounded-lg maximum
