@@ -1,6 +1,6 @@
 # AGENTS.md — BMEDIS Codebase Reference for AI Agents
 
-Last updated: 2026-05-21 (Hotfix: migration 00067 fixes maintenance approval workflow. `manage_maintenance_requests` (UPDATE) and `manage_work_orders` (FOR ALL) now include bme_head; root cause of "Cannot coerce the result to a single JSON object" on Approve. updateRequestStatusAction + createWorkOrderAction + R17 sync hardened to use .maybeSingle() and translate 0-row RLS blocks into user-facing messages; createWorkOrderAction now returns the existing linked WO with duplicate_prevented=true instead of double-creating. Earlier hotfix 00066: equipment_assets INSERT path. Next migration is 00068.)
+Last updated: 2026-05-21 (Hotfix: WO-completion reliability evidence pipeline made unconditional. updateWorkOrderAction now ALWAYS writes a maintenance_events row when a corrective work order completes, deriving missing repair_duration_hours / downtime_start / downtime_end / failure_date / action_taken from the WO's own started_at / completed_at / created_at + actual_hours + originating request created_at via the pure helper src/utils/maintenance/completion-evidence.ts → deriveReliabilityEvidence(). Idempotency: a "completion event" is identified by completion_date IS NOT NULL on the WO row — re-completion UPDATEs that row instead of inserting a duplicate. The Work Order Detail page (src/app/(dashboard)/maintenance/work-orders/[id]/page.tsx) now queries events by work_order_id via getMaintenanceEventsByWorkOrderId() (was: by asset_id, which mixed in unrelated history), reloads events after completion, surfaces a Completed-with-no-evidence amber banner when a corrective WO has zero linked events, and adds an "Action taken / repair summary" textarea that persists to both work_orders.action_taken and the new maintenance_events.action_taken. Hotfix migration 00067 still applies (maintenance_requests UPDATE / work_orders FOR ALL now include bme_head). Next migration is 00068.)
 Branch: system_fix
 Supabase project ID: fgqyszbxzpmqzpqvdivx
 
@@ -186,13 +186,26 @@ supabase.rpc('auth_profile_department_id')
   transitions must extend the helper.
 - **R2 completion-evidence guard** — completing a work order REQUIRES
   `completion_outcome` AND `final_equipment_condition` in the payload.
-  Optional reliability evidence fields are `repair_duration_hours`,
-  `downtime_start`, `downtime_end`, `failure_date`. When supplied, the
-  action auto-writes a `maintenance_events` row; trigger
-  `sync_downtime_logs_from_event` (migration 00061) derives the
-  `downtime_logs` row. Corrective work completed without ANY reliability
-  field returns a `reliability_evidence_warning` and audits
-  `work_order.completed_without_reliability_evidence`.
+  Reliability evidence fields (`repair_duration_hours`, `downtime_start`,
+  `downtime_end`, `failure_date`, `action_taken_on_completion`) are
+  OPTIONAL on the request; the action ALWAYS writes a `maintenance_events`
+  row for corrective work orders, deriving any missing field server-side
+  from the WO's own timestamps (started_at / completed_at / created_at +
+  actual_hours) and the originating request's created_at via
+  `src/utils/maintenance/completion-evidence.ts → deriveReliabilityEvidence`.
+  Migration 00061 trigger `sync_downtime_logs_from_event` derives the
+  `downtime_logs` row from `downtime_start`/`downtime_end`. Idempotency:
+  exactly one completion-marked event per WO (identified by
+  `completion_date IS NOT NULL`); re-completion UPDATEs that row. A
+  `reliability_evidence_warning` is now ONLY emitted on hard write failure
+  (RLS denial, constraint violation, .maybeSingle returning null), not
+  on missing user input. Audit vocabulary:
+  `maintenance_event.created_from_work_order_completion`,
+  `maintenance_event.updated_from_work_order_completion`,
+  `work_order.reliability_evidence_write_failed`,
+  `work_order.completed_no_reliability_event_expected` (non-corrective).
+  The Work Order Detail page queries events by `work_order_id` via
+  `getMaintenanceEventsByWorkOrderId`, not by `asset_id`.
 - **R17 request↔WO sync** — `createWorkOrderAction` flips the originating
   request's status to `assigned`/`approved` when `request_id` is set.
   Terminal request statuses (completed/rejected/canceled) are not touched.

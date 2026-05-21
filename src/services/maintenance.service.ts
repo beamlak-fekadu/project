@@ -279,6 +279,20 @@ export async function getMaintenanceEvents(assetId: string) {
     .order('created_at', { ascending: false });
 }
 
+// Fetch maintenance events directly linked to a single work order. Used by
+// the Work Order Detail page so the evidence shown next to "Completion
+// Outcome" matches the WO the user is looking at — not the asset's full
+// history. Asset-wide history is still available via getMaintenanceEvents
+// where it's needed (e.g. equipment detail).
+export async function getMaintenanceEventsByWorkOrderId(workOrderId: string) {
+  const supabase = createClient();
+  return supabase
+    .from('maintenance_events')
+    .select(EVENT_SELECT)
+    .eq('work_order_id', workOrderId)
+    .order('created_at', { ascending: false });
+}
+
 export async function createMaintenanceEvent(data: Omit<MaintenanceEvent, 'id' | 'created_at' | 'updated_at' | 'failure_code' | 'action_code'>) {
   const supabase = createClient();
   return supabase

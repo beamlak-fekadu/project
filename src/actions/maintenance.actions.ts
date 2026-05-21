@@ -6,6 +6,10 @@ import { updateEquipmentConditionAction } from './equipment.actions';
 import { getActionContextForCapability, getActionContextForAnyCapability, logServerAuditEvent, revalidateMany, actionError, nullIfEmpty, type ActionResult } from './_shared';
 import { OPEN_MAINTENANCE_REQUEST_STATUSES } from '@/utils/maintenance/request-status';
 import { requiredCapabilityForWorkOrderTransition } from '@/utils/maintenance/work-order-transitions';
+import {
+  deriveReliabilityEvidence,
+  shouldAlwaysWriteCompletionEvent,
+} from '@/utils/maintenance/completion-evidence';
 import { emitNotificationEvent } from '@/services/notifications/notification-engine';
 
 async function loadAssetSummaryForNotification(
@@ -516,14 +520,18 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
     // reliability evidence and MTTR/MTBF/availability would stay stale.
     const completionOutcome = payload.completion_outcome as string | undefined;
     const finalEquipmentCondition = payload.final_equipment_condition as string | undefined;
-    // R2: optional reliability evidence fields collected on completion. When
-    // provided, we auto-write a maintenance_events row; migration 00061's
-    // trigger then derives the matching downtime_logs row that
-    // fn_compute_mtbf reads.
+    // R2 follow-up (WO-completion truth fix): reliability evidence fields the
+    // caller MAY supply on completion. When omitted for a corrective work
+    // order, we DERIVE them from the work order's own timestamps so a
+    // maintenance_events row is written every time. Migration 00061's trigger
+    // then materialises the matching downtime_logs row that fn_compute_mtbf
+    // reads. Previously this only ran when the caller explicitly supplied
+    // input, which silently produced corrective WOs with no evidence.
     const repairDurationHours = (payload as { repair_duration_hours?: number | string | null }).repair_duration_hours;
     const downtimeStart = (payload as { downtime_start?: string | null }).downtime_start;
     const downtimeEnd = (payload as { downtime_end?: string | null }).downtime_end;
     const failureDate = (payload as { failure_date?: string | null }).failure_date;
+    const completionActionTaken = (payload as { action_taken_on_completion?: string | null }).action_taken_on_completion;
     if (requestedStatus === 'completed') {
       if (!completionOutcome) {
         return {
@@ -543,6 +551,13 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
     const updatePayload: Record<string, unknown> = { ...data };
     if (completionOutcome !== undefined) updatePayload.completion_outcome = completionOutcome || null;
     if (finalEquipmentCondition !== undefined) updatePayload.final_equipment_condition = finalEquipmentCondition || null;
+    // Persist the completion-time action_taken on the work order itself so the
+    // WO detail page renders the repair summary alongside the maintenance
+    // event. We only overwrite when the caller actually supplied a non-empty
+    // value — partial WO edits without this field are unaffected.
+    if (typeof completionActionTaken === 'string' && completionActionTaken.trim().length > 0) {
+      updatePayload.action_taken = completionActionTaken.trim();
+    }
 
     const oldRow = await supabase.from('work_orders').select('*').eq('id', id).maybeSingle();
     const result = await supabase.from('work_orders').update(updatePayload as never).eq('id', id).select('*').single();
@@ -567,79 +582,180 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
         const sync = await updateEquipmentConditionAction(assetId, conditionToSet);
         if (!sync.success) conditionSyncWarning = sync.error ?? 'Final equipment condition could not be recorded.';
 
-        // R2: write reliability evidence. We only auto-create a
-        // maintenance_events row if the caller actually supplied at least one
-        // reliability field (repair_duration_hours, downtime_start, or
-        // failure_date). If they didn't, we leave the event slot empty AND
-        // emit a warning so the UI surfaces "completed without reliability
-        // evidence". Migration 00061's trigger derives downtime_logs from
-        // the event downtime_start/end pair automatically.
-        const hasEvidence = (
+        // R2 follow-up (WO-completion truth fix): for corrective work orders,
+        // ALWAYS write a maintenance_events row at completion. Missing
+        // reliability inputs are derived from the work order's own timestamps
+        // (started_at, completed_at, created_at) via deriveReliabilityEvidence.
+        // Idempotent: if a completion event already exists for this WO (i.e.
+        // completion_date IS NOT NULL), we UPDATE it instead of inserting
+        // again. This means a re-completion / fix-up does not duplicate
+        // history. For non-corrective work types we only write when the
+        // caller actually supplied evidence — pm_completions and
+        // installation_records carry primary evidence for those workflows.
+        const woRow = result.data as Record<string, unknown>;
+        const woWorkType = (woRow.work_type as string | undefined) ?? 'corrective';
+        const woCreatedAt = (woRow.created_at as string | undefined) ?? null;
+        const woStartedAt = (woRow.started_at as string | undefined) ?? null;
+        const woCompletedAt = (woRow.completed_at as string | undefined) ?? null;
+        const woActualHours = (woRow.actual_hours as number | null | undefined) ?? null;
+        const woActionTaken = (woRow.action_taken as string | undefined) ?? null;
+        const woClosureNotes = (woRow.closure_notes as string | undefined) ?? null;
+        const woRequestId = (woRow.request_id as string | null | undefined) ?? null;
+
+        // Best-effort: pull originating request created_at for a more accurate
+        // failure_date when the request landed before the WO was created.
+        let originatingRequestCreatedAt: string | null = null;
+        if (woRequestId) {
+          const req = await supabase
+            .from('maintenance_requests')
+            .select('created_at')
+            .eq('id', woRequestId)
+            .maybeSingle();
+          if (!req.error) {
+            originatingRequestCreatedAt = (req.data as { created_at?: string } | null)?.created_at ?? null;
+          }
+        }
+
+        const hasExplicitEvidence = (
           (repairDurationHours !== undefined && repairDurationHours !== null && repairDurationHours !== '') ||
           (downtimeStart !== undefined && downtimeStart !== null && downtimeStart !== '') ||
-          (failureDate !== undefined && failureDate !== null && failureDate !== '')
+          (downtimeEnd !== undefined && downtimeEnd !== null && downtimeEnd !== '') ||
+          (failureDate !== undefined && failureDate !== null && failureDate !== '') ||
+          (typeof completionActionTaken === 'string' && completionActionTaken.trim().length > 0)
         );
-        const woWorkType = ((result.data as Record<string, unknown>).work_type as string | undefined) ?? 'corrective';
-        if (hasEvidence) {
-          const eventInsert = await supabase
+
+        const writeEvent = shouldAlwaysWriteCompletionEvent(woWorkType) || hasExplicitEvidence;
+
+        if (writeEvent) {
+          const evidence = deriveReliabilityEvidence({
+            workOrderId: id,
+            assetId,
+            workOrderCreatedAt: woCreatedAt,
+            workOrderStartedAt: woStartedAt,
+            workOrderCompletedAt: woCompletedAt,
+            workOrderActualHours: woActualHours,
+            originatingRequestCreatedAt,
+            workType: woWorkType,
+            workOrderActionTaken: woActionTaken,
+            workOrderClosureNotes: woClosureNotes,
+            completionOutcome,
+            performedByProfileId: profile.id,
+            explicitRepairDurationHours: repairDurationHours ?? null,
+            explicitDowntimeStart: downtimeStart ?? null,
+            explicitDowntimeEnd: downtimeEnd ?? null,
+            explicitFailureDate: failureDate ?? null,
+            explicitActionTaken: completionActionTaken ?? null,
+          });
+
+          // Idempotency: a "completion event" for this WO is an event where
+          // completion_date IS NOT NULL. We allow many interim events with
+          // completion_date NULL (e.g. parts-needed notes, diagnostics) but
+          // only one completion-marked event per WO. Re-completion updates
+          // that row rather than inserting a duplicate.
+          const existing = await supabase
             .from('maintenance_events')
-            .insert({
-              work_order_id: id,
-              asset_id: assetId,
-              event_type:
-                woWorkType === 'corrective' || woWorkType === 'preventive' || woWorkType === 'inspection'
-                  ? woWorkType
-                  : 'corrective',
-              failure_date: failureDate || null,
-              downtime_start: downtimeStart || null,
-              downtime_end: downtimeEnd || null,
-              repair_duration_hours:
-                repairDurationHours === undefined || repairDurationHours === null || repairDurationHours === ''
-                  ? null
-                  : Number(repairDurationHours),
-              completed_by: profile.id,
-              completion_date: new Date().toISOString().slice(0, 10),
-              notes: 'Auto-logged from work-order completion (R2 reliability evidence pipeline).',
-            } as never)
             .select('id')
-            .single();
-          if (eventInsert.error) {
-            reliabilityEvidenceWarning = eventInsert.error.message;
-            await logServerAuditEvent({
-              supabase,
-              profileId: profile.id,
-              action: 'work_order.reliability_evidence_write_failed',
-              entityType: 'work_orders',
-              entityId: id,
-              details: { asset_id: assetId, error: eventInsert.error.message },
-            });
+            .eq('work_order_id', id)
+            .not('completion_date', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const eventPayload: Record<string, unknown> = {
+            work_order_id: id,
+            asset_id: assetId,
+            event_type: evidence.eventType,
+            failure_date: evidence.failureDate,
+            downtime_start: evidence.downtimeStart,
+            downtime_end: evidence.downtimeEnd,
+            repair_duration_hours: evidence.repairDurationHours,
+            action_taken: evidence.actionTaken,
+            completed_by: evidence.completedBy,
+            completion_date: evidence.completionDate,
+            notes: evidence.notes,
+          };
+
+          const existingId = (existing.data as { id?: string } | null)?.id ?? null;
+          if (existingId) {
+            const updateEvent = await supabase
+              .from('maintenance_events')
+              .update(eventPayload as never)
+              .eq('id', existingId)
+              .select('id')
+              .maybeSingle();
+            if (updateEvent.error || !updateEvent.data) {
+              reliabilityEvidenceWarning =
+                updateEvent.error?.message ?? 'Reliability evidence could not be updated (RLS or row missing).';
+              await logServerAuditEvent({
+                supabase,
+                profileId: profile.id,
+                action: 'work_order.reliability_evidence_write_failed',
+                entityType: 'work_orders',
+                entityId: id,
+                details: { asset_id: assetId, mode: 'update', error: reliabilityEvidenceWarning },
+              });
+            } else {
+              await logServerAuditEvent({
+                supabase,
+                profileId: profile.id,
+                action: 'maintenance_event.updated_from_work_order_completion',
+                entityType: 'maintenance_events',
+                entityId: existingId,
+                newValues: {
+                  work_order_id: id,
+                  asset_id: assetId,
+                  evidence_source: evidence.source,
+                  derived_fields: evidence.derivedFields,
+                  has_explicit_evidence: evidence.hasExplicitEvidence,
+                },
+              });
+            }
           } else {
-            await logServerAuditEvent({
-              supabase,
-              profileId: profile.id,
-              action: 'maintenance_event.created_from_work_order_completion',
-              entityType: 'maintenance_events',
-              entityId: (eventInsert.data as { id?: string }).id ?? null,
-              newValues: {
-                work_order_id: id,
-                asset_id: assetId,
-                repair_duration_hours: repairDurationHours,
-                downtime_start: downtimeStart,
-                downtime_end: downtimeEnd,
-                failure_date: failureDate,
-              },
-            });
+            const eventInsert = await supabase
+              .from('maintenance_events')
+              .insert(eventPayload as never)
+              .select('id')
+              .maybeSingle();
+            if (eventInsert.error || !eventInsert.data) {
+              reliabilityEvidenceWarning =
+                eventInsert.error?.message ?? 'Reliability evidence could not be recorded (RLS or constraint violation).';
+              await logServerAuditEvent({
+                supabase,
+                profileId: profile.id,
+                action: 'work_order.reliability_evidence_write_failed',
+                entityType: 'work_orders',
+                entityId: id,
+                details: { asset_id: assetId, mode: 'insert', error: reliabilityEvidenceWarning },
+              });
+            } else {
+              await logServerAuditEvent({
+                supabase,
+                profileId: profile.id,
+                action: 'maintenance_event.created_from_work_order_completion',
+                entityType: 'maintenance_events',
+                entityId: (eventInsert.data as { id?: string }).id ?? null,
+                newValues: {
+                  work_order_id: id,
+                  asset_id: assetId,
+                  evidence_source: evidence.source,
+                  derived_fields: evidence.derivedFields,
+                  has_explicit_evidence: evidence.hasExplicitEvidence,
+                  repair_duration_hours: evidence.repairDurationHours,
+                  downtime_start: evidence.downtimeStart,
+                  downtime_end: evidence.downtimeEnd,
+                  failure_date: evidence.failureDate,
+                },
+              });
+            }
           }
-        } else if (woWorkType === 'corrective') {
-          // Corrective work without any reliability evidence — warn loudly.
-          // Other work types (preventive/inspection/calibration/installation)
-          // don't feed MTTR/MTBF the same way.
-          reliabilityEvidenceWarning =
-            'Completed without reliability evidence. MTTR / MTBF / availability for this asset will not change. Log a maintenance event with repair duration and downtime to update the metrics.';
+        } else {
+          // Non-corrective work without explicit evidence — pm_completions or
+          // installation_records carry primary evidence elsewhere. No
+          // maintenance_events row is written, and no warning is emitted.
           await logServerAuditEvent({
             supabase,
             profileId: profile.id,
-            action: 'work_order.completed_without_reliability_evidence',
+            action: 'work_order.completed_no_reliability_event_expected',
             entityType: 'work_orders',
             entityId: id,
             details: { asset_id: assetId, work_type: woWorkType },

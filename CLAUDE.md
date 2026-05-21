@@ -1,6 +1,8 @@
 # CLAUDE.md — BMEDIS Project Intelligence
 
-Last updated: 2026-05-21 (Hotfix: migration 00067 grants bme_head UPDATE on maintenance_requests and FOR ALL on work_orders — root cause of "Cannot coerce the result to a single JSON object" on Approve. Server actions also hardened: updateRequestStatusAction + createWorkOrderAction + R17 status sync now use .maybeSingle() and translate 0-row RLS blocks into clear user-facing messages instead of leaking the raw PostgREST PGRST116 string. createWorkOrderAction adds idempotency: a non-terminal WO already linked to the same request is returned with duplicate_prevented=true instead of inserting a duplicate. Earlier hotfix: migration 00066 fixes equipment_assets INSERT — FMEA trigger function now branches on TG_TABLE_NAME so the equipment_assets path uses NEW.id/OLD.id; legacy `manage_equipment` RLS policy and the manual hotfix `"Privileged users can insert equipment assets"` policy are dropped and replaced by `equipment_assets_privileged_write` (developer/admin/bme_head only, FOR ALL with WITH CHECK). Phase 6 R1–R35 fix plan COMPLETE — R31 QR route comments aligned with logQrScan 5-min dedup; R13 offline phrasing verified honest (no "background sync" claims); R27 user-facing "Alerts" terminology already migrated to "Notification Center" (internal compat names kept with comment); R12 offline enqueue fails closed when roleNames missing; R33 audit coverage solid across report.exported / telegram.test_send / decision_support.refresh / notification.rule_check_run; R22 training/disposal audit-summary comments in actions (notifications deliberately deferred — modules production-ready otherwise); R28 rest documented (reports.service.ts stays browser-client by design; privileged reports already server-rendered); R15 copilot-r15-coverage.test.ts locks all 8 roles + viewer read-only; R34 validation-readiness.service.ts probes 9 fixtures (overdue PM, aging WO, stockouts, failed calibration, delayed procurement, attached QR, revoked QR, high RPI, offline event) and surfaces missing as Developer Lab warnings; R35 documents/r35-manual-validation-checklist.md provides full deployed-env sign-off checklist. ALL R1–R35 closed.)
+Last updated: 2026-05-21 (Workflow-truth fix: completed corrective work orders now ALWAYS produce a linked maintenance_events row. Root cause: updateWorkOrderAction's `hasEvidence` gate only ran the event writer when the caller supplied explicit reliability fields, so a technician clearing the prefilled modal fields silently completed the WO without any evidence and only saw a warning toast. Additionally, the Work Order Detail page queried `maintenance_events` by `asset_id` and never refreshed after completion, so even existing events wouldn't appear under "Maintenance Events" without a manual reload. Fix: pure helper `src/utils/maintenance/completion-evidence.ts → deriveReliabilityEvidence` returns a full evidence shape for every corrective completion, deriving missing fields from the WO's started_at / completed_at / created_at + actual_hours and the originating request's created_at. updateWorkOrderAction ALWAYS writes the event for corrective work and uses an idempotent upsert keyed by `completion_date IS NOT NULL` on the WO row (re-completion UPDATEs, not duplicates). New `getMaintenanceEventsByWorkOrderId` service helper. WO detail page now: queries events by work_order_id, reloads events after completion, has a new "Action taken / repair summary" textarea (persists to both work_orders.action_taken and maintenance_events.action_taken), surfaces an honest amber banner when a completed corrective WO has zero linked events, and links to asset-wide history under /equipment/[id]. `reliability_evidence_warning` is now only emitted on hard write failure (RLS denial / constraint violation), not on missing input. No DB migration. New audit event: `maintenance_event.updated_from_work_order_completion` (re-completion update path). 13 new tests at `src/utils/maintenance/__tests__/completion-evidence.test.ts`. Suite: 415/415, lint clean, tsc clean, build 54/54 routes.
+
+Earlier hotfix: migration 00067 grants bme_head UPDATE on maintenance_requests and FOR ALL on work_orders — root cause of "Cannot coerce the result to a single JSON object" on Approve. Server actions also hardened: updateRequestStatusAction + createWorkOrderAction + R17 status sync now use .maybeSingle() and translate 0-row RLS blocks into clear user-facing messages instead of leaking the raw PostgREST PGRST116 string. createWorkOrderAction adds idempotency: a non-terminal WO already linked to the same request is returned with duplicate_prevented=true instead of inserting a duplicate. Earlier hotfix: migration 00066 fixes equipment_assets INSERT — FMEA trigger function now branches on TG_TABLE_NAME so the equipment_assets path uses NEW.id/OLD.id; legacy `manage_equipment` RLS policy and the manual hotfix `"Privileged users can insert equipment assets"` policy are dropped and replaced by `equipment_assets_privileged_write` (developer/admin/bme_head only, FOR ALL with WITH CHECK). Phase 6 R1–R35 fix plan COMPLETE — R31 QR route comments aligned with logQrScan 5-min dedup; R13 offline phrasing verified honest (no "background sync" claims); R27 user-facing "Alerts" terminology already migrated to "Notification Center" (internal compat names kept with comment); R12 offline enqueue fails closed when roleNames missing; R33 audit coverage solid across report.exported / telegram.test_send / decision_support.refresh / notification.rule_check_run; R22 training/disposal audit-summary comments in actions (notifications deliberately deferred — modules production-ready otherwise); R28 rest documented (reports.service.ts stays browser-client by design; privileged reports already server-rendered); R15 copilot-r15-coverage.test.ts locks all 8 roles + viewer read-only; R34 validation-readiness.service.ts probes 9 fixtures (overdue PM, aging WO, stockouts, failed calibration, delayed procurement, attached QR, revoked QR, high RPI, offline event) and surfaces missing as Developer Lab warnings; R35 documents/r35-manual-validation-checklist.md provides full deployed-env sign-off checklist. ALL R1–R35 closed.)
 Branch: system_fix
 Deployment: configured in Vercel project settings
 Supabase project ID: fgqyszbxzpmqzpqvdivx
@@ -1483,7 +1485,38 @@ Fixes R2, R17, R18, R19. Each phase fix is exhaustive — no rolling TODOs.
 - Request detail page already renders linked work orders — no further UI
   change required.
 
-### R2 — Reliability evidence pipeline (DONE)
+### R2 — Reliability evidence pipeline (DONE; HARDENED 2026-05-21 — always-write + idempotent)
+
+**2026-05-21 hardening:** Phase 2 made the writer conditional on the caller
+supplying explicit reliability fields. In production this surfaced as
+"Work order completed but Maintenance Events shows No maintenance events
+logged" — root cause: technician cleared the prefilled modal fields, so
+hasEvidence=false and the writer was skipped (only a warning toast
+surfaced). The R2 contract is now: **for corrective work orders, completion
+ALWAYS writes a maintenance_events row**, deriving missing fields
+server-side from the WO's own lifecycle (started_at, completed_at,
+created_at, actual_hours) and the originating request's created_at via
+the pure helper `src/utils/maintenance/completion-evidence.ts →
+deriveReliabilityEvidence`. Idempotent: a "completion event" is identified
+by `completion_date IS NOT NULL` on the WO row; re-completion UPDATEs that
+row in place rather than inserting a duplicate. The Work Order Detail
+page queries events by `work_order_id` (was: asset_id) via
+`getMaintenanceEventsByWorkOrderId`, reloads events after completion, has
+a new "Action taken / repair summary" textarea (persists to
+work_orders.action_taken AND maintenance_events.action_taken), and shows
+an honest amber banner when a completed corrective WO has zero linked
+events (which now indicates a write failure, not a missing-input warning).
+`reliability_evidence_warning` is now ONLY emitted on hard write failure
+(RLS denial, constraint violation, .maybeSingle returning null), never
+on missing user input. New audit event:
+`maintenance_event.updated_from_work_order_completion` for the re-completion
+UPDATE path; `work_order.completed_without_reliability_evidence` is no
+longer emitted (it was misleading — corrective WOs always get evidence).
+13 new tests at `src/utils/maintenance/__tests__/completion-evidence.test.ts`
+lock derivation, fallback chain, source classification (explicit/derived/
+mixed), inverted-range rejection, and the observed-bug fixture.
+
+
 - Migration
   [00061_reliability_evidence.sql](supabase/migrations/00061_reliability_evidence.sql):
   - AFTER INSERT/UPDATE trigger `sync_downtime_logs_from_event` on

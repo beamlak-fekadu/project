@@ -14,7 +14,7 @@ import { slideUp } from '@/lib/ui/motion-presets';
 import { UrgencyBadge, WorkOrderStatusBadge } from '@/components/ui/StatusBadge';
 import AssistantPageContextBridge from '@/components/assistant/AssistantPageContextBridge';
 import {
-  getWorkOrderById, getMaintenanceEvents, getRequestById,
+  getWorkOrderById, getMaintenanceEventsByWorkOrderId, getRequestById,
 } from '@/services/maintenance.service';
 import { getEquipmentById } from '@/services/equipment.service';
 import { formatEquipmentCondition, getConditionBadgeClass } from '@/utils/equipment/condition-labels';
@@ -104,11 +104,14 @@ export default function WorkOrderDetailPage() {
   const [finalCondition, setFinalCondition] = useState('functional');
   // R2: reliability evidence captured at completion. Auto-feeds the
   // maintenance_events writer in updateWorkOrderAction, which migration
-  // 00061's trigger then materializes into a downtime_logs row.
+  // 00061's trigger then materializes into a downtime_logs row. Fields left
+  // blank are derived from work-order timestamps so a corrective WO can
+  // never complete without an event.
   const [repairDurationHours, setRepairDurationHours] = useState<string>('');
   const [downtimeStart, setDowntimeStart] = useState<string>('');
   const [downtimeEnd, setDowntimeEnd] = useState<string>('');
   const [failureDate, setFailureDate] = useState<string>('');
+  const [completionActionTaken, setCompletionActionTaken] = useState<string>('');
 
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [eventForm, setEventForm] = useState(emptyEventForm);
@@ -133,9 +136,15 @@ export default function WorkOrderDetailPage() {
     setWO(data as unknown as WOWithJoins);
   }, [id, toast]);
 
-  const loadEvents = useCallback(async (assetId: string) => {
-    const { data } = await getMaintenanceEvents(assetId);
+  // WO-completion truth fix: query maintenance_events directly linked to the
+  // current work order, not the asset's full history. This ensures the
+  // evidence shown next to "Completion Outcome" / "Final Equipment Condition"
+  // is the evidence FOR THIS work order. Asset-wide history remains
+  // accessible from /equipment/[id].
+  const loadEvents = useCallback(async (workOrderId: string) => {
+    const { data } = await getMaintenanceEventsByWorkOrderId(workOrderId);
     if (data) setEvents(data as unknown as EventWithJoins[]);
+    else setEvents([]);
   }, []);
 
   useEffect(() => {
@@ -153,7 +162,7 @@ export default function WorkOrderDetailPage() {
       // Load events, originating request, and current equipment condition in parallel
       const requestId = (woData as { request_id?: string | null }).request_id;
       await Promise.all([
-        loadEvents(woData.asset_id),
+        loadEvents(woData.id),
         requestId
           ? getRequestById(requestId).then(({ data: reqData }) => {
               if (reqData) {
@@ -224,10 +233,14 @@ export default function WorkOrderDetailPage() {
     // R2: prefill downtime fields from the work order's lifecycle. If the WO
     // recorded started_at, that's a reasonable downtime_start default; the
     // technician can edit. Repair duration defaults to actual_hours when set.
+    // WO-completion truth fix: the action layer ALSO derives these from the
+    // WO's timestamps server-side, so even a blank submission produces a
+    // maintenance_events row. The prefill is for transparency, not safety.
     setDowntimeStart(wo?.started_at ? new Date(wo.started_at).toISOString().slice(0, 16) : '');
     setDowntimeEnd(new Date().toISOString().slice(0, 16));
     setRepairDurationHours(wo?.actual_hours ? String(wo.actual_hours) : '');
     setFailureDate(wo?.created_at ? new Date(wo.created_at).toISOString().slice(0, 10) : '');
+    setCompletionActionTaken(wo?.action_taken ?? '');
     setCompletionModalOpen(true);
   }
 
@@ -239,11 +252,14 @@ export default function WorkOrderDetailPage() {
       completed_at: new Date().toISOString(),
       completion_outcome: completionOutcome,
       final_equipment_condition: finalCondition,
-      // R2: reliability evidence
+      // R2: reliability evidence. Empty values are derived server-side from
+      // the WO's started_at / completed_at / created_at so a corrective WO
+      // can never complete without a maintenance_events row.
       repair_duration_hours: repairDurationHours || null,
       downtime_start: downtimeStart ? new Date(downtimeStart).toISOString() : null,
       downtime_end: downtimeEnd ? new Date(downtimeEnd).toISOString() : null,
       failure_date: failureDate || null,
+      action_taken_on_completion: completionActionTaken.trim() || null,
     });
     setActionLoading(false);
     if (!result.success) {
@@ -254,13 +270,18 @@ export default function WorkOrderDetailPage() {
         // R5: completion succeeded but final equipment condition could not be recorded.
         toast('warning', `Work order completed. Final equipment condition could not be recorded: ${data.condition_sync_warning}`);
       } else if (data?.reliability_evidence_warning) {
-        // R2: completion happened but reliability evidence was not captured.
+        // Reliability evidence write failed — surface verbatim so the gap is
+        // visible (RLS denial, constraint violation, etc.). Completion itself
+        // succeeded.
         toast('warning', `Work order completed. ${data.reliability_evidence_warning}`);
       } else {
         toast('success', 'Work order completed');
       }
       setCompletionModalOpen(false);
-      await loadWO();
+      // Reload BOTH the WO and the events linked to this WO so the
+      // "Maintenance Events" section reflects the new completion evidence
+      // without requiring a manual refresh.
+      await Promise.all([loadWO(), loadEvents(wo.id)]);
     }
   }
 
@@ -419,7 +440,7 @@ export default function WorkOrderDetailPage() {
     } else {
       toast('success', 'Maintenance event logged');
       setEventModalOpen(false);
-      await loadEvents(wo.asset_id);
+      await loadEvents(wo.id);
     }
     setActionLoading(false);
   }
@@ -468,7 +489,7 @@ export default function WorkOrderDetailPage() {
     }
     toast('success', 'Completion draft saved');
     setCompletionModalOpen(false);
-    await loadEvents(wo.asset_id);
+    await loadEvents(wo.id);
   }
 
   if (loading || !wo) {
@@ -932,7 +953,8 @@ export default function WorkOrderDetailPage() {
           workOrderStatus={wo?.status ?? ''}
         />
 
-        {/* Maintenance Event Log */}
+        {/* Maintenance Event Log — scoped to THIS work order. Asset-wide
+            history lives on /equipment/[id]. */}
         <Card>
           <CardHeader>
             <CardTitle>Maintenance Events</CardTitle>
@@ -954,11 +976,36 @@ export default function WorkOrderDetailPage() {
             )}
           </CardHeader>
           <CardContent>
+            {/* Honest missing-evidence banner: a completed corrective WO with
+                zero linked events points to an RLS / write failure or to a
+                pre-fix legacy completion. The WO did NOT silently produce
+                MTTR/MTBF evidence. */}
+            {wo.status === 'completed' && wo.work_type === 'corrective' && events.length === 0 && (
+              <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                Completed corrective work order has no linked maintenance event.
+                MTTR / MTBF / availability did not refresh from this completion.
+                {(isDeveloper || isAdmin || isBmeHead) && (
+                  <span className="ml-1">Log a maintenance event manually to backfill the evidence.</span>
+                )}
+              </div>
+            )}
             <Table<EventWithJoins>
               columns={eventColumns}
               data={events}
-              emptyMessage="No maintenance events logged"
+              emptyMessage={
+                wo.status === 'completed'
+                  ? 'No maintenance event recorded for this work order.'
+                  : 'No maintenance events logged yet.'
+              }
             />
+            {wo?.asset_id && (
+              <a
+                href={`/equipment/${wo.asset_id}#maintenance-history`}
+                className="mt-3 inline-block text-xs text-[var(--brand)] hover:underline"
+              >
+                View full maintenance history for this asset →
+              </a>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -1017,25 +1064,32 @@ export default function WorkOrderDetailPage() {
             Equipment condition will be updated to <strong className="text-[var(--foreground)]">{finalCondition.replace(/_/g, ' ')}</strong> after completion.
           </p>
 
-          {/* R2: Reliability evidence pipeline.
-              Capturing these fields auto-creates a maintenance_events row and
-              the trigger from migration 00061 derives the downtime_logs row
-              that fn_compute_mtbf reads. Leaving them blank still completes
-              the work order but surfaces a "completed without reliability
-              evidence" warning toast so the gap is honest. */}
+          {/* Reliability evidence pipeline.
+              For corrective work orders, a maintenance_events row is ALWAYS
+              written on completion. Any field left blank below is derived
+              server-side from the work order's started_at / completed_at /
+              created_at timestamps, so the user can complete with whatever
+              evidence they have. Migration 00061's trigger then materialises
+              the matching downtime_logs row that fn_compute_mtbf reads. */}
           <div className="space-y-3 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-2)] px-3 py-3">
             <p className="text-xs font-medium text-[var(--foreground)]">
-              Reliability evidence (recommended for corrective work)
+              Reliability evidence (auto-derived from work-order timestamps if left blank)
             </p>
             <p className="text-xs text-[var(--text-muted)]">
-              MTTR / MTBF / availability for this asset will only refresh when this evidence is logged.
+              MTTR / MTBF / availability refresh from this evidence. Fill in what you know — the rest is derived.
             </p>
+            <Textarea
+              label="Action taken / repair summary"
+              placeholder="e.g. Freed stuck TGC slider, tested control response, returned to functional."
+              value={completionActionTaken}
+              onChange={(e) => setCompletionActionTaken(e.target.value)}
+            />
             <Input
               type="number"
               step="0.25"
               min="0"
               label="Repair duration (hours)"
-              placeholder="e.g. 2.5"
+              placeholder="leave blank to derive from started_at → completed_at"
               value={repairDurationHours}
               onChange={(e) => setRepairDurationHours(e.target.value)}
             />
