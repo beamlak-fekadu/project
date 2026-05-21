@@ -982,10 +982,10 @@ export default function WorkOrderDetailPage() {
                 MTTR/MTBF evidence. */}
             {wo.status === 'completed' && wo.work_type === 'corrective' && events.length === 0 && (
               <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-                Completed corrective work order has no linked maintenance event.
+                Completed work order is missing reliability evidence.
                 MTTR / MTBF / availability did not refresh from this completion.
                 {(isDeveloper || isAdmin || isBmeHead) && (
-                  <span className="ml-1">Log a maintenance event manually to backfill the evidence.</span>
+                  <span className="ml-1">Apply migration 00069 or log one linked maintenance event to repair the gap.</span>
                 )}
               </div>
             )}

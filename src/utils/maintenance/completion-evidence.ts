@@ -67,6 +67,7 @@ export interface DerivedReliabilityEvidence {
   completedBy: string;
   completionDate: string;
   notes: string;
+  warnings: string[];
   /** Which fields were derived vs supplied. Lets the action / UI annotate. */
   source: DerivedEvidenceSource;
   derivedFields: string[];
@@ -155,6 +156,7 @@ export function deriveReliabilityEvidence(
     input.workType === '';
 
   // ---------- downtime_start ----------
+  const warnings: string[] = [];
   const explicitDowntimeStart = isoOrNull(input.explicitDowntimeStart);
   let downtimeStart: string | null = explicitDowntimeStart;
   if (!downtimeStart) {
@@ -168,16 +170,15 @@ export function deriveReliabilityEvidence(
   const explicitDowntimeEnd = isoOrNull(input.explicitDowntimeEnd);
   let downtimeEnd: string | null = explicitDowntimeEnd;
   if (!downtimeEnd) {
-    downtimeEnd =
-      isoOrNull(input.workOrderCompletedAt) ??
-      new Date().toISOString();
-    derivedFields.push('downtime_end');
+    downtimeEnd = isoOrNull(input.workOrderCompletedAt);
+    if (downtimeEnd) derivedFields.push('downtime_end');
   }
 
   // Reject inverted ranges — propagate as a null pair rather than poison MTBF.
   if (downtimeStart && downtimeEnd && Date.parse(downtimeEnd) <= Date.parse(downtimeStart)) {
     downtimeStart = null;
     downtimeEnd = null;
+    warnings.push('downtime_range_invalid');
   }
 
   // ---------- repair_duration_hours ----------
@@ -201,6 +202,12 @@ export function deriveReliabilityEvidence(
         derivedFields.push('repair_duration_hours');
       }
     }
+  }
+  if (repairDurationHours === null) {
+    warnings.push('repair_duration_hours_unavailable');
+  }
+  if (!downtimeStart || !downtimeEnd) {
+    warnings.push('downtime_range_unavailable');
   }
 
   // ---------- failure_date ----------
@@ -272,6 +279,7 @@ export function deriveReliabilityEvidence(
     completedBy: input.performedByProfileId,
     completionDate: new Date().toISOString().slice(0, 10),
     notes: noteParts.join(' '),
+    warnings,
     source,
     derivedFields,
     isCorrective,

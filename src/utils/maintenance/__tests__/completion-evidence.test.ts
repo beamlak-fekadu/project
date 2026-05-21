@@ -89,6 +89,7 @@ test('inverted downtime range is rejected (cleared, not propagated)', () => {
   });
   assert.equal(evidence.downtimeStart, null);
   assert.equal(evidence.downtimeEnd, null);
+  assert.ok(evidence.warnings.includes('downtime_range_invalid'));
 });
 
 test('mixed source: explicit duration + derived downtime', () => {
@@ -162,18 +163,17 @@ test('zero-and-negative inputs are sanitised', () => {
   assert.equal(e.repairDurationHours, 0);
 });
 
-test('downtimeEnd has a "now" fallback so MTTR can still be computed', () => {
-  const before = Date.now();
-  // Use a clearly past started_at so "now" is reliably after it regardless
-  // of when this test runs.
+test('missing completion timestamp does not invent downtime end or duration', () => {
   const e = deriveReliabilityEvidence({
     ...BASE,
     workOrderStartedAt: '2020-01-01T00:00:00.000Z',
     // No completed_at and no explicit end.
   });
-  assert.ok(e.downtimeEnd !== null, 'downtime_end should be derived');
-  const endMs = Date.parse(e.downtimeEnd!);
-  assert.ok(endMs >= before, 'derived downtime_end should be ≥ "before" timestamp');
+  assert.equal(e.downtimeStart, '2020-01-01T00:00:00.000Z');
+  assert.equal(e.downtimeEnd, null);
+  assert.equal(e.repairDurationHours, null);
+  assert.ok(e.warnings.includes('downtime_range_unavailable'));
+  assert.ok(e.warnings.includes('repair_duration_hours_unavailable'));
 });
 
 test('action_taken falls back to wo.action_taken then wo.closure_notes then outcome', () => {

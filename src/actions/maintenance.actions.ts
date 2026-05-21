@@ -133,6 +133,87 @@ function normalizePartialWorkOrder(payload: Record<string, unknown>) {
   };
 }
 
+type MaintenanceActionClient = Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>;
+
+function translateMaintenanceEventWriteError(rawError: string): string {
+  if (/no unique or exclusion constraint matching the ON CONFLICT specification/i.test(rawError)) {
+    return 'Work order could not record reliability evidence because the maintenance-event uniqueness rule is not configured. Please contact Developer/BME system admin.';
+  }
+  if (/row-level security|new row violates/i.test(rawError)) {
+    return 'Reliability evidence could not be recorded on maintenance_events (row-level security blocked the write). Verify migration 00068 is applied and that the user has work_order.complete capability.';
+  }
+  return `Reliability evidence could not be recorded on maintenance_events: ${rawError}`;
+}
+
+async function recordWorkOrderReliabilityEvidence({
+  supabase,
+  profileId,
+  workOrderId,
+  assetId,
+  eventPayload,
+  auditValues,
+}: {
+  supabase: MaintenanceActionClient;
+  profileId: string;
+  workOrderId: string;
+  assetId: string;
+  eventPayload: Record<string, unknown>;
+  auditValues: Record<string, unknown>;
+}): Promise<{ eventId: string | null; warning: string | null }> {
+  const existing = await supabase
+    .from('maintenance_events')
+    .select('id')
+    .eq('work_order_id', workOrderId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const existingId = (existing.data as { id?: string } | null)?.id ?? null;
+  const upsert = await supabase
+    .from('maintenance_events')
+    .upsert(eventPayload as never, { onConflict: 'work_order_id' })
+    .select('id')
+    .maybeSingle();
+
+  if (upsert.error || !upsert.data) {
+    const rawError = upsert.error?.message ?? 'Upsert returned 0 rows.';
+    const warning = translateMaintenanceEventWriteError(rawError);
+    console.error('[maintenance] reliability evidence UPSERT failed:', {
+      workOrderId,
+      assetId,
+      profileId,
+      postgrestError: rawError,
+    });
+    await logServerAuditEvent({
+      supabase,
+      profileId,
+      action: 'work_order.reliability_evidence_write_failed',
+      entityType: 'work_orders',
+      entityId: workOrderId,
+      details: {
+        asset_id: assetId,
+        mode: existingId ? 'upsert_update' : 'upsert_insert',
+        postgrest_error: rawError,
+      },
+    });
+    return { eventId: null, warning };
+  }
+
+  const eventId = (upsert.data as { id?: string }).id ?? null;
+  await logServerAuditEvent({
+    supabase,
+    profileId,
+    action: existingId
+      ? 'maintenance_event.updated_from_work_order_completion'
+      : 'maintenance_event.created_from_work_order_completion',
+    entityType: 'maintenance_events',
+    entityId: eventId,
+    newValues: auditValues,
+  });
+
+  return { eventId, warning: null };
+}
+
 export async function createMaintenanceRequestAction(payload: Record<string, unknown>): Promise<ActionResult> {
   try {
     const { supabase, profile, error } = await getActionContextForCapability('maintenance.request.create');
@@ -586,11 +667,11 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
         // ALWAYS write a maintenance_events row at completion. Missing
         // reliability inputs are derived from the work order's own timestamps
         // (started_at, completed_at, created_at) via deriveReliabilityEvidence.
-        // Idempotent: if a completion event already exists for this WO (i.e.
-        // completion_date IS NOT NULL), we UPDATE it instead of inserting
-        // again. This means a re-completion / fix-up does not duplicate
-        // history. For non-corrective work types we only write when the
-        // caller actually supplied evidence — pm_completions and
+        // Idempotent: the DB has one canonical maintenance_events row per
+        // non-null work_order_id, so the helper upserts on work_order_id. A
+        // re-completion / retry updates the same evidence row instead of
+        // duplicating history. For non-corrective work types we only write
+        // when the caller actually supplied evidence — pm_completions and
         // installation_records carry primary evidence for those workflows.
         const woRow = result.data as Record<string, unknown>;
         const woWorkType = (woRow.work_type as string | undefined) ?? 'corrective';
@@ -647,20 +728,6 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
             explicitActionTaken: completionActionTaken ?? null,
           });
 
-          // Idempotency: a "completion event" for this WO is an event where
-          // completion_date IS NOT NULL. We allow many interim events with
-          // completion_date NULL (e.g. parts-needed notes, diagnostics) but
-          // only one completion-marked event per WO. Re-completion updates
-          // that row rather than inserting a duplicate.
-          const existing = await supabase
-            .from('maintenance_events')
-            .select('id')
-            .eq('work_order_id', id)
-            .not('completion_date', 'is', null)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
           const eventPayload: Record<string, unknown> = {
             work_order_id: id,
             asset_id: assetId,
@@ -675,113 +742,26 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
             notes: evidence.notes,
           };
 
-          const existingId = (existing.data as { id?: string } | null)?.id ?? null;
-          if (existingId) {
-            const updateEvent = await supabase
-              .from('maintenance_events')
-              .update(eventPayload as never)
-              .eq('id', existingId)
-              .select('id')
-              .maybeSingle();
-            if (updateEvent.error || !updateEvent.data) {
-              // Translate the raw PostgREST RLS / constraint message into a
-              // user-actionable warning. The raw message is preserved in the
-              // audit row so a developer can trace it later. The user sees a
-              // sentence that names the table and the likely fix (apply
-              // migration 00068 / extend RLS for the caller's role) rather
-              // than a copy-pasted Postgres error.
-              const rawError =
-                updateEvent.error?.message ?? 'Update returned 0 rows (likely RLS UPDATE policy excludes the caller).';
-              reliabilityEvidenceWarning =
-                'Reliability evidence could not be updated on maintenance_events. ' +
-                'Likely cause: the RLS UPDATE policy does not include this role. ' +
-                'Verify migration 00068 is applied (adds bme_head) and that the user has work_order.complete capability.';
-              console.error('[maintenance] reliability evidence UPDATE failed:', {
-                workOrderId: id,
-                assetId,
-                profileId: profile.id,
-                postgrestError: rawError,
-              });
-              await logServerAuditEvent({
-                supabase,
-                profileId: profile.id,
-                action: 'work_order.reliability_evidence_write_failed',
-                entityType: 'work_orders',
-                entityId: id,
-                details: { asset_id: assetId, mode: 'update', postgrest_error: rawError },
-              });
-            } else {
-              await logServerAuditEvent({
-                supabase,
-                profileId: profile.id,
-                action: 'maintenance_event.updated_from_work_order_completion',
-                entityType: 'maintenance_events',
-                entityId: existingId,
-                newValues: {
-                  work_order_id: id,
-                  asset_id: assetId,
-                  evidence_source: evidence.source,
-                  derived_fields: evidence.derivedFields,
-                  has_explicit_evidence: evidence.hasExplicitEvidence,
-                },
-              });
-            }
-          } else {
-            const eventInsert = await supabase
-              .from('maintenance_events')
-              .insert(eventPayload as never)
-              .select('id')
-              .maybeSingle();
-            if (eventInsert.error || !eventInsert.data) {
-              // Same translation rationale as the UPDATE path above.
-              // PostgREST's raw "new row violates row-level security policy
-              // for table maintenance_events" is preserved in audit but not
-              // surfaced to the user — they get an actionable warning that
-              // names the table and the likely fix.
-              const rawError =
-                eventInsert.error?.message ?? 'Insert returned 0 rows (likely RLS INSERT policy excludes the caller).';
-              const isRls = /row-level security|new row violates/i.test(rawError);
-              reliabilityEvidenceWarning = isRls
-                ? 'Reliability evidence could not be recorded on maintenance_events (row-level security blocked the insert). ' +
-                  'Apply migration 00068 on Supabase to grant bme_head INSERT/UPDATE on maintenance_events. ' +
-                  'Until applied, MTTR / MTBF / availability will not refresh for this completion.'
-                : `Reliability evidence could not be recorded on maintenance_events: ${rawError}`;
-              console.error('[maintenance] reliability evidence INSERT failed:', {
-                workOrderId: id,
-                assetId,
-                profileId: profile.id,
-                eventType: evidence.eventType,
-                postgrestError: rawError,
-              });
-              await logServerAuditEvent({
-                supabase,
-                profileId: profile.id,
-                action: 'work_order.reliability_evidence_write_failed',
-                entityType: 'work_orders',
-                entityId: id,
-                details: { asset_id: assetId, mode: 'insert', postgrest_error: rawError, rls_blocked: isRls },
-              });
-            } else {
-              await logServerAuditEvent({
-                supabase,
-                profileId: profile.id,
-                action: 'maintenance_event.created_from_work_order_completion',
-                entityType: 'maintenance_events',
-                entityId: (eventInsert.data as { id?: string }).id ?? null,
-                newValues: {
-                  work_order_id: id,
-                  asset_id: assetId,
-                  evidence_source: evidence.source,
-                  derived_fields: evidence.derivedFields,
-                  has_explicit_evidence: evidence.hasExplicitEvidence,
-                  repair_duration_hours: evidence.repairDurationHours,
-                  downtime_start: evidence.downtimeStart,
-                  downtime_end: evidence.downtimeEnd,
-                  failure_date: evidence.failureDate,
-                },
-              });
-            }
-          }
+          const recorded = await recordWorkOrderReliabilityEvidence({
+            supabase,
+            profileId: profile.id,
+            workOrderId: id,
+            assetId,
+            eventPayload,
+            auditValues: {
+              work_order_id: id,
+              asset_id: assetId,
+              evidence_source: evidence.source,
+              derived_fields: evidence.derivedFields,
+              warnings: evidence.warnings,
+              has_explicit_evidence: evidence.hasExplicitEvidence,
+              repair_duration_hours: evidence.repairDurationHours,
+              downtime_start: evidence.downtimeStart,
+              downtime_end: evidence.downtimeEnd,
+              failure_date: evidence.failureDate,
+            },
+          });
+          reliabilityEvidenceWarning = recorded.warning;
         } else {
           // Non-corrective work without explicit evidence — pm_completions or
           // installation_records carry primary evidence elsewhere. No
