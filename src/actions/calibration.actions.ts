@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { recomputeAssetAnalytics } from './analytics.actions';
 import { getActionContextForCapability, getActionContextForAnyCapability, logServerAuditEvent, revalidateMany, actionError, nullIfEmpty, type ActionResult } from './_shared';
+import { denialMessage } from '@/lib/rbac/department-scope';
 
 const calibrationPaths = ['/calibration', '/calendar', '/command', '/reports/calibration'];
 
@@ -85,7 +86,32 @@ export async function createCalibrationRequestAction(payload: Record<string, unk
       status: z.string().optional(),
       notes: z.string().optional().nullable(),
     }).parse(payload);
-    const data = { ...parsed, request_number: `CAL-${Date.now().toString(36).toUpperCase()}`, requested_by: nullIfEmpty(parsed.requested_by) ?? profile.id, calibration_type_id: nullIfEmpty(parsed.calibration_type_id), status: parsed.status ?? 'pending', notes: nullIfEmpty(parsed.notes) };
+    if (profile.departmentScope.kind === 'denied') {
+      return { success: false, error: denialMessage(profile.departmentScope.reason) };
+    }
+
+    const assetLookup = await supabase
+      .from('equipment_assets')
+      .select('id, department_id')
+      .eq('id', parsed.asset_id)
+      .maybeSingle();
+    if (assetLookup.error) return { success: false, error: assetLookup.error.message };
+    if (!assetLookup.data) {
+      return {
+        success: false,
+        error: 'Calibration request could not be created because the selected asset was not found or is outside your department.',
+      };
+    }
+
+    const asset = assetLookup.data as { id: string; department_id: string | null };
+    if (profile.departmentScope.kind === 'department' && asset.department_id !== profile.departmentScope.departmentId) {
+      return {
+        success: false,
+        error: 'Calibration request could not be created because the selected asset is outside your department.',
+      };
+    }
+
+    const data = { ...parsed, request_number: `CAL-${Date.now().toString(36).toUpperCase()}`, requested_by: nullIfEmpty(parsed.requested_by) ?? profile.id, calibration_type_id: nullIfEmpty(parsed.calibration_type_id), status: 'pending', notes: nullIfEmpty(parsed.notes) };
     const result = await supabase.from('calibration_requests').insert(data as never).select('*').single();
     if (result.error) return { success: false, error: result.error.message };
     await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_request.create', entityType: 'calibration_requests', entityId: (result.data as { id?: string }).id ?? null, newValues: result.data as Record<string, unknown> });
