@@ -684,15 +684,31 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
               .select('id')
               .maybeSingle();
             if (updateEvent.error || !updateEvent.data) {
+              // Translate the raw PostgREST RLS / constraint message into a
+              // user-actionable warning. The raw message is preserved in the
+              // audit row so a developer can trace it later. The user sees a
+              // sentence that names the table and the likely fix (apply
+              // migration 00068 / extend RLS for the caller's role) rather
+              // than a copy-pasted Postgres error.
+              const rawError =
+                updateEvent.error?.message ?? 'Update returned 0 rows (likely RLS UPDATE policy excludes the caller).';
               reliabilityEvidenceWarning =
-                updateEvent.error?.message ?? 'Reliability evidence could not be updated (RLS or row missing).';
+                'Reliability evidence could not be updated on maintenance_events. ' +
+                'Likely cause: the RLS UPDATE policy does not include this role. ' +
+                'Verify migration 00068 is applied (adds bme_head) and that the user has work_order.complete capability.';
+              console.error('[maintenance] reliability evidence UPDATE failed:', {
+                workOrderId: id,
+                assetId,
+                profileId: profile.id,
+                postgrestError: rawError,
+              });
               await logServerAuditEvent({
                 supabase,
                 profileId: profile.id,
                 action: 'work_order.reliability_evidence_write_failed',
                 entityType: 'work_orders',
                 entityId: id,
-                details: { asset_id: assetId, mode: 'update', error: reliabilityEvidenceWarning },
+                details: { asset_id: assetId, mode: 'update', postgrest_error: rawError },
               });
             } else {
               await logServerAuditEvent({
@@ -717,15 +733,33 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
               .select('id')
               .maybeSingle();
             if (eventInsert.error || !eventInsert.data) {
-              reliabilityEvidenceWarning =
-                eventInsert.error?.message ?? 'Reliability evidence could not be recorded (RLS or constraint violation).';
+              // Same translation rationale as the UPDATE path above.
+              // PostgREST's raw "new row violates row-level security policy
+              // for table maintenance_events" is preserved in audit but not
+              // surfaced to the user — they get an actionable warning that
+              // names the table and the likely fix.
+              const rawError =
+                eventInsert.error?.message ?? 'Insert returned 0 rows (likely RLS INSERT policy excludes the caller).';
+              const isRls = /row-level security|new row violates/i.test(rawError);
+              reliabilityEvidenceWarning = isRls
+                ? 'Reliability evidence could not be recorded on maintenance_events (row-level security blocked the insert). ' +
+                  'Apply migration 00068 on Supabase to grant bme_head INSERT/UPDATE on maintenance_events. ' +
+                  'Until applied, MTTR / MTBF / availability will not refresh for this completion.'
+                : `Reliability evidence could not be recorded on maintenance_events: ${rawError}`;
+              console.error('[maintenance] reliability evidence INSERT failed:', {
+                workOrderId: id,
+                assetId,
+                profileId: profile.id,
+                eventType: evidence.eventType,
+                postgrestError: rawError,
+              });
               await logServerAuditEvent({
                 supabase,
                 profileId: profile.id,
                 action: 'work_order.reliability_evidence_write_failed',
                 entityType: 'work_orders',
                 entityId: id,
-                details: { asset_id: assetId, mode: 'insert', error: reliabilityEvidenceWarning },
+                details: { asset_id: assetId, mode: 'insert', postgrest_error: rawError, rls_blocked: isRls },
               });
             } else {
               await logServerAuditEvent({
