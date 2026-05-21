@@ -59,7 +59,10 @@ async function fetchProfilesByRoleName(
   let query = client
     .from('profiles')
     .select(
-      'id, full_name, email, department_id, is_active, user_roles!inner(roles!inner(name))',
+      // PostgREST FK hint: user_roles has two FKs to profiles (user_id,
+      // assigned_by). Without the hint, PGRST201 silently zeros every
+      // recipient lookup and notifications never reach any role.
+      'id, full_name, email, department_id, is_active, user_roles!user_roles_user_id_fkey!inner(roles!inner(name))',
     )
     .eq('is_active', true)
     .eq('user_roles.roles.name', roleName);
@@ -133,7 +136,10 @@ export async function getProfileById(
   const { data, error } = (await client
     .from('profiles')
     .select(
-      'id, full_name, email, department_id, is_active, user_roles!inner(roles!inner(name))',
+      // PostgREST FK hint: user_roles has two FKs to profiles (user_id,
+      // assigned_by). Without the hint, PGRST201 silently zeros every
+      // recipient lookup and notifications never reach any role.
+      'id, full_name, email, department_id, is_active, user_roles!user_roles_user_id_fkey!inner(roles!inner(name))',
     )
     .eq('id', profileId)
     .maybeSingle()) as { data: ProfileRolesRow | null; error: unknown };

@@ -173,7 +173,7 @@ export default async function DeveloperLabPage({ searchParams }: { searchParams:
     supabase.from('calibration_records').select('id, asset_id, next_due_date, result').limit(5000),
     supabase.from('spare_parts').select('id, current_stock, reorder_level, is_active').limit(5000),
     supabase.from('procurement_requests').select('id, status, expected_delivery_date').limit(5000),
-    supabase.from('profiles').select('id, user_id, is_active, user_roles(id)').limit(5000),
+    supabase.from('profiles').select('id, user_id, is_active, user_roles!user_roles_user_id_fkey(id)').limit(5000),
     supabase.from('departments').select('id, name, is_active').limit(5000),
     supabase.from('equipment_categories').select('id, name, criticality_level').limit(5000),
     supabase.from('disposal_requests').select('id, asset_id, status').limit(5000),

@@ -53,7 +53,10 @@ export async function fetchCurrentTechnicianWorkload(
   const [techniciansRes, woRes] = await Promise.all([
     supabase
       .from('profiles')
-      .select('id, full_name, email, departments(name), user_roles!inner(roles!inner(name))')
+      // PostgREST disambiguation: user_roles has two FKs to profiles (user_id,
+      // assigned_by). Hint forces PostgREST to use the user_id relationship,
+      // otherwise PGRST201 silently zeros the technician roster.
+      .select('id, full_name, email, departments(name), user_roles!user_roles_user_id_fkey!inner(roles!inner(name))')
       .eq('is_active', true)
       .eq('user_roles.roles.name', 'technician')
       .order('full_name', { ascending: true })

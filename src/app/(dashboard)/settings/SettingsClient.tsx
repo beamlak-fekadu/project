@@ -334,11 +334,23 @@ export default function SettingsClient() {
       usersService.getRoles(),
       supabase.from('audit_logs').select('id, action, entity_type, created_at').order('created_at', { ascending: false }).limit(10),
     ]);
+    // Surface load failures instead of silently rendering 0 — a PostgREST
+    // embed error here used to leave the page showing "0 profiles" with no
+    // explanation. Now the user sees a toast and the developer console gets
+    // the raw error.
+    if (profileRes.error) {
+      console.error('[settings] failed to load profiles:', profileRes.error);
+      toast('error', 'Failed to load staff profiles. Check Developer Lab for diagnostics.');
+    }
+    if (rolesRes.error) {
+      console.error('[settings] failed to load roles:', rolesRes.error);
+      toast('error', 'Failed to load roles.');
+    }
     if (profileRes.data) setProfiles(profileRes.data as unknown as ProfileRow[]);
     if (rolesRes.data) setRoles(rolesRes.data as unknown as RoleOption[]);
     if (auditRes.data) setAuditRows(auditRes.data as Record<string, unknown>[]);
     setSettingsLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadSettingsData(), 0);

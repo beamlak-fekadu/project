@@ -485,7 +485,9 @@ export async function getQrRoleContext({
   const pmRows = await runQuery(health, 'pm_schedules', async () => {
     const { data, error } = await supabase
       .from('pm_schedules')
-      .select('id, status, scheduled_date, assigned_to, completed_at, updated_at, profiles(full_name, email)')
+      // FK hint: pm_schedules has two FKs to profiles (assigned_to, completed_by).
+      // QR context wants the technician currently assigned to the upcoming PM.
+      .select('id, status, scheduled_date, assigned_to, completed_at, updated_at, profiles!pm_schedules_assigned_to_fkey(full_name, email)')
       .eq('asset_id', asset.id)
       .order('scheduled_date', { ascending: false })
       .limit(25);

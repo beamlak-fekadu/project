@@ -54,7 +54,9 @@ export async function getDemoRoleIntegrityDiagnostics(supabase: SupabaseServerCl
   const emails = EXPECTED_DEMO_USERS.map((user) => user.email);
   const { data } = await supabase
     .from('profiles')
-    .select('id, email, full_name, job_title, user_id, departments(name), user_roles(id, roles(name))')
+    // PostgREST FK hint: user_roles has two FKs to profiles (user_id,
+    // assigned_by). Without it, demo-role validation silently returns 0 rows.
+    .select('id, email, full_name, job_title, user_id, departments(name), user_roles!user_roles_user_id_fkey(id, roles(name))')
     .in('email', emails);
 
   const fallbackRows = ((data ?? []) as Array<Record<string, unknown>>).map((row): DemoRoleValidationInput => {
@@ -192,12 +194,14 @@ export async function getNotificationRoleDependencyDiagnostics(supabase: Supabas
     const [profilesRes, telegramRes] = await Promise.all([
       supabase
         .from('profiles')
-        .select('id, user_roles!inner(roles!inner(name))', { count: 'exact', head: true })
+        // PostgREST FK hint: user_roles has two FKs to profiles (user_id,
+        // assigned_by). Without it PGRST201 silently zeros every count.
+        .select('id, user_roles!user_roles_user_id_fkey!inner(roles!inner(name))', { count: 'exact', head: true })
         .eq('is_active', true)
         .eq('user_roles.roles.name', role),
       supabase
         .from('telegram_connections')
-        .select('id, profiles!inner(id, is_active, user_roles!inner(roles!inner(name)))', { count: 'exact', head: true })
+        .select('id, profiles!inner(id, is_active, user_roles!user_roles_user_id_fkey!inner(roles!inner(name)))', { count: 'exact', head: true })
         .eq('profiles.is_active', true)
         .eq('profiles.user_roles.roles.name', role),
     ]);

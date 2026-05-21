@@ -6,12 +6,14 @@ export interface DisposalFilters {
   asset_id?: string;
 }
 
+// FK hint: disposal_requests has two FKs to profiles (requested_by,
+// approved_by). Without it PGRST201 silently zeros the requester column.
 const REQUEST_SELECT = `
   id, request_number, asset_id, requested_by, reason,
   disposal_method_proposed, status, approved_by, approved_at, notes,
   created_at, updated_at,
   equipment_assets(id, asset_code, name, department_id),
-  profiles(id, full_name)
+  profiles!disposal_requests_requested_by_fkey(id, full_name)
 `;
 
 export async function getDisposalRequests(filters: DisposalFilters = {}) {

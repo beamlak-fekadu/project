@@ -263,7 +263,8 @@ export async function getAuditSecurityReport(filters: ReportFilters = {}) {
   const supabase = createClient();
   let query = supabase
     .from('audit_logs')
-    .select('id, action, entity_type, entity_id, old_values, new_values, created_at, profiles(full_name, email)');
+    // FK hint required: audit_logs has two FKs to profiles (performed_by, user_id).
+    .select('id, action, entity_type, entity_id, old_values, new_values, created_at, profiles!audit_logs_performed_by_fkey(full_name, email)');
 
   if (filters.date_from) query = query.gte('created_at', filters.date_from);
   if (filters.date_to) query = query.lte('created_at', filters.date_to);

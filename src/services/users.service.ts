@@ -2,11 +2,18 @@ import { createClient } from '@/lib/supabase/client';
 import type { Profile, UserRole } from '@/types/domain';
 import { logAuditEvent } from './audit.service';
 
+// PostgREST ambiguity guard: user_roles has TWO FKs to profiles
+// (user_id, assigned_by) and audit_logs/pm_schedules/notifications also have
+// multiple FKs to profiles. Without `!user_roles_user_id_fkey` PostgREST
+// raises PGRST201 ("Could not embed because more than one relationship was
+// found"), the entire select silently fails, and the calling page renders
+// zero rows. Keep the explicit FK hint on every user_roles embed against
+// profiles in this service AND across the rest of the codebase.
 const PROFILE_SELECT = `
   id, user_id, full_name, email, phone, department_id,
   avatar_url, job_title, is_active, created_at, updated_at,
   departments(id, name, code),
-  user_roles(id, role_id, assigned_at, roles(id, name, description, permissions))
+  user_roles!user_roles_user_id_fkey(id, role_id, assigned_at, roles(id, name, description, permissions))
 `;
 
 const PROFILE_SIMPLE_SELECT = `
@@ -61,7 +68,7 @@ export async function getActiveTechnicians() {
       id, user_id, full_name, email, phone, department_id, job_title,
       avatar_url, is_active, created_at, updated_at,
       departments(id, name, code),
-      user_roles!inner(id, role_id, assigned_at, roles!inner(id, name, description, permissions))
+      user_roles!user_roles_user_id_fkey!inner(id, role_id, assigned_at, roles!inner(id, name, description, permissions))
     `)
     .eq('is_active', true)
     .in('user_roles.roles.name', ['technician', 'bme_head'])

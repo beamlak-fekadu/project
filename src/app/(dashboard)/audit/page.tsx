@@ -36,7 +36,9 @@ export default async function AuditLogPage({ searchParams }: { searchParams: Sea
 
   let query = supabase
     .from('audit_logs')
-    .select('id, user_id, action, entity_type, entity_id, old_values, new_values, created_at, profiles(full_name, email)', { count: 'exact' })
+    // PostgREST FK hint: audit_logs has two FKs to profiles (performed_by,
+    // user_id). Without it PGRST201 hides every audit row.
+    .select('id, user_id, action, entity_type, entity_id, old_values, new_values, created_at, profiles!audit_logs_performed_by_fkey(full_name, email)', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, to);
 

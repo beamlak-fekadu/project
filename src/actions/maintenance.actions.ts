@@ -717,7 +717,10 @@ async function setWorkOrderAssignee(id: string, technicianProfileId: string, act
 
     const technician = await supabase
       .from('profiles')
-      .select('id, full_name, is_active, user_roles!inner(roles!inner(name))')
+      // PostgREST disambiguation: user_roles has two FKs to profiles
+      // (user_id, assigned_by). Without the FK hint PostgREST raises PGRST201
+      // and this validation silently rejects every selected technician.
+      .select('id, full_name, is_active, user_roles!user_roles_user_id_fkey!inner(roles!inner(name))')
       .eq('id', parsedId)
       .eq('is_active', true)
       .eq('user_roles.roles.name', 'technician')
