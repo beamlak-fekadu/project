@@ -50,6 +50,21 @@ test('PART 9: UI gate uses can(calibration.request.create), not a role-list chec
   assert.match(src, /canRequestCalibration/);
 });
 
+test('PART 9: overdue/upcoming action column uses canRequestCalibration for "Create Calibration Request" label', () => {
+  // Root-cause regression: the overdue/upcoming table action column was gating
+  // the "Create Calibration Request" button on canManageMaintenance instead of
+  // canRequestCalibration. Department Head/User have canRequestCalibration=true
+  // but canManageMaintenance=false, so they never saw the button.
+  // This test ensures the fix is preserved: the "Create Calibration Request"
+  // branch must use canRequestCalibration, NOT canManageMaintenance.
+  const src = readSource('src/app/(dashboard)/calibration/page.tsx');
+  // The label-based branch for request creation uses the request capability.
+  assert.match(src, /canRequestCalibration && label === 'Create Calibration Request'/);
+  // The execution branches (Record Result / Prepare Calibration) still use
+  // canManageMaintenance — department roles should not trigger BME execution.
+  assert.match(src, /canManageMaintenance && label !== 'Create Calibration Request'/);
+});
+
 test('PART 9: createCalibrationRequestAction validates department scope server-side', () => {
   const src = readSource('src/actions/calibration.actions.ts');
   // Must verify profile.departmentScope.kind for dept roles.

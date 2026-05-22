@@ -583,7 +583,7 @@ export default function CalibrationPage() {
         const label = overdue && isCriticalCalibration(row) ? 'Create Calibration Request' : overdue ? 'Record Calibration Result' : 'Prepare Calibration';
         return (
           <div className="flex flex-wrap gap-1.5">
-            {canManageMaintenance && label === 'Create Calibration Request' && (
+            {canRequestCalibration && label === 'Create Calibration Request' && (
               <button
                 type="button"
                 onClick={() => {
