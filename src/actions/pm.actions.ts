@@ -6,9 +6,9 @@ import { getActionContextForCapability, logServerAuditEvent, revalidateMany, act
 import { OPEN_MAINTENANCE_REQUEST_STATUSES } from '@/utils/maintenance/request-status';
 import { datePlusDays } from '@/utils/pm/semantics';
 import {
-  NOTIFICATION_DELIVERY_REVIEW_WARNING,
   createNotificationEvent,
   emitNotificationEvent,
+  makeFailedNotificationResult,
   notificationDeliveryNeedsReview,
   notificationReviewDetail,
 } from '@/services/notifications/notification-engine';
@@ -515,17 +515,18 @@ export async function assignPMScheduleAction(id: string, assignedTo: string | nu
           warnings.push('notification_delivery_needs_review');
         }
       } catch (e) {
-        warnings.push('notification_delivery_needs_review');
+        console.error('[notifications] pm.assigned emit failed:', e);
+        const failed = makeFailedNotificationResult('pm.assigned', e);
+        if (notificationDeliveryNeedsReview(failed)) warnings.push('notification_delivery_needs_review');
         notificationStatus = {
           rule_status: 'failed',
-          notification_count: 0,
-          recipients_resolved: 0,
-          warnings: [NOTIFICATION_DELIVERY_REVIEW_WARNING],
-          errors: [e instanceof Error ? e.message : 'unknown_notification_error'],
-          error: e instanceof Error ? e.message : 'unknown_notification_error',
-          detail: e instanceof Error ? e.message : 'unknown_notification_error',
+          notification_count: failed.notificationCount,
+          recipients_resolved: failed.recipientsResolved,
+          warnings: failed.warnings,
+          errors: failed.errors,
+          error: failed.errors[0],
+          detail: notificationReviewDetail(failed),
         };
-        console.error('[notifications] pm.assigned emit failed:', e);
       }
     }
     if (warnings.includes('notification_delivery_needs_review')) {

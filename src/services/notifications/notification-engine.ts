@@ -46,7 +46,14 @@ export const NOTIFICATION_DELIVERY_REVIEW_WARNING =
 export function notificationDeliveryNeedsReview(
   result: Pick<NotificationProcessResult, 'ok' | 'notificationCount' | 'recipientsResolved' | 'warnings' | 'errors'> | null | undefined,
 ): boolean {
-  if (!result) return true;
+  // null means the catch block fired before a result was produced — the
+  // action catch block now always supplies makeFailedNotificationResult()
+  // instead of null, so null here is a true unexpected edge-case that
+  // should not produce a user-visible toast (it is logged separately).
+  if (!result) return false;
+  // Only flag when the in-app delivery genuinely failed.
+  // Telegram failures land in warnings (not errors) so they do NOT count
+  // as "needs review" from the user's perspective.
   return !result.ok || result.notificationCount === 0 || result.recipientsResolved === 0 || result.errors.length > 0;
 }
 
@@ -59,6 +66,34 @@ export function notificationReviewDetail(
   if (result.recipientsResolved === 0) return `${result.eventType}: no deliverable recipients were resolved`;
   if (result.notificationCount === 0) return `${result.eventType}: no in-app notification row was created`;
   return null;
+}
+
+// Build a well-typed failed result for use inside action catch blocks so
+// the notification result variable is never left as null. This prevents the
+// "notification engine did not return a processing result" false-positive.
+export function makeFailedNotificationResult(
+  eventType: string,
+  err: unknown,
+): NotificationProcessResult {
+  const message = err instanceof Error ? err.message : String(err ?? 'notification_emit_failed');
+  return {
+    ok: false,
+    eventType,
+    notificationCount: 0,
+    recipientsResolved: 0,
+    ruleLogs: [],
+    delivery: {
+      inAppCreated: 0,
+      telegramSent: 0,
+      telegramSkipped: 0,
+      telegramFailed: 0,
+      monitorSent: 0,
+      monitorSkipped: 0,
+      monitorFailed: 0,
+    },
+    warnings: [],
+    errors: [message],
+  };
 }
 
 export function notificationProcessSnapshot(
@@ -231,8 +266,25 @@ export async function processNotificationEvent(
     });
   }
 
-  // Apply rules — role-aware fan-out.
-  const ruleResult = await applyNotificationRules(client, event);
+  // Apply rules — role-aware fan-out. Wrapped in try/catch so any
+  // unhandled throw inside rule functions or diagnostics builders returns
+  // a structured error result rather than propagating to the caller.
+  let ruleResult: Awaited<ReturnType<typeof applyNotificationRules>>;
+  try {
+    ruleResult = await applyNotificationRules(client, event);
+  } catch (ruleErr) {
+    const message = ruleErr instanceof Error ? ruleErr.message : 'notification_rule_threw';
+    console.error('[notifications] applyNotificationRules threw:', message);
+    await client.from('notification_events').update({
+      processing_status: 'failed',
+      processing_error: message,
+      processed_at: new Date().toISOString(),
+    } as never).eq('id', event.id);
+    return {
+      ...emptyProcessResult({ eventType: event.event_type, event, ruleStatus: 'failed', errors: [message] }),
+      rule_status: 'failed',
+    };
+  }
   let ruleLogStatus: NotificationRuleLogStatus = ruleResult.status;
   let processingStatus: NotificationEventRow['processing_status'] =
     ruleResult.status === 'failed' ? 'failed' : ruleResult.status === 'skipped' ? 'skipped' : 'processed';
@@ -316,9 +368,17 @@ export async function processNotificationEvent(
       foldDelivery(delivery, inserted.delivery);
     }
     if (inserted.error) {
-      const message = `Notification insert failed for recipient ${input.recipient_profile_id}: ${inserted.error}`;
-      errors.push(message);
-      if (isInsertFailure({ message: inserted.error })) warnings.push(message);
+      if (inserted.inAppCreated > 0) {
+        // In-app row was created; the error came from the Telegram delivery
+        // path. Telegram is a bonus channel — its failure must not trigger a
+        // user-visible "needs review" warning, so this goes to warnings only.
+        warnings.push(`telegram_delivery_failed for ${input.recipient_profile_id}: ${inserted.error}`);
+      } else {
+        // In-app insert actually failed — this is a genuine delivery gap.
+        const message = `Notification insert failed for recipient ${input.recipient_profile_id}: ${inserted.error}`;
+        errors.push(message);
+        if (isInsertFailure({ message: inserted.error })) warnings.push(message);
+      }
     }
   }
 
@@ -386,13 +446,10 @@ async function createNotificationForProfileWithResult(
         try {
           delivery = await deliverTelegramIfEligible(client, updated);
         } catch (err) {
+          // Telegram failure on a deduped row: in-app was already delivered.
+          // Log but do NOT propagate as an error — this must not trigger a
+          // user-visible "needs review" warning.
           console.error('[notifications] dedupe delivery error:', err);
-          return {
-            notification: updated,
-            inAppCreated: 0,
-            delivery,
-            error: err instanceof Error ? err.message : 'telegram_delivery_error',
-          };
         }
       }
       return { notification: updated, inAppCreated: 0, delivery };
@@ -420,6 +477,7 @@ async function createNotificationForProfileWithResult(
       .select('*')
       .single()) as { data: NotificationRow | null; error: { message?: string } | null };
     if (error || !data) {
+      // In-app insert failed — this is a real error that blocks delivery.
       console.error('[notifications] failed to insert notification:', error?.message);
       return {
         notification: null,
@@ -432,13 +490,11 @@ async function createNotificationForProfileWithResult(
     try {
       delivery = await deliverTelegramIfEligible(client, data);
     } catch (err) {
-      console.error('[notifications] delivery error:', err);
-      return {
-        notification: data,
-        inAppCreated: 1,
-        delivery,
-        error: err instanceof Error ? err.message : 'telegram_delivery_error',
-      };
+      // Telegram delivery failed after in-app succeeded. The in-app
+      // notification is the source of truth; Telegram is a bonus channel.
+      // Log for diagnostics but do NOT set error — returning without an
+      // error ensures this is treated as a successful delivery.
+      console.error('[notifications] telegram delivery error:', err);
     }
     return { notification: data, inAppCreated: 1, delivery };
   } catch (err) {

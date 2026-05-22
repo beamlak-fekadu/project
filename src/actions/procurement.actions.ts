@@ -5,6 +5,7 @@ import { getActionContextForCapability, logServerAuditEvent, refreshDecisionSupp
 import {
   NOTIFICATION_DELIVERY_REVIEW_WARNING,
   createNotificationEvent,
+  makeFailedNotificationResult,
   notificationDeliveryNeedsReview,
   notificationProcessSnapshot,
   notificationReviewDetail,
@@ -149,11 +150,11 @@ export async function updateProcurementStatusAction(id: string, status: string):
         });
       } catch (e) {
         console.error('[notifications] procurement.delivered emit failed:', e);
-        notificationWarning = NOTIFICATION_DELIVERY_REVIEW_WARNING;
-        notificationResult = {
-          error: e instanceof Error ? e.message : 'unknown_notification_error',
-          detail: e instanceof Error ? e.message : 'unknown_notification_error',
-        };
+        const failed = makeFailedNotificationResult('procurement.delivered', e);
+        if (notificationDeliveryNeedsReview(failed)) {
+          notificationWarning = NOTIFICATION_DELIVERY_REVIEW_WARNING;
+          notificationResult = { ...notificationProcessSnapshot(failed), detail: notificationReviewDetail(failed) };
+        }
       }
     }
 

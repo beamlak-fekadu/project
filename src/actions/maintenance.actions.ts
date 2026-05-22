@@ -13,6 +13,7 @@ import {
 import {
   NOTIFICATION_DELIVERY_REVIEW_WARNING,
   createNotificationEvent,
+  makeFailedNotificationResult,
   notificationDeliveryNeedsReview,
   notificationProcessSnapshot,
   notificationReviewDetail,
@@ -344,6 +345,7 @@ export async function createMaintenanceRequestAction(payload: Record<string, unk
       });
     } catch (e) {
       console.error('[notifications] maintenance_request.created emit failed:', e);
+      notificationResult = makeFailedNotificationResult('maintenance_request.created', e);
     }
 
     revalidateMany([...maintenancePaths, `/equipment/${parsed.asset_id}`]);
@@ -422,6 +424,7 @@ export async function updateRequestStatusAction(id: string, status: string): Pro
       });
     } catch (e) {
       console.error('[notifications] maintenance_request.status_changed emit failed:', e);
+      notificationResult = makeFailedNotificationResult('maintenance_request.status_changed', e);
     }
 
     revalidateMany([...maintenancePaths, `/maintenance/requests/${id}`]);
@@ -602,6 +605,9 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
       notificationResults.push(primaryWorkOrderNotification);
     } catch (e) {
       console.error('[notifications] work_order.created emit failed:', e);
+      primaryWorkOrderNotification = makeFailedNotificationResult(
+        woRow.assigned_to ? 'work_order.assigned' : 'work_order.created', e,
+      );
     }
 
     revalidateMany([
@@ -979,6 +985,7 @@ async function setWorkOrderAssignee(id: string, technicianProfileId: string, act
       });
     } catch (e) {
       console.error('[notifications] work_order.assigned emit failed:', e);
+      notificationResult = makeFailedNotificationResult('work_order.assigned', e);
     }
 
     revalidateMany([...maintenancePaths, `/maintenance/work-orders/${id}`]);

@@ -7,6 +7,7 @@ import { denialMessage } from '@/lib/rbac/department-scope';
 import {
   NOTIFICATION_DELIVERY_REVIEW_WARNING,
   createNotificationEvent,
+  makeFailedNotificationResult,
   notificationDeliveryNeedsReview,
   notificationProcessSnapshot,
   notificationReviewDetail,
@@ -319,11 +320,11 @@ export async function createCalibrationRecordAction(payload: Record<string, unkn
         }
       } catch (e) {
         console.error('[notifications] calibration.failed_or_adjusted emit failed:', e);
-        notificationWarning = NOTIFICATION_DELIVERY_REVIEW_WARNING;
-        notificationResult = {
-          error: e instanceof Error ? e.message : 'unknown_notification_error',
-          detail: e instanceof Error ? e.message : 'unknown_notification_error',
-        };
+        const failed = makeFailedNotificationResult('calibration.failed_or_adjusted', e);
+        if (notificationDeliveryNeedsReview(failed)) {
+          notificationWarning = NOTIFICATION_DELIVERY_REVIEW_WARNING;
+          notificationResult = { ...notificationProcessSnapshot(failed), detail: notificationReviewDetail(failed) };
+        }
       }
     }
 
