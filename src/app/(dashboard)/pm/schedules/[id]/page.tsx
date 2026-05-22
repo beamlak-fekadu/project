@@ -253,7 +253,10 @@ export default function PMScheduleDetailPage() {
       getWorkOrders(),
     ]);
 
-    setHistory(((historyRes.data ?? []) as unknown as ScheduleDetail[]).filter((item) => item.id !== id));
+    // Include the current schedule in the history list when it is completed so
+    // the "PM History" card is not empty after the first completion on this plan.
+    // The current schedule row is sorted to the top since it is the most recent.
+    setHistory((historyRes.data ?? []) as unknown as ScheduleDetail[]);
     if (techRes.error) {
       const message = techRes.error.message ?? 'Unable to load technician profiles.';
       console.error('[pm] Failed to load active technicians:', techRes.error);

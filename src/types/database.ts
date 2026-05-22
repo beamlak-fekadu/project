@@ -214,6 +214,7 @@ export type Database = {
           id: string
           next_due_date: string | null
           notes: string | null
+          request_id: string | null
           result: string
           updated_at: string
         }
@@ -227,6 +228,7 @@ export type Database = {
           id?: string
           next_due_date?: string | null
           notes?: string | null
+          request_id?: string | null
           result: string
           updated_at?: string
         }
@@ -240,6 +242,7 @@ export type Database = {
           id?: string
           next_due_date?: string | null
           notes?: string | null
+          request_id?: string | null
           result?: string
           updated_at?: string
         }
@@ -270,6 +273,13 @@ export type Database = {
             columns: ["calibration_type_id"]
             isOneToOne: false
             referencedRelation: "calibration_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calibration_records_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "calibration_requests"
             referencedColumns: ["id"]
           },
         ]
@@ -2768,7 +2778,7 @@ export type Database = {
           dedupe_key: string | null
           department_id: string | null
           entity_id: string | null
-          entity_type: string
+          entity_type: string | null
           event_type: string
           id: string
           message: string | null
@@ -2796,7 +2806,7 @@ export type Database = {
           dedupe_key?: string | null
           department_id?: string | null
           entity_id?: string | null
-          entity_type: string
+          entity_type?: string | null
           event_type: string
           id?: string
           message?: string | null
@@ -2824,7 +2834,7 @@ export type Database = {
           dedupe_key?: string | null
           department_id?: string | null
           entity_id?: string | null
-          entity_type?: string
+          entity_type?: string | null
           event_type?: string
           id?: string
           message?: string | null

@@ -187,6 +187,9 @@ export default function CalibrationPage() {
   const [recResult, setRecResult] = useState<CalibrationResult>('pass');
   const [recCalibratedBy, setRecCalibratedBy] = useState('');
   const [recNotes, setRecNotes] = useState('');
+  // Tracks the originating calibration_request UUID (from URL param or open-request lookup).
+  // Passed to createCalibrationRecordAction so the request is marked completed.
+  const [recRequestId, setRecRequestId] = useState<string | null>(null);
 
   // Request form
   const [reqAssetId, setReqAssetId] = useState('');
@@ -243,6 +246,10 @@ export default function CalibrationPage() {
       setReqTypeId(calibrationTypeId);
       setRecTypeId(calibrationTypeId);
     }
+    // Pre-fill the originating request ID when navigating from a request detail page.
+    // The action will use this to mark the request as completed on record creation.
+    const inboundRequestId = searchParams.get('requestId');
+    if (inboundRequestId) setRecRequestId(inboundRequestId);
     if (searchParams.get('action') === 'record-result') setRecordModalOpen(true);
     if (searchParams.get('action') === 'new-request') setRequestModalOpen(true);
   }, [searchParams]);
@@ -266,8 +273,13 @@ export default function CalibrationPage() {
       return;
     }
     setSubmitting(true);
+    // Auto-detect the open request for this asset if no explicit requestId was
+    // supplied via URL param. This links the record to its originating request
+    // even when the technician opens the modal directly from the calibration page.
+    const resolvedRequestId: string | null = recRequestId ?? (openRequestForAsset(recAssetId)?.id as string | undefined) ?? null;
     const payload = {
       asset_id: recAssetId,
+      request_id: resolvedRequestId,
       calibration_type_id: recTypeId || null,
       calibrated_by: recCalibratedBy || null,
       calibration_date: recDate,
@@ -306,6 +318,7 @@ export default function CalibrationPage() {
     const actionResult = result.data as { data?: {
       notification_warning?: string;
       notification_result?: { detail?: string | null };
+      request_close_warning?: string;
     } };
     const notificationData = actionResult.data;
     if (notificationData?.notification_warning) {
@@ -313,7 +326,10 @@ export default function CalibrationPage() {
         ? `Calibration record created. Notification delivery needs review: ${notificationData.notification_result.detail}`
         : 'Calibration record created, but notification delivery needs review.');
     } else {
-      toast('success', 'Calibration record created');
+      toast('success', 'Calibration record created' + (resolvedRequestId ? ' — request marked completed' : ''));
+    }
+    if (notificationData?.request_close_warning) {
+      toast('warning', notificationData.request_close_warning);
     }
     setRecordModalOpen(false);
     resetRecordForm();
@@ -368,6 +384,7 @@ export default function CalibrationPage() {
   const resetRecordForm = () => {
     setRecAssetId(''); setRecTypeId(''); setRecDate('');
     setRecNextDue(''); setRecResult('pass'); setRecCalibratedBy(''); setRecNotes('');
+    setRecRequestId(null);
   };
 
   const resetRequestForm = () => {

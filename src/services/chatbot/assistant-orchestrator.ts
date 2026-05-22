@@ -88,10 +88,20 @@ function derivePageAwareCapability(params: {
 
   if ((moduleContext?.qrToken || route.startsWith('/qr/a/')) && generic) return 'qr_asset_context';
   if ((moduleContext?.reportType || route.startsWith('/reports')) && generic) return 'report_summary';
-  if ((moduleContext?.queueStatus || route.startsWith('/offline-sync')) && generic) return 'offline_sync_status';
+  // Work-order entity context takes priority over peripheral offline-sync state.
+  // The WO detail page always passes a truthy queueStatus object; checking it
+  // before the work-order route would misroute "Summarize this work order" to
+  // offline_sync_status because isGenericPageFollowUp matches "summarize this".
   if ((contextRefs?.workOrderId || selected.includes('work_order') || route.includes('/maintenance/work-orders/')) && generic) {
     return 'summarize_work_order';
   }
+  // Only activate offline_sync when the user is on that page or has real
+  // pending items (failed or conflict), not just any truthy queueStatus object.
+  const offlinePending = typeof moduleContext?.queueStatus === 'object' && moduleContext.queueStatus !== null
+    ? ((moduleContext.queueStatus as Record<string, number>).failed ?? 0)
+      + ((moduleContext.queueStatus as Record<string, number>).conflict ?? 0)
+    : 0;
+  if ((offlinePending > 0 || route.startsWith('/offline-sync')) && generic) return 'offline_sync_status';
   if (route.startsWith('/maintenance/requests/new') || /\b(help me report|report a problem|problem with this equipment|create.*maintenance request)\b/i.test(message)) {
     return 'general_system_fallback';
   }

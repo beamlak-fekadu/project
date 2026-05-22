@@ -248,6 +248,10 @@ export async function createCalibrationRecordAction(payload: Record<string, unkn
     if (error || !profile) return { success: false, error };
     const parsed = z.object({
       asset_id: z.string().min(1),
+      // request_id links this record back to the originating calibration_request
+      // (added by migration 00081). When present the action marks the request
+      // as completed so the request lifecycle closes properly.
+      request_id: z.string().uuid().optional().nullable(),
       calibration_type_id: z.string().optional().nullable(),
       calibrated_by: z.string().optional().nullable(),
       calibration_date: z.string().min(1),
@@ -256,10 +260,40 @@ export async function createCalibrationRecordAction(payload: Record<string, unkn
       certificate_path: z.string().optional().nullable(),
       notes: z.string().optional().nullable(),
     }).parse(payload);
-    const data = { ...parsed, calibration_type_id: nullIfEmpty(parsed.calibration_type_id), calibrated_by: nullIfEmpty(parsed.calibrated_by), next_due_date: nullIfEmpty(parsed.next_due_date), certificate_path: nullIfEmpty(parsed.certificate_path), notes: nullIfEmpty(parsed.notes) };
+    const requestId: string | null = parsed.request_id ?? null;
+    const data = {
+      asset_id: parsed.asset_id,
+      request_id: requestId,
+      calibration_type_id: nullIfEmpty(parsed.calibration_type_id),
+      calibrated_by: nullIfEmpty(parsed.calibrated_by),
+      calibration_date: parsed.calibration_date,
+      next_due_date: nullIfEmpty(parsed.next_due_date),
+      result: parsed.result,
+      certificate_path: nullIfEmpty(parsed.certificate_path),
+      notes: nullIfEmpty(parsed.notes),
+    };
     const result = await supabase.from('calibration_records').insert(data as never).select('*').single();
     if (result.error) return { success: false, error: result.error.message };
-    await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_record.create', entityType: 'calibration_records', entityId: (result.data as { id?: string }).id ?? null, newValues: result.data as Record<string, unknown> });
+    const recordId = (result.data as { id?: string }).id ?? null;
+    await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_record.create', entityType: 'calibration_records', entityId: recordId, newValues: result.data as Record<string, unknown> });
+    // Close the originating calibration request when request_id is supplied.
+    // Non-terminal statuses (pending/approved/in_progress) are moved to completed.
+    // Terminal statuses (completed/rejected/canceled) are left alone.
+    let requestCloseWarning: string | null = null;
+    if (requestId) {
+      const closeResult = await supabase
+        .from('calibration_requests')
+        .update({ status: 'completed' } as never)
+        .eq('id', requestId)
+        .in('status', ['pending', 'approved', 'in_progress'])
+        .maybeSingle();
+      if (closeResult.error) {
+        requestCloseWarning = `Calibration record saved, but the originating request could not be marked completed: ${closeResult.error.message}`;
+        await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_request.close_failed', entityType: 'calibration_requests', entityId: requestId, details: { db_error: closeResult.error.message, record_id: recordId } });
+      } else {
+        await logServerAuditEvent({ supabase, profileId: profile.id, action: 'calibration_request.completed_by_record', entityType: 'calibration_requests', entityId: requestId, details: { record_id: recordId, result: parsed.result } });
+      }
+    }
     // ANALYTICS-01: surface refresh failure as warning.
     const recordAnalyticsWarning = await runAnalyticsRefreshOrWarn({
       refresh: () => recomputeAssetAnalytics(parsed.asset_id),
@@ -335,6 +369,7 @@ export async function createCalibrationRecordAction(payload: Record<string, unkn
       ...(notificationWarning
         ? { notification_warning: notificationWarning, notification_result: notificationResult }
         : {}),
+      ...(requestCloseWarning ? { request_close_warning: requestCloseWarning } : {}),
     };
     return { success: true, data: responseDataRecord };
   } catch (err) {

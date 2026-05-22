@@ -67,14 +67,21 @@ export default function NewProcurementRequestPage() {
       return;
     }
     setSubmitting(true);
+    // Guard: only forward the part ID param if it looks like a UUID. Passing a
+    // part code or other non-UUID string would cause Zod to reject the action
+    // with an opaque "Invalid uuid" error. Silently drop the value instead —
+    // the procurement request is still created, just without the part linkage.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const rawPartId = searchParams.get('partId') ?? searchParams.get('sparePartId') ?? null;
+    const safePartId = rawPartId && UUID_RE.test(rawPartId) ? rawPartId : null;
     const payload = {
       title: parsed.data.title,
       justification: parsed.data.justification,
       status: parsed.data.status,
       priority: parsed.data.priority,
       expected_delivery_date: parsed.data.expected_delivery_date || null,
-      part_id: searchParams.get('partId') ?? searchParams.get('sparePartId') ?? null,
-      spare_part_id: searchParams.get('partId') ?? searchParams.get('sparePartId') ?? null,
+      part_id: safePartId,
+      spare_part_id: safePartId,
       current_stock_snapshot: searchParams.get('currentStock'),
       reorder_level_snapshot: searchParams.get('reorderLevel'),
       requested_quantity: searchParams.get('suggestedQuantity') ?? searchParams.get('quantity'),
