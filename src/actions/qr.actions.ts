@@ -37,7 +37,10 @@ import {
 } from '@/services/qr.service';
 import type { AssetQrScanSummary } from '@/types/qr';
 
-const assetIdSchema = z.string().uuid({ message: 'Invalid asset id' });
+// Zod v4 .uuid() enforces RFC 4122 version nibble [1-8], rejecting the custom
+// seed IDs (e.g. a0000001-0000-0000-0000-000000000001) whose nibble is 0.
+const UUID_FORMAT = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const assetIdSchema = z.string().regex(UUID_FORMAT, 'Invalid asset id');
 const assetIdentifierSchema = z.string().trim().min(1, 'Asset id is required');
 const reasonSchema = z.string().trim().max(500).optional().nullable();
 
@@ -254,10 +257,6 @@ export async function revokeQrTokenAction(assetId: string): Promise<ActionResult
   }
 }
 
-// z.string().uuid() in Zod v4 enforces RFC 4122 version nibble [1-8], which rejects
-// the custom seed IDs (e.g. a0000001-0000-0000-0000-000000000001) whose version nibble is 0.
-// Use a loose 8-4-4-4-12 hex regex that accepts all Supabase-style IDs.
-const UUID_FORMAT = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const assetIdArraySchema = z
   .array(z.string().regex(UUID_FORMAT, 'Invalid asset id in selection'))
   .min(1, 'Select at least one asset');
