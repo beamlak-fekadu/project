@@ -73,7 +73,7 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading: authLoading, signOut } = useAuth();
-  const { profile, loading: profileLoading } = useProfile(user?.id);
+  const { profile, loading: profileLoading, profileError } = useProfile(user?.id);
   const online = useOnlineStatus();
 
   const loading = authLoading || profileLoading;
@@ -110,6 +110,38 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
     );
   }
 
+  // Profile is null while online — this means the auth user has no linked
+  // profile or no role assigned. Show a clear error; never silently fall back
+  // to viewer so a misconfigured account doesn't masquerade as a valid user.
+  if (!profile && online.isOnline) {
+    const message = profileError ??
+      'Your account is authenticated but your profile could not be loaded. ' +
+      'Please sign out and contact your system administrator.';
+    return (
+      <div className="grid min-h-screen place-items-center bg-[var(--background)] px-4 text-[var(--foreground)]">
+        <div className="max-w-lg rounded-lg border border-amber-500/30 bg-amber-500/5 p-6 text-center">
+          <p className="text-base font-semibold text-amber-400">Profile Setup Required</p>
+          <p className="mt-3 text-sm leading-relaxed text-[var(--text-muted)]">{message}</p>
+          <p className="mt-4 text-xs text-[var(--text-muted)]">
+            Signed in as: <span className="font-mono">{user.email}</span>
+          </p>
+          <button
+            onClick={async () => {
+              try {
+                const supabase = (await import('@/lib/supabase/client')).createClient();
+                await supabase.auth.signOut();
+              } catch { /* best effort */ }
+              router.push('/login');
+            }}
+            className="mt-5 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const handleLogout = async () => {
     try {
       const cache = await import('@/lib/offline/cache');
@@ -129,7 +161,9 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
     router.push('/login');
   };
 
-  const userRoles = profile?.roleNames || ['viewer'];
+  // profile is guaranteed non-null here — the guards above return early when
+  // it is null. Using non-null assertion so TypeScript knows this too.
+  const userRoles = profile!.roleNames;
   const isDeveloper = userRoles.includes('developer');
   const allowedRoles = allowedRolesForPath(pathname);
   const hasRouteAccess = isDeveloper || !allowedRoles || allowedRoles.some((role) => userRoles.includes(role));
@@ -139,11 +173,11 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
       <SyncEngineProvider>
         <AssistantProvider>
           <DashboardLayout
-            userName={profile?.full_name || user.email || 'User'}
-            userRole={profile?.primaryRole || 'user'}
-            userJobTitle={profile?.job_title}
+            userName={profile!.full_name || user.email || 'User'}
+            userRole={profile!.primaryRole}
+            userJobTitle={profile!.job_title}
             userRoles={userRoles}
-            offlineVerifiedAt={profile?.offlineVerifiedAt ?? null}
+            offlineVerifiedAt={profile!.offlineVerifiedAt ?? null}
             onLogout={handleLogout}
           >
             {hasRouteAccess ? (

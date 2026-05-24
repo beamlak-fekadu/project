@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { signIn } from '@/services/auth.service';
+import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import LogoMark from '@/components/brand/LogoMark';
@@ -13,6 +14,30 @@ import { APP_NAME_FULL, APP_NAME_SHORT, HOSPITAL_NAME } from '@/constants';
 import { transitions } from '@/lib/ui/motion-presets';
 
 const SIGN_IN_TAGLINE = 'Secure access to biomedical equipment analytics and operations.';
+
+/**
+ * Categorizes Supabase auth errors into user-readable messages.
+ * Avoids leaking internal error strings in production.
+ */
+function friendlyAuthError(rawMessage: string): string {
+  const m = rawMessage.toLowerCase();
+  if (m.includes('invalid login credentials') || m.includes('invalid credentials')) {
+    return 'Incorrect email or password. Please check your credentials and try again.';
+  }
+  if (m.includes('email not confirmed')) {
+    return 'This account\'s email has not been confirmed. Contact your system administrator to activate this account.';
+  }
+  if (m.includes('too many requests') || m.includes('rate limit')) {
+    return 'Too many login attempts. Please wait a minute and try again.';
+  }
+  if (m.includes('user not found') || m.includes('no user found')) {
+    return 'No account found with this email address.';
+  }
+  if (m.includes('network') || m.includes('fetch')) {
+    return 'Network error. Please check your connection and try again.';
+  }
+  return rawMessage;
+}
 
 // Only accept internal, same-origin paths for returnTo. Rejects protocol-relative
 // URLs (`//evil.com/...`), absolute URLs (`http://...`), and anything that does
@@ -40,9 +65,18 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
+    // Sign out any existing session first so a shared-device scenario never
+    // carries a previous user's cookies into the new login.
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore — best effort; the signInWithPassword call below is authoritative.
+    }
+
     const { error: authError } = await signIn(email, password);
     if (authError) {
-      setError(authError.message);
+      setError(friendlyAuthError(authError.message));
       setLoading(false);
       return;
     }
