@@ -23,6 +23,7 @@ import QrAssetLandingPage from './QrAssetLandingPage';
 import QrLandingClientShell from './QrLandingClientShell';
 
 type RouteParams = Promise<{ token: string }>;
+type RouteSearchParams = Promise<Record<string, string | string[] | undefined>>;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Always render fresh — scans should reflect live asset state, and we record
@@ -30,8 +31,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export default async function QrLandingRoute({ params }: { params: RouteParams }) {
+export default async function QrLandingRoute({ params, searchParams }: { params: RouteParams; searchParams: RouteSearchParams }) {
   const { token } = await params;
+  const query = await searchParams;
+  const requestSearchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (Array.isArray(value)) {
+      for (const item of value) requestSearchParams.append(key, item);
+    } else if (value != null) {
+      requestSearchParams.set(key, value);
+    }
+  }
+  const requestSearch = requestSearchParams.toString() ? `?${requestSearchParams.toString()}` : '';
 
   const supabase = await createClient();
   const resolution = await resolveQrLandingAsset(token, supabase as never);
@@ -128,7 +139,7 @@ export default async function QrLandingRoute({ params }: { params: RouteParams }
       userAgent,
       metadata: { route: 'qr.landing.auth_required' },
     }, supabase as never);
-    return <QrLoginRequired returnTo={`/qr/a/${token}`} />;
+    return <QrLoginRequired returnTo={`/qr/a/${token}${requestSearch}`} />;
   }
 
   const asset = resolution.asset;

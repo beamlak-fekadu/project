@@ -75,6 +75,23 @@ function describeWorkOrder(event: NotificationEventRow): string {
   return pickPayloadString(event.payload ?? {}, 'work_order_number') ?? 'a work order';
 }
 
+function formatEquipmentConditionForMessage(condition: string | null): string {
+  switch (condition) {
+    case 'functional':
+      return 'functional';
+    case 'needs_repair':
+      return 'still marked as needing repair';
+    case 'non_functional':
+      return 'still marked as non-functional';
+    case 'under_maintenance':
+      return 'still under maintenance';
+    case 'decommissioned':
+      return 'decommissioned';
+    default:
+      return 'updated';
+  }
+}
+
 function describePart(event: NotificationEventRow): string {
   return pickPayloadString(event.payload ?? {}, 'part_name') ?? 'a spare part';
 }
@@ -394,8 +411,11 @@ async function rule_maintenanceRequestStatusChanged(
         message = `Work has started on request ${requestNumber} for ${asset}.`;
         priority = 'medium';
       } else if (status === 'completed') {
+        const finalCondition = pickPayloadString(event.payload ?? {}, 'final_equipment_condition');
         title = 'Request completed';
-        message = `Request ${requestNumber} for ${asset} has been completed.`;
+        message = finalCondition === 'functional'
+          ? `Your maintenance request for ${asset} has been completed. The equipment is now functional.`
+          : `Your maintenance request for ${asset} has been completed. The equipment is ${formatEquipmentConditionForMessage(finalCondition)}.`;
         priority = 'medium';
       }
       rows.push(

@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
@@ -10,6 +10,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { AssistantProvider } from '@/components/assistant/AssistantProvider';
 import { SyncEngineProvider } from '@/components/offline/SyncEngineProvider';
 import { NAV_SECTIONS } from '@/constants';
+import { buildLoginHref, buildCurrentReturnPath, storeReturnPath } from '@/lib/auth/return-to';
 import type { RoleName } from '@/types/roles';
 
 const EXTRA_ROUTE_RULES: Array<{ prefix: string; roles: RoleName[] }> = [
@@ -72,6 +73,7 @@ function allowedRolesForPath(pathname: string): RoleName[] | null {
 export default function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading, signOut } = useAuth();
   const { profile, loading: profileLoading, profileError } = useProfile(user?.id);
   const online = useOnlineStatus();
@@ -93,7 +95,10 @@ export default function DashboardRootLayout({ children }: { children: React.Reac
         </div>
       );
     }
-    router.push('/login');
+    const search = searchParams.toString();
+    const returnTo = buildCurrentReturnPath(pathname, search ? `?${search}` : '');
+    storeReturnPath(returnTo);
+    router.push(buildLoginHref(returnTo));
     return <PageLoader />;
   }
 

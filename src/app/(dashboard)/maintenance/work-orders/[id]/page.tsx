@@ -144,18 +144,6 @@ export default function WorkOrderDetailPage() {
     setQueuedActions(queue.filter((item) => item.entity_id === id || String(item.payload?.work_order_id ?? '') === id));
   }, [id]);
 
-  const loadWO = useCallback(async () => {
-    const { data, error } = await getWorkOrderById(id);
-    if (error || !data) {
-      toast('error', 'Failed to load work order');
-      return;
-    }
-    const row = data as unknown as WOWithJoins;
-    setWO(row);
-    setShowingCachedWorkOrder(false);
-    await cacheWorkOrder(row);
-  }, [cacheWorkOrder, id, toast]);
-
   // WO-completion truth fix: query maintenance_events directly linked to the
   // current work order, not the asset's full history. This ensures the
   // evidence shown next to "Completion Outcome" / "Final Equipment Condition"
@@ -166,6 +154,46 @@ export default function WorkOrderDetailPage() {
     if (data) setEvents(data as unknown as EventWithJoins[]);
     else setEvents([]);
   }, []);
+
+  const loadLinkedContext = useCallback(async (row: WOWithJoins) => {
+    const requestId = (row as { request_id?: string | null }).request_id;
+    await Promise.all([
+      requestId
+        ? getRequestById(requestId).then(({ data: reqData }) => {
+            if (reqData) {
+              const r = reqData as unknown as OriginatingRequest;
+              setOriginatingRequest({
+                id: r.id,
+                request_number: r.request_number,
+                fault_description: r.fault_description,
+                urgency: r.urgency,
+                status: r.status,
+                reported_condition: r.reported_condition,
+                reported_condition_source: r.reported_condition_source,
+              });
+            }
+          }).catch(() => undefined)
+        : Promise.resolve(setOriginatingRequest(null)),
+      getEquipmentById(row.asset_id).then(({ data: eqData }) => {
+        if (eqData) {
+          const eq = eqData as unknown as { condition: string };
+          setEquipmentCondition({ condition: eq.condition });
+        }
+      }).catch(() => undefined),
+    ]);
+  }, []);
+
+  const loadWO = useCallback(async () => {
+    const { data, error } = await getWorkOrderById(id);
+    if (error || !data) {
+      toast('error', 'Failed to load work order');
+      return;
+    }
+    const row = data as unknown as WOWithJoins;
+    setWO(row);
+    setShowingCachedWorkOrder(false);
+    await Promise.all([cacheWorkOrder(row), loadLinkedContext(row)]);
+  }, [cacheWorkOrder, id, loadLinkedContext, toast]);
 
   useEffect(() => {
     async function init() {
@@ -194,39 +222,16 @@ export default function WorkOrderDetailPage() {
       setShowingCachedWorkOrder(false);
       await cacheWorkOrder(woData);
 
-      // Load events, originating request, and current equipment condition in parallel
-      const requestId = (woData as { request_id?: string | null }).request_id;
       await Promise.all([
         loadEvents(woData.id),
-        requestId
-          ? getRequestById(requestId).then(({ data: reqData }) => {
-              if (reqData) {
-                const r = reqData as unknown as OriginatingRequest;
-                setOriginatingRequest({
-                  id: r.id,
-                  request_number: r.request_number,
-                  fault_description: r.fault_description,
-                  urgency: r.urgency,
-                  status: r.status,
-                  reported_condition: r.reported_condition,
-                  reported_condition_source: r.reported_condition_source,
-                });
-              }
-            }).catch(() => undefined)
-          : Promise.resolve(),
-        getEquipmentById(woData.asset_id).then(({ data: eqData }) => {
-          if (eqData) {
-            const eq = eqData as unknown as { condition: string };
-            setEquipmentCondition({ condition: eq.condition });
-          }
-        }).catch(() => undefined),
+        loadLinkedContext(woData),
       ]);
 
       await refreshQueuedActions();
       setLoading(false);
     }
     init();
-  }, [cacheWorkOrder, id, loadEvents, refreshQueuedActions, toast, workOrderCacheKey, workOrderCacheScope]);
+  }, [cacheWorkOrder, id, loadEvents, loadLinkedContext, refreshQueuedActions, toast, workOrderCacheKey, workOrderCacheScope]);
 
   async function handleStatusUpdate(status: WorkOrderStatus) {
     if (!wo) return;
@@ -239,10 +244,12 @@ export default function WorkOrderDetailPage() {
     if (!result.success) {
       toast('error', result.error ?? `Failed to update work order`);
     } else {
-      const data = result.data as { condition_sync_warning?: string; notification_warning?: string; notification_warning_detail?: string | null } | undefined;
+      const data = result.data as { condition_sync_warning?: string; request_status_sync_warning?: string; notification_warning?: string; notification_warning_detail?: string | null } | undefined;
       if (data?.condition_sync_warning) {
         // R5: work order status changed but equipment condition didn't sync.
         toast('warning', `Work order updated. Equipment condition could not be updated: ${data.condition_sync_warning}`);
+      } else if (data?.request_status_sync_warning) {
+        toast('warning', `Work order updated. Linked request status could not be synced: ${data.request_status_sync_warning}`);
       } else if (data?.notification_warning) {
         toast('warning', data.notification_warning_detail
           ? `Work order updated. Notification delivery needs review: ${data.notification_warning_detail}`
@@ -354,7 +361,7 @@ export default function WorkOrderDetailPage() {
     }
 
     if (result.status === 'success') {
-      const actionResult = result.data as { data?: { condition_sync_warning?: string; reliability_evidence_warning?: string; notification_warning?: string; notification_warning_detail?: string | null } };
+      const actionResult = result.data as { data?: { condition_sync_warning?: string; reliability_evidence_warning?: string; request_status_sync_warning?: string; notification_warning?: string; notification_warning_detail?: string | null } };
       const data = actionResult.data;
       if (data?.condition_sync_warning) {
         // R5: completion succeeded but final equipment condition could not be recorded.
@@ -364,6 +371,8 @@ export default function WorkOrderDetailPage() {
         // visible (RLS denial, constraint violation, etc.). Completion itself
         // succeeded.
         toast('warning', `Work order completed. ${data.reliability_evidence_warning}`);
+      } else if (data?.request_status_sync_warning) {
+        toast('warning', `Work order completed. Linked request status could not be synced: ${data.request_status_sync_warning}`);
       } else if (data?.notification_warning) {
         toast('warning', data.notification_warning_detail
           ? `Work order completed. Notification delivery needs review: ${data.notification_warning_detail}`
@@ -483,11 +492,13 @@ export default function WorkOrderDetailPage() {
     if (!result.success) {
       toast('error', result.error ?? `Failed to ${wo.assigned_to ? 'reassign' : 'assign'} work order`);
     } else {
-      const notificationData = result.data as { notification_warning?: string; notification_warning_detail?: string | null } | undefined;
+      const notificationData = result.data as { request_status_sync_warning?: string; notification_warning?: string; notification_warning_detail?: string | null } | undefined;
       if (notificationData?.notification_warning) {
         toast('warning', notificationData.notification_warning_detail
           ? `Work order ${wo.assigned_to ? 'reassigned' : 'assigned'}. Notification delivery needs review: ${notificationData.notification_warning_detail}`
           : `Work order ${wo.assigned_to ? 'reassigned' : 'assigned'}, but notification delivery needs review.`);
+      } else if (notificationData?.request_status_sync_warning) {
+        toast('warning', `Work order ${wo.assigned_to ? 'reassigned' : 'assigned'}, but linked request status could not be synced: ${notificationData.request_status_sync_warning}`);
       } else {
         toast('success', `Work order ${wo.assigned_to ? 'reassigned' : 'assigned'}`);
       }

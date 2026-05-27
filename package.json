@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:chatbot": "tsx --test src/services/chatbot/__tests__/*.test.ts",
     "test:copilot:e2e": "playwright test tests/e2e/copilot-assistant-card-smoke.spec.ts",
-    "test:system-fix": "tsx --test src/services/chatbot/__tests__/*.test.ts src/services/notifications/__tests__/*.test.ts src/services/metrics/__tests__/*.test.ts src/services/__tests__/*.test.ts src/utils/developer-lab/__tests__/*.test.ts src/utils/maintenance/__tests__/*.test.ts src/utils/analytics/__tests__/*.test.ts src/utils/decision-support/__tests__/*.test.ts src/lib/rbac/__tests__/*.test.ts src/lib/offline/__tests__/*.test.ts src/actions/__tests__/*.test.ts",
+    "test:system-fix": "tsx --test src/services/chatbot/__tests__/*.test.ts src/services/notifications/__tests__/*.test.ts src/services/metrics/__tests__/*.test.ts src/services/__tests__/*.test.ts src/utils/developer-lab/__tests__/*.test.ts src/utils/maintenance/__tests__/*.test.ts src/utils/analytics/__tests__/*.test.ts src/utils/decision-support/__tests__/*.test.ts src/lib/auth/__tests__/*.test.ts src/lib/rbac/__tests__/*.test.ts src/lib/offline/__tests__/*.test.ts src/actions/__tests__/*.test.ts",
     "setup:demo-users": "tsx scripts/setup-demo-users.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

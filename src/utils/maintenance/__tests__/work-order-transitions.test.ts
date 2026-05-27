@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requiredCapabilityForWorkOrderTransition } from '@/utils/maintenance/work-order-transitions';
+import { isOpenWorkOrderStatus, OPEN_WORK_ORDER_STATUSES } from '@/utils/maintenance/request-status';
 import { hasCapability } from '@/lib/rbac';
 
 // R18: every WO status transition maps to its own capability.
@@ -67,4 +68,12 @@ test('viewer fails every mapped transition', () => {
       `viewer should be denied for ${status} → ${cap}`,
     );
   }
+});
+
+test('canonical open work-order statuses exclude completed and canceled', () => {
+  assert.deepEqual([...OPEN_WORK_ORDER_STATUSES], ['open', 'assigned', 'in_progress', 'on_hold']);
+  assert.equal(isOpenWorkOrderStatus('open'), true);
+  assert.equal(isOpenWorkOrderStatus('completed'), false);
+  assert.equal(isOpenWorkOrderStatus('canceled'), false);
+  assert.equal(isOpenWorkOrderStatus('pending'), false);
 });

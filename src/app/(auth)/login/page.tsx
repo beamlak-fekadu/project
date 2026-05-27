@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { signIn } from '@/services/auth.service';
 import { createClient } from '@/lib/supabase/client';
+import { consumeStoredReturnPath, safeReturnPath } from '@/lib/auth/return-to';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import LogoMark from '@/components/brand/LogoMark';
@@ -39,17 +40,6 @@ function friendlyAuthError(rawMessage: string): string {
   return rawMessage;
 }
 
-// Only accept internal, same-origin paths for returnTo. Rejects protocol-relative
-// URLs (`//evil.com/...`), absolute URLs (`http://...`), and anything that does
-// not start with a single `/`. Used to safely round-trip QR scans through login.
-function safeReturnPath(value: string | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value !== 'string') return null;
-  if (!value.startsWith('/')) return null;
-  if (value.startsWith('//') || value.startsWith('/\\')) return null;
-  return value;
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,7 +70,8 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    router.push(returnTo ?? '/');
+    const destination = returnTo ?? consumeStoredReturnPath() ?? '/';
+    router.replace(destination);
     router.refresh();
   }
 

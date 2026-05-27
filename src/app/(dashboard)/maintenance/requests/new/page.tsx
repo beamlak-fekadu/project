@@ -9,7 +9,7 @@ import { publishNotificationsUpdated } from '@/lib/notifications/client-events';
 import { OfflineActionResult } from '@/components/offline/OfflineActionResult';
 import OfflineSubmitBanner from '@/components/offline/OfflineSubmitBanner';
 import { getEquipmentList } from '@/services/equipment.service';
-import { getOpenCorrectiveRequestForAsset } from '@/services/maintenance.service';
+import { getActiveCorrectiveBlockerForAsset } from '@/services/maintenance.service';
 import { createMaintenanceRequestAction } from '@/actions/maintenance.actions';
 import { runOfflineCapableAction } from '@/lib/offline/queue';
 import { useAuth } from '@/hooks/useAuth';
@@ -30,11 +30,12 @@ const REPORTED_CONDITION_OPTIONS = [
 ];
 
 interface DuplicateInfo {
+  blocker_type: 'maintenance_request' | 'work_order';
   id: string;
-  request_number: string;
+  number: string;
   status: string;
-  urgency: string;
-  fault_description: string;
+  urgency?: string;
+  fault_description?: string;
 }
 
 export default function NewMaintenanceRequestPage() {
@@ -87,15 +88,18 @@ export default function NewMaintenanceRequestPage() {
       return;
     }
     setCheckingDuplicate(true);
-    const existing = await getOpenCorrectiveRequestForAsset(assetId);
+    const existing = await getActiveCorrectiveBlockerForAsset(assetId);
     setCheckingDuplicate(false);
     if (existing) {
       setDuplicateInfo({
+        blocker_type: existing.blocker_type,
         id: existing.id,
-        request_number: existing.request_number,
+        number: existing.blocker_type === 'maintenance_request'
+          ? existing.request_number
+          : existing.work_order_number,
         status: existing.status,
-        urgency: existing.urgency,
-        fault_description: existing.fault_description,
+        urgency: existing.blocker_type === 'maintenance_request' ? existing.urgency : existing.priority,
+        fault_description: existing.blocker_type === 'maintenance_request' ? existing.fault_description : undefined,
       });
     } else {
       setDuplicateInfo(null);
@@ -119,7 +123,7 @@ export default function NewMaintenanceRequestPage() {
 
     // Guard: server action will also block this, but provide immediate UI feedback
     if (duplicateInfo) {
-      toast('warning', `${duplicateInfo.request_number} is already open for this equipment. Open the existing request instead.`);
+      toast('warning', `${duplicateInfo.number} is still active for this equipment. Open it instead.`);
       return;
     }
 
@@ -170,10 +174,15 @@ export default function NewMaintenanceRequestPage() {
 
     if (result.status === 'failed') {
       // Handle duplicate prevented by server action (race condition or direct POST)
-      const resultData = (result as { data?: { reason?: string; existingRequestId?: string; existingRequestNumber?: string; existingRequestStatus?: string } }).data;
+      const resultData = (result as { data?: { reason?: string; existingRequestId?: string; existingRequestNumber?: string; existingRequestStatus?: string; existingWorkOrderId?: string; existingWorkOrderNumber?: string; existingWorkOrderStatus?: string } }).data;
       if (resultData?.reason === 'duplicate_open_request' && resultData.existingRequestId) {
         toast('warning', `Duplicate prevented: ${resultData.existingRequestNumber ?? 'open request'} already exists for this equipment.`);
         router.push(`/maintenance/requests/${resultData.existingRequestId}?duplicatePrevented=1`);
+        return;
+      }
+      if (resultData?.reason === 'active_work_order' && resultData.existingWorkOrderId) {
+        toast('warning', `Duplicate prevented: ${resultData.existingWorkOrderNumber ?? 'active work order'} is still active for this equipment.`);
+        router.push(`/maintenance/work-orders/${resultData.existingWorkOrderId}`);
         return;
       }
       toast('error', result.error ?? 'Failed to create maintenance request');
@@ -228,22 +237,24 @@ export default function NewMaintenanceRequestPage() {
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-amber-300">
-                Open request already exists for this equipment
+                Active corrective work already exists for this equipment
               </p>
               <p className="mt-1 text-xs text-amber-200/80">
-                <strong>{duplicateInfo.request_number}</strong> is currently{' '}
+                <strong>{duplicateInfo.number}</strong> is currently{' '}
                 <strong>{formatRequestStatus(duplicateInfo.status)}</strong>.{' '}
                 {duplicateInfo.fault_description
                   ? `Reported issue: "${duplicateInfo.fault_description.slice(0, 120)}${duplicateInfo.fault_description.length > 120 ? '…' : ''}"`
-                  : 'Open the existing request to review or add details.'}
+                  : 'Open the active work item to review progress before submitting another request.'}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="primary"
-                  onClick={() => router.push(`/maintenance/requests/${duplicateInfo.id}`)}
+                  onClick={() => router.push(duplicateInfo.blocker_type === 'maintenance_request'
+                    ? `/maintenance/requests/${duplicateInfo.id}`
+                    : `/maintenance/work-orders/${duplicateInfo.id}`)}
                 >
-                  Open Existing Request
+                  Open Active Item
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => router.back()}>
                   Back

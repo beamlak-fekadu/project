@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { recomputeAssetAnalytics } from './analytics.actions';
 import { updateEquipmentConditionAction } from './equipment.actions';
 import { getActionContextForCapability, getActionContextForAnyCapability, logServerAuditEvent, revalidateMany, actionError, nullIfEmpty, interpretMissingMutationResult, type ActionResult } from './_shared';
-import { OPEN_MAINTENANCE_REQUEST_STATUSES } from '@/utils/maintenance/request-status';
+import { OPEN_MAINTENANCE_REQUEST_STATUSES, OPEN_WORK_ORDER_STATUSES } from '@/utils/maintenance/request-status';
 import { requiredCapabilityForWorkOrderTransition } from '@/utils/maintenance/work-order-transitions';
 import {
   deriveReliabilityEvidence,
@@ -107,6 +107,12 @@ const eventSchema = z.object({
 });
 
 const maintenancePaths = ['/maintenance', '/work-orders', '/calendar', '/command', '/reports/maintenance', '/equipment'];
+
+const requestTerminalStatuses = ['completed', 'rejected', 'canceled'] as const;
+
+function isTerminalRequestStatus(status: string | null | undefined): boolean {
+  return !!status && (requestTerminalStatuses as readonly string[]).includes(status);
+}
 
 // Completion outcome → default final equipment condition
 function outcomeToCondition(outcome: string): 'functional' | 'needs_repair' | 'non_functional' | 'under_maintenance' {
@@ -237,6 +243,137 @@ async function recordWorkOrderReliabilityEvidence({
   return { eventId, warning: null };
 }
 
+async function emitMaintenanceRequestStatusChanged(params: {
+  supabase: MaintenanceActionClient;
+  requestRow: {
+    id?: string | null;
+    asset_id?: string | null;
+    request_number?: string | null;
+    requested_by?: string | null;
+    department_id?: string | null;
+  };
+  status: string;
+  priority?: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  payload?: Record<string, unknown>;
+}): Promise<NotificationProcessResult> {
+  const assetSummary = await loadAssetSummaryForNotification(params.supabase, params.requestRow.asset_id ?? null);
+  return createNotificationEvent({
+    event_type: 'maintenance_request.status_changed',
+    source_table: 'maintenance_requests',
+    source_id: params.requestRow.id ?? null,
+    asset_id: params.requestRow.asset_id ?? null,
+    department_id: params.requestRow.department_id ?? assetSummary.department_id ?? null,
+    priority: params.priority ?? (params.status === 'rejected' ? 'high' : 'medium'),
+    payload: {
+      asset_name: assetSummary.asset_name,
+      asset_code: assetSummary.asset_code,
+      request_number: params.requestRow.request_number ?? null,
+      status: params.status,
+      requested_by: params.requestRow.requested_by ?? null,
+      ...params.payload,
+    },
+  });
+}
+
+async function syncLinkedRequestStatusFromWorkOrder(params: {
+  supabase: MaintenanceActionClient;
+  profileId: string;
+  workOrder: {
+    id?: string | null;
+    request_id?: string | null;
+    asset_id?: string | null;
+    work_order_number?: string | null;
+  };
+  nextStatus: 'assigned' | 'in_progress' | 'completed';
+  auditAction?: string;
+  notificationPayload?: Record<string, unknown>;
+}): Promise<{ warning: string | null; notificationResult: NotificationProcessResult | null }> {
+  const requestId = params.workOrder.request_id;
+  if (!requestId) return { warning: null, notificationResult: null };
+
+  const requestRow = await params.supabase
+    .from('maintenance_requests')
+    .select('id, status, request_number, requested_by, department_id, asset_id')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  const current = requestRow.data as {
+    id?: string;
+    status?: string;
+    request_number?: string;
+    requested_by?: string | null;
+    department_id?: string | null;
+    asset_id?: string | null;
+  } | null;
+
+  if (!current || isTerminalRequestStatus(current.status)) return { warning: null, notificationResult: null };
+  if (current.status === params.nextStatus) return { warning: null, notificationResult: null };
+
+  const updatePayload: Record<string, unknown> = { status: params.nextStatus };
+  if (params.nextStatus === 'completed') updatePayload.resolved_at = new Date().toISOString();
+
+  const update = await params.supabase
+    .from('maintenance_requests')
+    .update(updatePayload as never)
+    .eq('id', current.id as string)
+    .select('id, status, request_number, requested_by, department_id, asset_id')
+    .maybeSingle();
+
+  if (update.error || !update.data) {
+    const message = update.error?.message ?? 'Request status sync returned 0 rows (likely blocked by RLS).';
+    await logServerAuditEvent({
+      supabase: params.supabase,
+      profileId: params.profileId,
+      action: 'work_order.request_status_sync_failed',
+      entityType: 'maintenance_requests',
+      entityId: current.id ?? null,
+      details: {
+        work_order_id: params.workOrder.id ?? null,
+        attempted_status: params.nextStatus,
+        error: message,
+      },
+    });
+    return { warning: message, notificationResult: null };
+  }
+
+  await logServerAuditEvent({
+    supabase: params.supabase,
+    profileId: params.profileId,
+    action: params.auditAction ?? 'maintenance_request.status_synced_by_work_order',
+    entityType: 'maintenance_requests',
+    entityId: current.id ?? null,
+    oldValues: { status: current.status },
+    newValues: { status: params.nextStatus, work_order_id: params.workOrder.id ?? null },
+  });
+
+  try {
+    const updated = update.data as {
+      id?: string;
+      request_number?: string;
+      requested_by?: string | null;
+      department_id?: string | null;
+      asset_id?: string | null;
+    };
+    const notificationResult = await emitMaintenanceRequestStatusChanged({
+      supabase: params.supabase,
+      requestRow: updated,
+      status: params.nextStatus,
+      payload: {
+        triggered_by_work_order_id: params.workOrder.id ?? null,
+        triggered_by_work_order_number: params.workOrder.work_order_number ?? null,
+        ...params.notificationPayload,
+      },
+    });
+    return { warning: null, notificationResult };
+  } catch (e) {
+    console.error('[notifications] maintenance_request.status_changed (WO sync) emit failed:', e);
+    return {
+      warning: null,
+      notificationResult: makeFailedNotificationResult('maintenance_request.status_changed', e),
+    };
+  }
+}
+
 export async function createMaintenanceRequestAction(payload: Record<string, unknown>): Promise<ActionResult> {
   try {
     const { supabase, profile, error } = await getActionContextForCapability('maintenance.request.create');
@@ -263,6 +400,28 @@ export async function createMaintenanceRequestAction(payload: Record<string, unk
           existingRequestId: existing.id,
           existingRequestNumber: existing.request_number,
           existingRequestStatus: existing.status,
+        },
+      };
+    }
+
+    const { data: activeWorkOrder } = await supabase
+      .from('work_orders')
+      .select('id, work_order_number, status')
+      .eq('asset_id', parsed.asset_id)
+      .in('status', [...OPEN_WORK_ORDER_STATUSES])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeWorkOrder) {
+      return {
+        success: false,
+        error: 'This equipment already has an active corrective maintenance work order.',
+        data: {
+          reason: 'active_work_order',
+          existingWorkOrderId: activeWorkOrder.id,
+          existingWorkOrderNumber: activeWorkOrder.work_order_number,
+          existingWorkOrderStatus: activeWorkOrder.status,
         },
       };
     }
@@ -406,21 +565,11 @@ export async function updateRequestStatusAction(id: string, status: string): Pro
     let notificationResult: NotificationProcessResult | null = null;
     try {
       const row = result.data as { id?: string; asset_id?: string; request_number?: string; requested_by?: string; department_id?: string | null };
-      const assetSummary = await loadAssetSummaryForNotification(supabase, row.asset_id ?? null);
-      notificationResult = await createNotificationEvent({
-        event_type: 'maintenance_request.status_changed',
-        source_table: 'maintenance_requests',
-        source_id: row.id ?? null,
-        asset_id: row.asset_id ?? null,
-        department_id: row.department_id ?? assetSummary.department_id ?? null,
+      notificationResult = await emitMaintenanceRequestStatusChanged({
+        supabase,
+        requestRow: row,
+        status: parsedStatus,
         priority: parsedStatus === 'rejected' ? 'high' : 'medium',
-        payload: {
-          asset_name: assetSummary.asset_name,
-          asset_code: assetSummary.asset_code,
-          request_number: row.request_number ?? null,
-          status: parsedStatus,
-          requested_by: row.requested_by ?? null,
-        },
       });
     } catch (e) {
       console.error('[notifications] maintenance_request.status_changed emit failed:', e);
@@ -454,7 +603,7 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
         .from('work_orders')
         .select('*')
         .eq('request_id', data.request_id)
-        .not('status', 'in', '(completed,canceled)')
+        .in('status', [...OPEN_WORK_ORDER_STATUSES])
         .order('created_at', { ascending: false })
         .limit(1);
       if (!existing.error && existing.data && existing.data.length > 0) {
@@ -494,82 +643,16 @@ export async function createWorkOrderAction(payload: Record<string, unknown>): P
     let primaryWorkOrderNotification: NotificationProcessResult | null = null;
     let requestStatusSyncWarning: string | null = null;
     if (woRow.request_id) {
-      const requestRow = await supabase
-        .from('maintenance_requests')
-        .select('id, status, request_number, requested_by, department_id, asset_id')
-        .eq('id', woRow.request_id)
-        .maybeSingle();
-      const current = requestRow.data as {
-        id?: string;
-        status?: string;
-        request_number?: string;
-        requested_by?: string | null;
-        department_id?: string | null;
-        asset_id?: string | null;
-      } | null;
-      if (current && current.status && !['completed', 'rejected', 'canceled'].includes(current.status)) {
-        const nextStatus = woRow.assigned_to ? 'assigned' : 'approved';
-        if (current.status !== nextStatus) {
-          const update = await supabase
-            .from('maintenance_requests')
-            .update({ status: nextStatus } as never)
-            .eq('id', current.id as string)
-            .select('id, status, request_number, requested_by, department_id, asset_id')
-            .maybeSingle();
-          if (update.error || !update.data) {
-            const syncErrorMessage = update.error?.message ?? 'Request status sync returned 0 rows (likely blocked by RLS).';
-            requestStatusSyncWarning = syncErrorMessage;
-            await logServerAuditEvent({
-              supabase,
-              profileId: profile.id,
-              action: 'work_order.request_status_sync_failed',
-              entityType: 'maintenance_requests',
-              entityId: current.id ?? null,
-              details: {
-                work_order_id: woRow.id ?? null,
-                attempted_status: nextStatus,
-                error: syncErrorMessage,
-              },
-            });
-          } else {
-            await logServerAuditEvent({
-              supabase,
-              profileId: profile.id,
-              action: 'maintenance_request.status_synced_by_work_order',
-              entityType: 'maintenance_requests',
-              entityId: current.id ?? null,
-              oldValues: { status: current.status },
-              newValues: { status: nextStatus, work_order_id: woRow.id ?? null },
-            });
-
-            // Notification: tell requester + dept head their request moved.
-            try {
-              const assetSummary = await loadAssetSummaryForNotification(
-                supabase,
-                current.asset_id ?? woRow.asset_id ?? null,
-              );
-              notificationResults.push(await createNotificationEvent({
-                event_type: 'maintenance_request.status_changed',
-                source_table: 'maintenance_requests',
-                source_id: current.id ?? null,
-                asset_id: current.asset_id ?? woRow.asset_id ?? null,
-                department_id: current.department_id ?? assetSummary.department_id ?? null,
-                priority: 'medium',
-                payload: {
-                  asset_name: assetSummary.asset_name,
-                  asset_code: assetSummary.asset_code,
-                  request_number: current.request_number ?? null,
-                  status: nextStatus,
-                  requested_by: current.requested_by ?? null,
-                  triggered_by_work_order_id: woRow.id ?? null,
-                  triggered_by_work_order_number: woRow.work_order_number ?? null,
-                },
-              }));
-            } catch (e) {
-              console.error('[notifications] maintenance_request.status_changed (R17) emit failed:', e);
-            }
-          }
-        }
+      const nextStatus = woRow.assigned_to ? 'assigned' : 'approved';
+      if (nextStatus === 'assigned') {
+        const sync = await syncLinkedRequestStatusFromWorkOrder({
+          supabase,
+          profileId: profile.id,
+          workOrder: woRow,
+          nextStatus,
+        });
+        requestStatusSyncWarning = sync.warning;
+        if (sync.notificationResult) notificationResults.push(sync.notificationResult);
       }
     }
 
@@ -703,6 +786,8 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
 
     const assetId = (result.data as Record<string, unknown>).asset_id as string | undefined;
     let conditionSyncWarning: string | null = null;
+    let requestStatusSyncWarning: string | null = null;
+    const requestNotificationResults: NotificationProcessResult[] = [];
     // R2: warning surfaced to the caller when the completion happened but
     // reliability evidence could not be persisted. Completion still succeeds
     // (we don't roll back) — the warning is loud so the gap is visible.
@@ -712,6 +797,19 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
         // Starting work: set equipment to under_maintenance
         const sync = await updateEquipmentConditionAction(assetId, 'under_maintenance');
         if (!sync.success) conditionSyncWarning = sync.error ?? 'Equipment condition could not be set to under_maintenance.';
+        const requestSync = await syncLinkedRequestStatusFromWorkOrder({
+          supabase,
+          profileId: profile.id,
+          workOrder: result.data as {
+            id?: string | null;
+            request_id?: string | null;
+            asset_id?: string | null;
+            work_order_number?: string | null;
+          },
+          nextStatus: 'in_progress',
+        });
+        requestStatusSyncWarning = requestSync.warning;
+        if (requestSync.notificationResult) requestNotificationResults.push(requestSync.notificationResult);
       } else if (data.status === 'completed') {
         // Completion: use explicit final_equipment_condition if provided, else derive from outcome
         const conditionToSet = (finalEquipmentCondition as 'functional' | 'needs_repair' | 'non_functional' | 'under_maintenance' | undefined)
@@ -844,6 +942,24 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
             details: { asset_id: assetId, error: message },
           });
         }
+        const requestSync = await syncLinkedRequestStatusFromWorkOrder({
+          supabase,
+          profileId: profile.id,
+          workOrder: result.data as {
+            id?: string | null;
+            request_id?: string | null;
+            asset_id?: string | null;
+            work_order_number?: string | null;
+          },
+          nextStatus: 'completed',
+          auditAction: 'maintenance_request.completed_by_work_order',
+          notificationPayload: {
+            completion_outcome: completionOutcome ?? null,
+            final_equipment_condition: conditionToSet,
+          },
+        });
+        requestStatusSyncWarning = requestSync.warning;
+        if (requestSync.notificationResult) requestNotificationResults.push(requestSync.notificationResult);
       }
       // on_hold: do not change condition — equipment remains under_maintenance or needs_repair
 
@@ -899,9 +1015,13 @@ export async function updateWorkOrderAction(id: string, payload: Record<string, 
     revalidateMany([...maintenancePaths, `/maintenance/work-orders/${id}`, ...(assetId ? [`/equipment/${assetId}`] : [])]);
     const baseData = result.data as Record<string, unknown>;
     const enriched: Record<string, unknown> = { ...baseData };
-    Object.assign(enriched, notificationReviewData(notificationResult));
+    Object.assign(enriched, firstNotificationReviewData([
+      ...requestNotificationResults,
+      ...(notificationResult ? [notificationResult] : []),
+    ]));
     if (conditionSyncWarning) enriched.condition_sync_warning = conditionSyncWarning;
     if (reliabilityEvidenceWarning) enriched.reliability_evidence_warning = reliabilityEvidenceWarning;
+    if (requestStatusSyncWarning) enriched.request_status_sync_warning = requestStatusSyncWarning;
     return { success: true, data: enriched };
   } catch (err) {
     return actionError(err, 'Failed to update work order');
@@ -960,6 +1080,22 @@ async function setWorkOrderAssignee(id: string, technicianProfileId: string, act
     });
 
     let notificationResult: NotificationProcessResult | null = null;
+    let requestNotificationResult: NotificationProcessResult | null = null;
+    let requestStatusSyncWarning: string | null = null;
+    const assignedRow = result.data as {
+      id?: string | null;
+      request_id?: string | null;
+      asset_id?: string | null;
+      work_order_number?: string | null;
+    };
+    const requestSync = await syncLinkedRequestStatusFromWorkOrder({
+      supabase,
+      profileId: profile.id,
+      workOrder: assignedRow,
+      nextStatus: 'assigned',
+    });
+    requestStatusSyncWarning = requestSync.warning;
+    requestNotificationResult = requestSync.notificationResult;
     try {
       const row = result.data as { id?: string; asset_id?: string; work_order_number?: string; priority?: string };
       const assetSummary = await loadAssetSummaryForNotification(supabase, row.asset_id ?? null);
@@ -988,12 +1124,22 @@ async function setWorkOrderAssignee(id: string, technicianProfileId: string, act
       notificationResult = makeFailedNotificationResult('work_order.assigned', e);
     }
 
-    revalidateMany([...maintenancePaths, `/maintenance/work-orders/${id}`]);
+    revalidateMany([
+      ...maintenancePaths,
+      '/requests',
+      '/notifications',
+      `/maintenance/work-orders/${id}`,
+      ...(assignedRow.request_id ? [`/maintenance/requests/${assignedRow.request_id}`] : []),
+    ]);
     return {
       success: true,
       data: {
         ...(result.data as Record<string, unknown>),
-        ...notificationReviewData(notificationResult),
+        ...firstNotificationReviewData([
+          ...(requestNotificationResult ? [requestNotificationResult] : []),
+          ...(notificationResult ? [notificationResult] : []),
+        ]),
+        ...(requestStatusSyncWarning ? { request_status_sync_warning: requestStatusSyncWarning } : {}),
       },
     };
   } catch (err) {

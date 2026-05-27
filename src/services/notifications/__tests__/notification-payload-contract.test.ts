@@ -248,3 +248,12 @@ test('INSTANT-04: workflow warnings use review wording instead of generic queue 
   assert.match(pm, /notification_delivery_needs_review/);
   assert.match(pmPage, /notification delivery needs review/);
 });
+
+test('DEMO-CM: completed maintenance request notification names requester outcome and final condition', () => {
+  const rules = readSource('src/services/notifications/notification-rules.ts');
+  const actions = readSource('src/actions/maintenance.actions.ts');
+  assert.match(rules, /Your maintenance request for \$\{asset\} has been completed\. The equipment is now functional\./);
+  assert.match(rules, /final_equipment_condition/);
+  assert.match(actions, /final_equipment_condition:\s*conditionToSet/);
+  assert.match(actions, /event_type:\s*'maintenance_request\.status_changed'/);
+});

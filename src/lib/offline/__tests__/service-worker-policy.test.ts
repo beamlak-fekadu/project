@@ -76,6 +76,11 @@ test('OFF-01: does not intercept Server Action / RSC traffic', () => {
   assert.match(swSource, /_rsc/);
 });
 
+test('OFF-01: does not intercept or cache Next.js runtime chunks', () => {
+  assert.match(swSource, /url\.pathname\.startsWith\('\/_next\/'\)/);
+  assert.match(swSource, /module factory is not available/);
+});
+
 test('OFF-01: GETs only — never caches POST / mutation traffic', () => {
   assert.match(swSource, /request\.method\s*!==\s*'GET'/);
 });

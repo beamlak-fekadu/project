@@ -8,7 +8,7 @@ import type {
 } from '@/types/domain';
 import { recomputeAssetAnalytics } from '@/actions/analytics.actions';
 import { logAuditEvent } from './audit.service';
-import { OPEN_MAINTENANCE_REQUEST_STATUSES } from '@/utils/maintenance/request-status';
+import { OPEN_MAINTENANCE_REQUEST_STATUSES, OPEN_WORK_ORDER_STATUSES } from '@/utils/maintenance/request-status';
 
 export interface MaintenanceRequestFilters {
   status?: MaintenanceRequestStatus;
@@ -182,7 +182,7 @@ export async function getOpenWorkOrders() {
   return supabase
     .from('work_orders')
     .select('id, asset_id, status, priority, assigned_to, created_at')
-    .in('status', ['open', 'assigned', 'in_progress', 'on_hold'])
+    .in('status', [...OPEN_WORK_ORDER_STATUSES])
     .order('created_at', { ascending: false });
 }
 
@@ -228,8 +228,40 @@ export async function getOpenWorkOrdersForAsset(assetId: string) {
     .from('work_orders')
     .select('id, work_order_number, asset_id, status, priority, assigned_to, created_at')
     .eq('asset_id', assetId)
-    .in('status', ['open', 'assigned', 'in_progress', 'on_hold'])
+    .in('status', [...OPEN_WORK_ORDER_STATUSES])
     .order('created_at', { ascending: false });
+}
+
+export type ActiveCorrectiveBlocker =
+  | (OpenCorrectiveRequestDetail & { blocker_type: 'maintenance_request' })
+  | {
+      blocker_type: 'work_order';
+      id: string;
+      work_order_number: string;
+      asset_id: string;
+      status: string;
+      priority: string;
+      assigned_to: string | null;
+      created_at: string;
+    };
+
+export async function getActiveCorrectiveBlockerForAsset(assetId: string): Promise<ActiveCorrectiveBlocker | null> {
+  const [request, workOrders] = await Promise.all([
+    getOpenCorrectiveRequestForAsset(assetId),
+    getOpenWorkOrdersForAsset(assetId),
+  ]);
+
+  if (request) return { ...request, blocker_type: 'maintenance_request' };
+  const workOrder = (workOrders.data?.[0] ?? null) as {
+    id: string;
+    work_order_number: string;
+    asset_id: string;
+    status: string;
+    priority: string;
+    assigned_to: string | null;
+    created_at: string;
+  } | null;
+  return workOrder ? { ...workOrder, blocker_type: 'work_order' } : null;
 }
 
 export async function getWorkOrdersByRequestId(requestId: string) {

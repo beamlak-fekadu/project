@@ -11,7 +11,7 @@
  *   - Skips opaque/redirected responses.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const APP_SHELL_CACHE = `bmedis-app-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `bmedis-static-${CACHE_VERSION}`;
 const PAGES_CACHE = `bmedis-pages-${CACHE_VERSION}`;
@@ -434,7 +434,10 @@ function shouldCacheNavigation(url) {
 
 function shouldCacheStatic(request, url) {
   if (!isSameOrigin(url)) return false;
-  if (url.pathname.startsWith('/_next/static/')) return true;
+  // Next.js chunks are already content-addressed and must revalidate through
+  // the browser/runtime. Serving stale chunks from the offline cache can leave
+  // the client with a mismatched module graph after deploys or dev rebuilds.
+  if (url.pathname.startsWith('/_next/')) return false;
   if (url.pathname.startsWith('/_next/data/')) return false; // user-specific
   if (url.pathname.startsWith('/icons/')) return true;
   if (url.pathname === '/manifest.webmanifest') return true;
@@ -536,6 +539,9 @@ self.addEventListener('fetch', (event) => {
 
   // Never intercept API routes — they need authoritative data.
   if (url.pathname.startsWith('/api/')) return;
+  // Never intercept Next.js runtime/chunk/data assets. Stale cached chunks can
+  // cause "module factory is not available" after a new build is loaded.
+  if (url.pathname.startsWith('/_next/')) return;
   // Never intercept Server Actions / RSC payloads either.
   if (url.searchParams.has('_rsc')) return;
 

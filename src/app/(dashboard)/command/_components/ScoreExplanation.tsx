@@ -39,7 +39,7 @@ export function ScoreExplanation({ details, children, showIcon = true }: Props) 
         className={
           showIcon
             ? 'inline-flex items-center gap-1 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs font-medium text-[var(--foreground)] transition hover:border-[var(--brand)]/50 hover:text-violet-300'
-            : 'inline-flex items-center text-left transition hover:opacity-80'
+            : 'inline-flex items-center text-left transition-colors hover:text-[var(--foreground)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]'
         }
         aria-label={`Explain ${details.title}`}
       >

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { buildCurrentReturnPath, safeReturnPath } from '@/lib/auth/return-to';
 
 // `/qr` is public so unauthenticated scans render the friendly login-required
 // landing page (src/app/qr/a/[token]) instead of bouncing through /login.
@@ -49,7 +50,10 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone();
+    const returnTo = buildCurrentReturnPath(request.nextUrl.pathname, request.nextUrl.search);
     url.pathname = '/login';
+    url.search = '';
+    url.searchParams.set('returnTo', returnTo);
     return NextResponse.redirect(url);
   }
 
@@ -58,10 +62,12 @@ export async function updateSession(request: NextRequest) {
     // If the user is already authenticated and hits /login with a safe
     // returnTo param (used by the QR scan flow), honour it instead of
     // always bouncing to /. Only single-leading-slash internal paths pass.
-    const candidate = request.nextUrl.searchParams.get('returnTo');
-    if (candidate && candidate.startsWith('/') && !candidate.startsWith('//') && !candidate.startsWith('/\\')) {
-      url.pathname = candidate;
-      url.search = '';
+    const candidate = safeReturnPath(request.nextUrl.searchParams.get('returnTo'));
+    if (candidate) {
+      const destination = new URL(candidate, request.nextUrl.origin);
+      url.pathname = destination.pathname;
+      url.search = destination.search;
+      url.hash = destination.hash;
     } else {
       url.pathname = '/';
       url.search = '';

@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { generateQrToken, isValidQrTokenFormat, maskQrToken } from '@/utils/qr/token';
 import { QR_SCAN_DEDUP_WINDOW_MINUTES } from '@/types/qr';
+import { OPEN_MAINTENANCE_REQUEST_STATUSES, OPEN_WORK_ORDER_STATUSES } from '@/utils/maintenance/request-status';
 import type {
   QrLabelStatus,
   QrCoverageStats,
@@ -474,8 +475,6 @@ export type QrAssetContext = {
   errors: string[];
 };
 
-const OPEN_REQUEST_STATUSES = ['pending', 'approved', 'assigned', 'in_progress'];
-const OPEN_WO_STATUSES = ['pending', 'assigned', 'in_progress', 'on_hold'];
 const ACTIVE_PM_STATUSES = ['scheduled', 'in_progress', 'overdue', 'deferred'];
 
 const CALIBRATION_DUE_SOON_DAYS = 30;
@@ -489,12 +488,12 @@ export async function getQrAssetContext(assetId: string, client?: Client): Promi
       .from('maintenance_requests')
       .select('id', { count: 'exact', head: true })
       .eq('asset_id', assetId)
-      .in('status', OPEN_REQUEST_STATUSES),
+      .in('status', [...OPEN_MAINTENANCE_REQUEST_STATUSES]),
     supabase
       .from('work_orders')
       .select('id', { count: 'exact', head: true })
       .eq('asset_id', assetId)
-      .in('status', OPEN_WO_STATUSES),
+      .in('status', [...OPEN_WORK_ORDER_STATUSES]),
     supabase
       .from('work_orders')
       .select('status, created_at')

@@ -176,6 +176,12 @@ function readinessMessage(score: number): string[] {
   ];
 }
 
+function readinessToneClass(score: number): string {
+  if (score >= 90) return 'readiness-card-tone--good';
+  if (score >= 70) return 'readiness-card-tone--watch';
+  return 'readiness-card-tone--critical';
+}
+
 function actionLabel(kind: ActionKind): string {
   if (kind === 'diagnostic') return 'Schedule Diagnostic';
   if (kind === 'replacement') return 'Request Replacement';
@@ -541,8 +547,7 @@ export default function CommandCenterInteractive({
                   {readiness.map((dept) => {
                     const isExpanded = expandedDepartment === dept.department_id;
                     const isFocusedDepartment = primaryRole === 'department_user' && departmentId === dept.department_id;
-                    const textColor = dept.readiness_score >= 90 ? 'text-emerald-300' : dept.readiness_score >= 70 ? 'text-amber-300' : 'text-rose-300';
-                    const cardClass = dept.readiness_score >= 90 ? 'border-emerald-500 bg-emerald-500/10' : dept.readiness_score >= 70 ? 'border-amber-500 bg-amber-500/10' : 'border-rose-500 bg-rose-500/10';
+                    const toneClass = readinessToneClass(dept.readiness_score);
                     const unavailable = dept.essential_unavailable ?? (dept.essential_total - dept.essential_functional);
                     const totalTracked = dept.total_tracked_assets ?? dept.essential_total;
                     const nonEssential = dept.non_essential_total ?? Math.max(0, totalTracked - dept.essential_total);
@@ -551,7 +556,7 @@ export default function CommandCenterInteractive({
                         key={dept.department_id}
                         role="button"
                         tabIndex={0}
-                        className={`flex min-w-[175px] flex-col rounded-lg border p-4 text-left transition hover:opacity-80 ${cardClass} ${isFocusedDepartment ? 'ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-[var(--background)]' : ''}`}
+                        className={`readiness-card-tone ${toneClass} flex min-w-[175px] cursor-pointer flex-col rounded-lg border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] ${isFocusedDepartment ? 'ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-[var(--background)]' : ''}`}
                         onClick={() => void toggleDepartment(dept.department_id)}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
@@ -578,18 +583,18 @@ export default function CommandCenterInteractive({
                           assignmentMethod: 'Computed snapshot',
                           actionSuggestion: 'Open details to inspect unavailable essential equipment.',
                         }}>
-                          <span className={`text-3xl font-bold ${textColor}`}>{dept.readiness_score}%</span>
+                          <span className="readiness-card-score text-3xl font-bold">{dept.readiness_score}%</span>
                         </ScoreExplanation>
-                        <span className="mt-1 text-xs font-medium text-[var(--foreground)]">{dept.department_name}</span>
-                        <span className="mt-1 text-[10px] text-[var(--text-muted)]">
+                        <span className="readiness-card-title mt-1 text-xs font-semibold">{dept.department_name}</span>
+                        <span className="readiness-card-meta mt-1 text-[10px] font-medium">
                           {dept.essential_functional}/{dept.essential_total} essential functional
                         </span>
-                        <span className="mt-0.5 text-[10px] text-[var(--text-muted)]">{totalTracked} total tracked assets</span>
-                        {nonEssential > 0 && <span className="mt-0.5 text-[10px] text-[var(--text-muted)]">{nonEssential} non-essential excluded</span>}
+                        <span className="readiness-card-meta mt-0.5 text-[10px]">{totalTracked} total tracked assets</span>
+                        {nonEssential > 0 && <span className="readiness-card-meta mt-0.5 text-[10px]">{nonEssential} non-essential excluded</span>}
                         {unavailable > 0 && (
-                          <span className="mt-0.5 text-[10px] text-rose-400">{unavailable} essential unavailable</span>
+                          <span className="readiness-card-unavailable mt-0.5 text-[10px] font-medium">{unavailable} essential unavailable</span>
                         )}
-                        <span className="mt-2 text-[10px] text-violet-300">{isExpanded ? 'Hide details' : 'View details'}</span>
+                        <span className="readiness-card-action mt-2 text-[10px] font-semibold">{isExpanded ? 'Hide details' : 'View details'}</span>
                       </div>
                     );
                   })}
