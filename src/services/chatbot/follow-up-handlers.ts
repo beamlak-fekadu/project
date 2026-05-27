@@ -123,6 +123,16 @@ export interface FollowUpMemoryContext {
   lastDataFreshness?: string;
   /** Last data_mode tag from the prior assistant turn. */
   lastDataMode?: NonNullable<AssistantContent['data_mode']>;
+  /** Evidence completeness from the prior assistant turn. */
+  lastEvidenceCompleteness?: {
+    status?: string;
+    score?: number;
+    requiredMissing?: string[];
+  };
+  /** Confidence that memory is recent and entity-grounded enough for follow-up routing. */
+  memoryConfidence?: 'high' | 'medium' | 'low';
+  /** Number of turns since the prior assistant anchor. */
+  memoryAgeTurns?: number;
   /** Last assistant title (for back-reference phrasing). */
   lastTitle?: string;
   /** Last assistant summary (for the short-paraphrase path). */
@@ -193,6 +203,7 @@ function baseAnswer(
     evidence_used: parts.evidence_used ?? [],
     links: parts.links ?? [],
     limitations: parts.limitations ?? [],
+    missingDataFlags: parts.missingDataFlags ?? [],
     data_freshness: parts.data_freshness,
     data_mode: parts.data_mode,
     data_age_label: parts.data_age_label,
@@ -209,9 +220,13 @@ function baseAnswer(
 
 function hasUsefulMemory(memory?: FollowUpMemoryContext): memory is FollowUpMemoryContext {
   if (!memory) return false;
+  if (memory.memoryConfidence === 'low') return false;
+  if ((memory.memoryAgeTurns ?? 0) > 8) return false;
+  if (memory.lastEvidenceCompleteness?.status === 'insufficient' || memory.lastEvidenceCompleteness?.status === 'denied') {
+    return false;
+  }
   return Boolean(
-    memory.shortSummary ||
-      memory.activeCapability ||
+    (memory.activeCapability && memory.memoryConfidence === 'high') ||
       (memory.lastEntityLabels?.length ?? 0) > 0 ||
       memory.lastTitle ||
       memory.lastSummary,

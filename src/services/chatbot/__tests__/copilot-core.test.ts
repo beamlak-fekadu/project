@@ -33,6 +33,7 @@ const BASE_EVIDENCE: ChatEvidence = {
   evidenceSignals: [],
   deniedContextRefs: [],
   accessDenied: false,
+  missingDataFlags: [],
 };
 
 test('classifier maps paraphrases to my_tasks capability', () => {

@@ -42,6 +42,7 @@ const BASE_EVIDENCE: ChatEvidence = {
   evidenceSignals: [],
   deniedContextRefs: [],
   accessDenied: false,
+  missingDataFlags: [],
 };
 
 const BME_HEAD: UserChatProfile = {

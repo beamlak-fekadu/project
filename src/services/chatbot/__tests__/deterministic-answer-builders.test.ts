@@ -42,6 +42,7 @@ const EMPTY_EVIDENCE: ChatEvidence = {
   evidenceSignals: [],
   deniedContextRefs: [],
   accessDenied: false,
+  missingDataFlags: [],
 };
 
 test('equipment page context produces grounded asset summary without asking which asset', () => {

@@ -42,6 +42,9 @@ type UIMessage = {
   content: string;
   createdAt: string;
   assistant?: AssistantContent;
+  intent?: string;
+  capability?: string;
+  fallbackReason?: string;
 };
 
 const QUICK_PROMPTS = [
@@ -53,8 +56,9 @@ const QUICK_PROMPTS = [
 ];
 
 function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
+  const capability = typeof row.metadata?.capability === 'string' ? row.metadata.capability : undefined;
   const assistant = row.role === 'assistant'
-    ? normalizeAssistantPayloadForUi(row.metadata?.assistant, row.content)
+    ? normalizeAssistantPayloadForUi(row.metadata?.assistant, row.content, undefined, capability)
     : undefined;
 
   return {
@@ -63,6 +67,9 @@ function mapPersistedMessage(row: PersistedChatMessage): UIMessage {
     content: row.content,
     createdAt: row.created_at,
     assistant,
+    intent: row.intent ?? undefined,
+    capability,
+    fallbackReason: typeof row.metadata?.fallbackReason === 'string' ? row.metadata.fallbackReason : undefined,
   };
 }
 
@@ -189,13 +196,16 @@ export default function ChatbotPage() {
 
       setActiveSessionId(payload.sessionId);
 
-      const assistantNormalized = normalizeAssistantPayloadForUi(payload.assistant);
+      const assistantNormalized = normalizeAssistantPayloadForUi(payload.assistant, undefined, undefined, payload.capability);
       const assistantMessage: UIMessage = {
         id: `local-assistant-${Date.now()}`,
         role: 'assistant',
         content: assistantNormalized.summary,
         createdAt: new Date().toISOString(),
         assistant: assistantNormalized,
+        intent: payload.intent,
+        capability: payload.capability,
+        fallbackReason: payload.fallbackReason,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);

@@ -4,9 +4,12 @@ import {
   type CapabilityId,
   type ChatContextRefs,
   type ChatDecision,
+  type ChatEvidence,
   type ChatModuleContext,
   type ClassifiedRequest,
   type OrchestratorResult,
+  type ResponseMode,
+  type SafetyEvaluation,
   type UserChatProfile,
 } from '@/types/chatbot';
 import { buildRoutingExplanation, classifyChatRequest } from './classifier-service';
@@ -27,9 +30,101 @@ import { logCopilotTelemetry } from './telemetry-service';
 import { getCapabilityDefinition, normalizeCapabilityId } from './capability-registry';
 import { getOwnCopilotUsageSnapshot, logCopilotUsageEvent } from './usage-service';
 import { buildActionDraftsFromContext } from './action-draft-service';
+import { getCopilotRoleCategory } from './copilot-rbac';
 
 function debugProviderFlowEnabled() {
   return (process.env.CHAT_DEBUG_PROVIDER_FLOW ?? '').toLowerCase() === 'true';
+}
+
+function hasDebuggableValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value).length > 0;
+  return value != null && value !== false;
+}
+
+function evidenceKeysPresent(evidence: ChatEvidence) {
+  return ([
+    'equipment',
+    'workOrder',
+    'department',
+    'maintenanceHistory',
+    'pmSnapshot',
+    'calibrationStatus',
+    'logisticsSnapshot',
+    'analyticsSnapshot',
+    'manualOrSopTexts',
+    'documentRetrieval',
+    'evidenceSignals',
+    'missingDataFlags',
+    'evidenceCompleteness',
+    'deniedContextRefs',
+  ] as const).filter((key) => hasDebuggableValue(evidence[key]));
+}
+
+function contextKeysPresent(blocks: Record<string, unknown>) {
+  return Object.entries(blocks)
+    .filter(([, value]) => hasDebuggableValue(value))
+    .map(([key]) => key)
+    .slice(0, 24);
+}
+
+function deriveRoutingSource(classified: ClassifiedRequest) {
+  if (classified.matchedSignals.includes('page_context_capability')) return 'page_context';
+  if (classified.matchedSignals.includes('memory_capability_bias')) return 'memory';
+  if (classified.matchedSignals.includes('specific_work_order_status')) return 'classifier_specific_work_order';
+  if (classified.matchedSignals.includes('work_order_queue_status')) return 'classifier_work_order_queue';
+  if (classified.matchedSignals.includes('default_general_fallback')) return 'default_general_fallback';
+  if (classified.fallbackReason === 'no_capability_match') return 'default_general_fallback';
+  return 'classifier';
+}
+
+function buildResponseDebugMetadata(params: {
+  profile: UserChatProfile;
+  classified: ClassifiedRequest;
+  capability: CapabilityId;
+  responseMode: ResponseMode;
+  safety: Pick<SafetyEvaluation, 'decision' | 'reason' | 'evidenceTier' | 'policyCategory'>;
+  evidence: ChatEvidence;
+  blocks: Record<string, unknown>;
+  startedAt: number;
+  blocked: boolean;
+  providerUsed: boolean;
+  deterministicBuilderUsed: boolean;
+  deterministicFallbackUsed: boolean;
+  fallbackReason?: string;
+}) {
+  return {
+    classifiedIntent: params.classified.intent,
+    selectedCapability: params.capability,
+    safetyDecision: params.safety.decision,
+    safetyEvidenceTier: params.safety.evidenceTier,
+    safetyPolicyCategory: params.safety.policyCategory,
+    roleCategory: getCopilotRoleCategory(params.profile),
+    confidence: params.classified.confidence,
+    confidenceLabel: params.classified.confidenceLabel,
+    responseMode: params.responseMode,
+    routingSource: deriveRoutingSource(params.classified),
+    evidenceKeys: evidenceKeysPresent(params.evidence),
+    evidenceCompleteness: params.evidence.evidenceCompleteness
+      ? {
+          status: params.evidence.evidenceCompleteness.status,
+          score: params.evidence.evidenceCompleteness.score,
+          requiredMissing: params.evidence.evidenceCompleteness.requiredMissing,
+          conflictSignals: params.evidence.evidenceCompleteness.conflictSignals,
+        }
+      : undefined,
+    contextKeys: contextKeysPresent(params.blocks),
+    providerUsed: params.providerUsed,
+    deterministicBuilderUsed: params.deterministicBuilderUsed,
+    deterministicFallbackUsed: params.deterministicFallbackUsed,
+    blocked: params.blocked,
+    fallbackReason: params.fallbackReason ?? null,
+    durationMs: Date.now() - params.startedAt,
+  };
+}
+
+function logSafeCopilotResponseDiagnostic(metadata: Record<string, unknown>) {
+  console.info('[copilot][response]', metadata);
 }
 
 function deriveAnswerType(assistant: AssistantContent) {
@@ -65,7 +160,7 @@ function isGenericPageFollowUp(message: string) {
   );
 }
 
-function derivePageAwareCapability(params: {
+export function derivePageAwareCapability(params: {
   classified: ClassifiedRequest;
   message: string;
   moduleContext?: ChatModuleContext;
@@ -196,6 +291,7 @@ export function buildDeterministicAssistantIntro(): AssistantContent {
     evidence_used: [],
     links: [],
     limitations: [],
+    missingDataFlags: [],
     data_freshness: undefined,
     source_tables: [],
     action_drafts: [],
@@ -219,6 +315,7 @@ function enrichAssistantPayload(params: {
   const mergedProactive = [...new Set([...fromBlocks, ...(assistant.proactive_signals ?? [])])].slice(0, 3);
   const evidenceUsed = Array.isArray(blocks.evidenceUsed) ? (blocks.evidenceUsed as string[]) : [];
   const sourceTables = Array.isArray(blocks.sourceTables) ? (blocks.sourceTables as string[]) : [];
+  const missingDataFlags = evidence?.missingDataFlags ?? [];
   const routeLinks = Array.isArray(blocks.routeLinks)
     ? (blocks.routeLinks as Array<{ label?: unknown; href?: unknown; type?: unknown }>)
         .map((link) => ({
@@ -253,6 +350,7 @@ function enrichAssistantPayload(params: {
     evidence_used: [...new Set([...(assistant.evidence_used ?? []), ...evidenceUsed])].slice(0, 12),
     links: [...(assistant.links ?? []), ...routeLinks].slice(0, 10),
     limitations: [...new Set([...(assistant.limitations ?? []), ...warnings])].slice(0, 8),
+    missingDataFlags: [...new Set([...(assistant.missingDataFlags ?? []), ...missingDataFlags])].slice(0, 12),
     source_tables: [...new Set([...(assistant.source_tables ?? []), ...sourceTables])].slice(0, 12),
     data_freshness: assistant.data_freshness ?? lineage.data_freshness,
     data_mode: lineage.data_mode,
@@ -333,6 +431,7 @@ function buildBlockedAssistantContent(
     evidence_used: [],
     links: [],
     limitations: [],
+    missingDataFlags: [],
     data_freshness: undefined,
     source_tables: [],
     action_drafts: [],
@@ -359,9 +458,13 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
   const startedAt = Date.now();
   const { supabase, sessionId, message, profile, contextRefs, moduleContext } = params;
   const initialMemory = await loadConversationMemory(supabase, sessionId);
+  const memoryReliableForRouting =
+    initialMemory.memoryConfidence !== 'low' &&
+    (initialMemory.memoryAgeTurns ?? 0) <= 8 &&
+    (initialMemory.lastEntities ?? []).some((entity) => (entity.confidence ?? 0) >= 0.55);
   const rawClassified = classifyChatRequest(message, {
-    activeCapability: initialMemory.activeCapability,
-    threadIntent: initialMemory.threadIntent,
+    activeCapability: memoryReliableForRouting ? initialMemory.activeCapability : undefined,
+    threadIntent: memoryReliableForRouting ? initialMemory.threadIntent : undefined,
   });
   const rawCapability = normalizeCapabilityId(rawClassified.capability);
   const classified = withPageAwareCapability({
@@ -385,6 +488,9 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
   const resolvedEntities = resolution.resolved;
   const entityWarnings: EntityResolutionWarning[] = resolution.warnings;
   const memory = await loadConversationMemory(supabase, sessionId, resolvedEntities);
+  const resolvedEquipment = resolvedEntities.find((entity) => entity.type === 'equipment');
+  const resolvedWorkOrder = resolvedEntities.find((entity) => entity.type === 'work_order');
+  const resolvedDepartment = resolvedEntities.find((entity) => entity.type === 'department');
   const taskContext = await buildTaskContext({
     supabase,
     capability,
@@ -393,11 +499,24 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
     moduleContext,
     classified: effectiveClassified,
     contextRefs: {
-      equipmentId: contextRefs?.equipmentId ?? resolvedEntities.find((entity) => entity.type === 'equipment')?.id,
-      workOrderId: contextRefs?.workOrderId ?? resolvedEntities.find((entity) => entity.type === 'work_order')?.id,
-      departmentId: contextRefs?.departmentId ?? resolvedEntities.find((entity) => entity.type === 'department')?.id,
+      equipmentId: resolvedEquipment?.source === 'text_match' ? resolvedEquipment.id : contextRefs?.equipmentId ?? resolvedEquipment?.id,
+      workOrderId: resolvedWorkOrder?.source === 'text_match' ? resolvedWorkOrder.id : contextRefs?.workOrderId ?? resolvedWorkOrder?.id,
+      departmentId: contextRefs?.departmentId ?? resolvedDepartment?.id,
     },
   });
+  if (taskContext.evidence.evidenceCompleteness) {
+    taskContext.evidence.evidenceCompleteness.sourceCoverage.memory_context = resolvedEntities.some((entity) => entity.source === 'memory_context');
+    taskContext.evidence.evidenceCompleteness.sourceCoverage.text_match = resolvedEntities.some((entity) => entity.source === 'text_match');
+    const conflictSignals = entityWarnings
+      .filter((warning) => warning.type === 'context_conflict')
+      .map((warning) => warning.detail ?? warning.reason);
+    if (conflictSignals.length > 0) {
+      taskContext.evidence.evidenceCompleteness.conflictSignals = Array.from(
+        new Set([...taskContext.evidence.evidenceCompleteness.conflictSignals, ...conflictSignals])
+      ).slice(0, 6);
+      taskContext.evidence.evidenceSignals.push(`Context conflict resolved: ${conflictSignals.join(' ')}`);
+    }
+  }
   const safety = evaluateSafetyDecision(message, effectiveClassified, profile, taskContext.evidence);
 
   if (debugProviderFlowEnabled()) {
@@ -423,6 +542,22 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       safeChecks: safety.safeChecks,
       policyTags: safety.policyTags,
     });
+    const debugMetadata = buildResponseDebugMetadata({
+      profile,
+      classified,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      safety,
+      evidence: taskContext.evidence,
+      blocks: taskContext.blocks,
+      startedAt,
+      blocked: true,
+      providerUsed: false,
+      deterministicBuilderUsed: false,
+      deterministicFallbackUsed: false,
+      fallbackReason: classified.fallbackReason,
+    });
+    logSafeCopilotResponseDiagnostic(debugMetadata);
     const blockedSummary = blockedAssistant.summary;
     await logCopilotTelemetry(supabase, {
       sessionId,
@@ -450,7 +585,12 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         troubleshootingSubtype: classified.troubleshootingSubtype,
         intelligenceMode: 'standard',
         answerType: 'blocked',
+        policyTags: safety.policyTags ?? [],
+        evidenceCompleteness: taskContext.evidence.evidenceCompleteness,
+        memoryConfidence: memory.memoryConfidence,
+        memoryAgeTurns: memory.memoryAgeTurns,
         toolTrace: taskContext.blocks.toolTrace,
+        responseDebug: debugMetadata,
       },
     });
     await persistConversationMemory(supabase, {
@@ -479,6 +619,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       memory,
       resolvedEntities,
       policyReason: safety.reason,
+      debugMetadata,
     };
   }
 
@@ -497,10 +638,13 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
     lastEntityLabels: (memory.lastEntities ?? []).map((e) => e.label).filter(Boolean),
     lastSummary: lastAssistantContent || undefined,
     lastTitle: undefined,
-    lastEvidenceUsed: undefined,
-    lastSourceTables: undefined,
-    lastDataFreshness: undefined,
-    lastDataMode: undefined,
+    lastEvidenceUsed: memory.lastEvidenceUsed,
+    lastSourceTables: memory.lastSourceTables,
+    lastDataFreshness: memory.lastDataFreshness,
+    lastDataMode: memory.lastDataMode,
+    lastEvidenceCompleteness: memory.lastEvidenceCompleteness,
+    memoryConfidence: memory.memoryConfidence,
+    memoryAgeTurns: memory.memoryAgeTurns,
     hadActionDraft: false,
   };
 
@@ -544,6 +688,22 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
             },
             safety.decision
           );
+    const debugMetadata = buildResponseDebugMetadata({
+      profile,
+      classified,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      safety,
+      evidence: taskContext.evidence,
+      blocks: taskContext.blocks,
+      startedAt,
+      blocked: false,
+      providerUsed: false,
+      deterministicBuilderUsed: Boolean(deterministicCandidate),
+      deterministicFallbackUsed: Boolean(deterministicCandidate),
+      fallbackReason: classified.fallbackReason,
+    });
+    logSafeCopilotResponseDiagnostic(debugMetadata);
     await logCopilotTelemetry(supabase, {
       sessionId,
       query: message,
@@ -566,6 +726,10 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         providerSkipped: true,
         skipReason: 'local_deterministic_assistant_intro',
         capabilityDefinition: capabilityDef,
+        evidenceCompleteness: taskContext.evidence.evidenceCompleteness,
+        memoryConfidence: memory.memoryConfidence,
+        memoryAgeTurns: memory.memoryAgeTurns,
+        responseDebug: debugMetadata,
       },
     });
     await persistConversationMemory(supabase, {
@@ -596,6 +760,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       model: undefined,
       providerMetadata: { providerSkipped: true, skipReason: 'local_deterministic_assistant_intro' },
       policyReason: safety.reason,
+      debugMetadata,
     };
   }
 
@@ -640,6 +805,22 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
           },
       'limited_answer'
     );
+    const debugMetadata = buildResponseDebugMetadata({
+      profile,
+      classified,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      safety,
+      evidence: taskContext.evidence,
+      blocks: taskContext.blocks,
+      startedAt,
+      blocked: false,
+      providerUsed: false,
+      deterministicBuilderUsed: Boolean(deterministicCandidate),
+      deterministicFallbackUsed: Boolean(deterministicCandidate),
+      fallbackReason: 'insufficient_context',
+    });
+    logSafeCopilotResponseDiagnostic(debugMetadata);
     return {
       intent: classified.intent,
       capability: classified.capability,
@@ -657,6 +838,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       model: undefined,
       providerMetadata: { usageHardLimited: true, usageBeforeProvider },
       policyReason: usageBeforeProvider.warning ?? 'Configured copilot hard limit is enabled.',
+      debugMetadata,
     };
   }
 
@@ -773,6 +955,10 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       providerFallback,
       parserRecoveryUsed,
     });
+    const deterministicGuardFallbackUsed = Boolean(
+      deterministicCandidate &&
+        (providerFallback || parserRecoveryUsed || guardedAssistant.summary === deterministicCandidate.summary)
+    );
     const verifiedAssistant = verifyAssistantClaimsAgainstEvidence({
       assistant: guardedAssistant,
       deterministic: deterministicCandidate,
@@ -840,6 +1026,22 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       safety.decision
     );
     const responseFallbackReason = providerFallback && !deterministicContextFallbackUsed ? 'provider_failure' : classified.fallbackReason;
+    const debugMetadata = buildResponseDebugMetadata({
+      profile,
+      classified,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      safety,
+      evidence: taskContext.evidence,
+      blocks: taskContext.blocks,
+      startedAt,
+      blocked: false,
+      providerUsed: true,
+      deterministicBuilderUsed: Boolean(deterministicCandidate),
+      deterministicFallbackUsed: deterministicContextFallbackUsed || deterministicGuardFallbackUsed,
+      fallbackReason: responseFallbackReason,
+    });
+    logSafeCopilotResponseDiagnostic(debugMetadata);
 
     await logCopilotTelemetry(supabase, {
       sessionId,
@@ -873,9 +1075,14 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         providerFallback,
         parserRecoveryUsed,
         deterministicContextFallbackUsed,
+        deterministicGuardFallbackUsed,
         contextBlocksAvailable,
         toolTraceAvailable,
+        evidenceCompleteness: taskContext.evidence.evidenceCompleteness,
+        memoryConfidence: memory.memoryConfidence,
+        memoryAgeTurns: memory.memoryAgeTurns,
         toolTrace: taskContext.blocks.toolTrace,
+        responseDebug: debugMetadata,
       },
     });
     await logCopilotUsageEvent({
@@ -922,6 +1129,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       model: providerResult.model,
       providerMetadata: enhancedProviderMetadata,
       policyReason: safety.reason,
+      debugMetadata,
     };
   } catch (error) {
     if (debugProviderFlowEnabled()) {
@@ -950,6 +1158,22 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         : buildAiUnavailableAssistant(safety.decision),
       safety.decision
     );
+    const debugMetadata = buildResponseDebugMetadata({
+      profile,
+      classified,
+      capability,
+      responseMode: capabilityDef.responseMode,
+      safety,
+      evidence: taskContext.evidence,
+      blocks: taskContext.blocks,
+      startedAt,
+      blocked: false,
+      providerUsed: true,
+      deterministicBuilderUsed: Boolean(deterministicCandidate),
+      deterministicFallbackUsed: Boolean(deterministicCandidate),
+      fallbackReason: 'provider_failure',
+    });
+    logSafeCopilotResponseDiagnostic(debugMetadata);
     await logCopilotTelemetry(supabase, {
       sessionId,
       query: message,
@@ -974,6 +1198,10 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
         troubleshootingSubtype: classified.troubleshootingSubtype,
         answerType: 'provider_error',
         orchestratorFallback: true,
+        evidenceCompleteness: taskContext.evidence.evidenceCompleteness,
+        memoryConfidence: memory.memoryConfidence,
+        memoryAgeTurns: memory.memoryAgeTurns,
+        responseDebug: debugMetadata,
       },
     });
     await logCopilotUsageEvent({
@@ -1018,6 +1246,7 @@ export async function orchestrateAssistantResponse(params: OrchestrateParams): P
       memory,
       resolvedEntities,
       policyReason: error instanceof Error ? error.message : String(error),
+      debugMetadata,
     };
   }
 }

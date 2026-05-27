@@ -37,6 +37,7 @@ function buildSafeFallback(requiredDecision: ChatDecision): AssistantContent {
     evidence_used: [],
     links: [],
     limitations: [],
+    missingDataFlags: [],
     data_freshness: undefined,
     source_tables: [],
     action_drafts: [],
@@ -150,6 +151,7 @@ export function buildAiUnavailableAssistant(requiredDecision: ChatDecision): Ass
     evidence_used: [],
     links: [],
     limitations: [],
+    missingDataFlags: [],
     data_freshness: undefined,
     source_tables: [],
     action_drafts: [],
@@ -196,6 +198,7 @@ export function ensureUiSafeAssistant(
     evidence_used: filterRawUuidChips(assistant.evidence_used, 12, 320),
     links: clampLinks(assistant.links),
     limitations: clampStringArray(assistant.limitations, 8, 320),
+    missingDataFlags: clampStringArray(assistant.missingDataFlags, 12, 120),
     data_freshness: typeof assistant.data_freshness === 'string' ? clampString(assistant.data_freshness, 200) : undefined,
     source_tables: clampStringArray(assistant.source_tables, 12, 120),
     data_mode: ['live', 'snapshot', 'stale', 'sandbox', 'missing', 'unknown'].includes(

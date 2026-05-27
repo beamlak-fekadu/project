@@ -22,8 +22,58 @@ const DEPRECATED_REDIRECTS: Array<{ from: string; to: string; exact?: boolean; s
   { from: '/analytics', to: '/command', exact: true },
 ];
 
+function trimTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+function withProtocol(value: string): string {
+  if (/^https?:\/\//i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function getCanonicalQrBaseUrl(): URL | null {
+  const candidates = [process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL];
+  for (const candidate of candidates) {
+    if (!candidate?.trim()) continue;
+    try {
+      return new URL(trimTrailingSlash(withProtocol(candidate.trim())));
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function isLocalRequest(request: NextRequest): boolean {
+  const host = request.nextUrl.hostname.toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
+function canonicalQrRedirect(request: NextRequest): NextResponse | null {
+  if (!request.nextUrl.pathname.startsWith('/qr/a/')) return null;
+  if (isLocalRequest(request)) return null;
+
+  const canonical = getCanonicalQrBaseUrl();
+  if (!canonical) return null;
+  if (request.nextUrl.origin.toLowerCase() === canonical.origin.toLowerCase()) return null;
+
+  const url = request.nextUrl.clone();
+  url.protocol = canonical.protocol;
+  url.host = canonical.host;
+  url.pathname = request.nextUrl.pathname;
+  url.search = request.nextUrl.search;
+  return NextResponse.redirect(url, { status: 308 });
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (process.env.NODE_ENV !== 'production' && pathname.startsWith('/copilot-smoke')) {
+    return NextResponse.next();
+  }
+
+  const qrRedirect = canonicalQrRedirect(request);
+  if (qrRedirect) return qrRedirect;
 
   for (const rule of DEPRECATED_REDIRECTS) {
     const matches = rule.exact ? pathname === rule.from : pathname.startsWith(rule.from);

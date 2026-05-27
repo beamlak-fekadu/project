@@ -1,0 +1,626 @@
+{
+  "generated": "2026-05-27",
+  "description": "Complete inventory of all BMEDIS Copilot AI pipeline files",
+  "files": [
+    {
+      "path": "src/app/api/chat/route.ts",
+      "purpose": "Next.js API route handler for POST /api/chat — entry point for all copilot requests",
+      "exports": ["POST", "GET"],
+      "affects": ["routing", "context", "persistence", "telemetry"],
+      "riskLevel": "high",
+      "reason": "Single gateway; any breakage here kills all AI responses. Builds UserChatProfile including role loading."
+    },
+    {
+      "path": "src/services/chatbot/classifier-service.ts",
+      "purpose": "Regex-based intent classifier and capability router. Maps user message to ChatIntent + CapabilityId via pattern matching.",
+      "exports": ["classifyChatRequest", "buildRoutingExplanation"],
+      "affects": ["intent", "routing"],
+      "riskLevel": "high",
+      "reason": "Core of the routing problem. Regex-only classifier with broad troubleshooting patterns that steal summary/status queries. Default fallback is maintenance_tip, not a neutral catch-all."
+    },
+    {
+      "path": "src/services/chatbot/capability-registry.ts",
+      "purpose": "Defines all 25 CapabilityDefinition records with intent mappings, required inputs, retrieval blocks, response modes, and safety constraints.",
+      "exports": ["CAPABILITY_REGISTRY", "getCapabilityDefinition", "normalizeCapabilityId"],
+      "affects": ["routing", "context", "safety"],
+      "riskLevel": "medium",
+      "reason": "Registry is well-structured but every capability uses ALL_SECTIONS for responseSections, removing any differentiation of output shape per capability."
+    },
+    {
+      "path": "src/services/chatbot/safety-service.ts",
+      "purpose": "Evaluates safety decision (answer/limited_answer/check_manual/escalate/refuse) based on intent, role, evidence, and content patterns.",
+      "exports": ["evaluateSafetyDecision", "STANDARD_RESPONSES"],
+      "affects": ["safety", "output formatting"],
+      "riskLevel": "high",
+      "reason": "Safety logic is thorough but troubleshooting/calibration intents always return limited_answer even when evidence is available, which degrades summary quality."
+    },
+    {
+      "path": "src/services/chatbot/prompt-service.ts",
+      "purpose": "Builds the system prompt and user prompt payload sent to Gemini. Contains CHATBOT_SYSTEM_PROMPT and outputContract.",
+      "exports": ["buildPromptPayload", "CHATBOT_SYSTEM_PROMPT"],
+      "affects": ["prompting", "output formatting", "safety"],
+      "riskLevel": "high",
+      "reason": "System prompt contains 'For troubleshooting, provide safe first-line checks only' as a global instruction, not scoped to the troubleshooting capability. This bleeds into all response types."
+    },
+    {
+      "path": "src/services/chatbot/context-service.ts",
+      "purpose": "Builds ChatEvidence by querying Supabase for equipment, work orders, departments, maintenance history, PM, calibration, logistics, analytics, manuals, and document embeddings.",
+      "exports": ["buildChatEvidence"],
+      "affects": ["context"],
+      "riskLevel": "medium",
+      "reason": "Solid data loading but logistics/analytics are gated on specific intent values, meaning some capabilities get less context than they need."
+    },
+    {
+      "path": "src/services/chatbot/assistant-orchestrator.ts",
+      "purpose": "Main orchestration function that chains classifier -> entity resolution -> task context -> safety -> deterministic builders -> provider call -> response normalization -> usefulness guard -> claim verification -> telemetry.",
+      "exports": ["orchestrateAssistantResponse", "shouldUseProvider", "buildDeterministicAssistantIntro"],
+      "affects": ["intent", "routing", "context", "safety", "prompting", "output formatting", "telemetry"],
+      "riskLevel": "high",
+      "reason": "Central coordination point. Well-structured but very long (~1000 lines). Contains page-aware capability override logic that is a secondary routing layer."
+    },
+    {
+      "path": "src/services/chatbot/llm-service.ts",
+      "purpose": "Thin wrapper that delegates to the active chat provider (Gemini).",
+      "exports": ["generateAssistantContent"],
+      "affects": ["prompting"],
+      "riskLevel": "low",
+      "reason": "Simple delegation; risk is in the provider implementation, not here."
+    },
+    {
+      "path": "src/services/chatbot/providers/gemini-provider.ts",
+      "purpose": "Gemini API provider implementation. Handles model call, JSON parsing, and fallback.",
+      "exports": ["GeminiProvider"],
+      "affects": ["prompting", "output formatting"],
+      "riskLevel": "medium",
+      "reason": "Provider works but parser recovery path can lose structured data and fall back to generic text."
+    },
+    {
+      "path": "src/services/chatbot/providers/index.ts",
+      "purpose": "Provider factory that returns GeminiProvider based on env config.",
+      "exports": ["getChatProvider"],
+      "affects": ["prompting"],
+      "riskLevel": "low",
+      "reason": "Simple factory."
+    },
+    {
+      "path": "src/services/chatbot/providers/normalize-provider-output.ts",
+      "purpose": "Normalizes raw provider output into AssistantContent, ensures UI safety, builds AI-unavailable fallback.",
+      "exports": ["ensureUiSafeAssistant", "buildAiUnavailableAssistant", "AI_UNAVAILABLE_SUMMARY"],
+      "affects": ["output formatting"],
+      "riskLevel": "medium",
+      "reason": "Good safety net but can mask useful data when normalization strips fields."
+    },
+    {
+      "path": "src/services/chatbot/assistant-response-pipeline.ts",
+      "purpose": "Parses and normalizes raw provider content (JSON or text) into validated AssistantContent. Multi-candidate JSON scorer.",
+      "exports": ["normalizeAssistantResponse"],
+      "affects": ["output formatting"],
+      "riskLevel": "medium",
+      "reason": "Robust parser with multi-candidate scoring but format_recovery path produces generic responses."
+    },
+    {
+      "path": "src/services/chatbot/structured-context-fallback.ts",
+      "purpose": "Builds deterministic structured fallback when provider fails or parser recovery is needed, using context blocks directly.",
+      "exports": ["buildDeterministicStructuredFallback", "hasUsableStructuredContext"],
+      "affects": ["output formatting", "context"],
+      "riskLevel": "medium",
+      "reason": "Good fallback system but limited to a few capabilities (prioritize_tasks, safe_troubleshooting, summarize_work_order)."
+    },
+    {
+      "path": "src/services/chatbot/deterministic-answer-builders.ts",
+      "purpose": "Builds deterministic (non-LLM) answers for each capability using retrieved tool/context data. 1200+ lines covering 15+ capability builders.",
+      "exports": ["buildDeterministicAnswerCandidate", "deterministicAnswerForPrompt"],
+      "affects": ["output formatting", "context"],
+      "riskLevel": "medium",
+      "reason": "Excellent system-data-grounded builders. The usefulness guard prefers these over generic LLM output. But not all capabilities have builders yet."
+    },
+    {
+      "path": "src/services/chatbot/response-usefulness-guard.ts",
+      "purpose": "Post-processing guard that replaces generic/unhelpful LLM output with deterministic answers when evidence is available.",
+      "exports": ["applyResponseUsefulnessGuard"],
+      "affects": ["output formatting"],
+      "riskLevel": "medium",
+      "reason": "Critical quality gate but relies on looksGeneric() heuristics which may miss some generic patterns."
+    },
+    {
+      "path": "src/services/chatbot/claim-verification.ts",
+      "purpose": "Verifies LLM claims against retrieved evidence and removes unsupported claims.",
+      "exports": ["verifyAssistantClaimsAgainstEvidence"],
+      "affects": ["output formatting", "safety"],
+      "riskLevel": "low",
+      "reason": "Good grounding verification but only operates on final output."
+    },
+    {
+      "path": "src/services/chatbot/role-prompt-policy.ts",
+      "purpose": "Builds role-specific prompt policy (behavior, tone) for each CopilotRoleCategory.",
+      "exports": ["buildCopilotRolePromptPolicy"],
+      "affects": ["prompting", "safety"],
+      "riskLevel": "low",
+      "reason": "Well-designed role differentiation. Uses proper Menilik role names."
+    },
+    {
+      "path": "src/services/chatbot/copilot-rbac.ts",
+      "purpose": "Copilot-specific RBAC helpers: role category mapping, capability blocks, department scope, draft permissions.",
+      "exports": ["getCopilotRoleCategory", "canUseDeveloperCopilotDiagnostics", "canReadAllOperationalCopilotContext", "canReadCopilotDepartment", "canCreateCopilotDraft", "canExecuteCopilotAction", "requiresDepartmentScope"],
+      "affects": ["safety", "context"],
+      "riskLevel": "low",
+      "reason": "Clean RBAC implementation using correct role model (developer, admin, bme_head, technician, store_user, department_head, department_user, viewer)."
+    },
+    {
+      "path": "src/services/chatbot/prompt-injection-guard.ts",
+      "purpose": "Detects prompt injection attempts and unsafe biomedical requests via regex patterns. Provides structured refusal copy.",
+      "exports": ["detectPromptInjection", "detectUnsafeBiomedical", "evaluateUnsafeOrInjectionMessage", "safeFirstLineCheckList"],
+      "affects": ["safety"],
+      "riskLevel": "low",
+      "reason": "Well-designed with clear categories, safe first-line alternatives, and honest refusal messages."
+    },
+    {
+      "path": "src/services/chatbot/task-context-service.ts",
+      "purpose": "Builds TaskContextBundle by running tool plans, loading shared/risk/logistics/decision-support blocks, and assembling formal tool results.",
+      "exports": ["buildTaskContext"],
+      "affects": ["context", "routing"],
+      "riskLevel": "medium",
+      "reason": "Complex context assembly with dual tool systems (legacy + formal). Intent-to-evidence mapping uses hardcoded ternary chain."
+    },
+    {
+      "path": "src/services/chatbot/tool-plan.ts",
+      "purpose": "Plans which legacy tools to invoke based on classified request.",
+      "exports": ["planToolRetrieval"],
+      "affects": ["context", "routing"],
+      "riskLevel": "low",
+      "reason": "Legacy tool planner; formal tool planner in task-context-service is the primary path."
+    },
+    {
+      "path": "src/services/chatbot/tools/index.ts",
+      "purpose": "Exports all tool functions (getCurrentUserContext, getMyTasks, getEquipmentSummary, etc.).",
+      "exports": ["getCurrentUserContext", "getMyTasks", "getEquipmentSummary", "getWorkOrderSummary", "getDepartmentReadiness", "getAlertsSummary", "getInventoryLogisticsStatus", "getProcurementStatus", "getSafeTroubleshootingContext", "loadTaskBlocks", "loadRiskAndAnalytics", "loadLogistics", "loadDecisionSupportSnapshot"],
+      "affects": ["context"],
+      "riskLevel": "medium",
+      "reason": "Data loaders that feed the context pipeline. Quality of answers depends on what these return."
+    },
+    {
+      "path": "src/services/chatbot/tools/tool-executor.ts",
+      "purpose": "Executes formal copilot tools by name, returning structured CopilotToolResult.",
+      "exports": ["executeCopilotTool"],
+      "affects": ["context"],
+      "riskLevel": "medium",
+      "reason": "Central formal tool execution. RBAC-gated per tool."
+    },
+    {
+      "path": "src/services/chatbot/tools/tool-registry.ts",
+      "purpose": "Registry of formal copilot tools with metadata, RBAC requirements, and route links.",
+      "exports": ["COPILOT_TOOL_REGISTRY"],
+      "affects": ["context", "routing"],
+      "riskLevel": "low",
+      "reason": "Clean tool metadata registry."
+    },
+    {
+      "path": "src/services/chatbot/tools/tool-types.ts",
+      "purpose": "TypeScript types for formal copilot tool system.",
+      "exports": ["CopilotToolName", "CopilotToolResult"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Type definitions only."
+    },
+    {
+      "path": "src/services/chatbot/tools/task-data-loaders.ts",
+      "purpose": "Shared data loaders for task context (loadTaskBlocks, loadRiskAndAnalytics, etc.).",
+      "exports": ["loadTaskBlocks", "loadRiskAndAnalytics", "loadLogistics", "loadDecisionSupportSnapshot"],
+      "affects": ["context"],
+      "riskLevel": "medium",
+      "reason": "Core data loading functions that populate the context blocks."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-equipment-summary.ts",
+      "purpose": "Tool: retrieves equipment summary with analytics, history, and status.",
+      "exports": ["getEquipmentSummary"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Well-structured equipment loader."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-work-order-summary.ts",
+      "purpose": "Tool: retrieves work order summary with asset context.",
+      "exports": ["getWorkOrderSummary"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Well-structured work order loader."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-department-readiness.ts",
+      "purpose": "Tool: retrieves department readiness snapshot.",
+      "exports": ["getDepartmentReadiness"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Department readiness loader."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-safe-troubleshooting-context.ts",
+      "purpose": "Tool: builds safe troubleshooting context from evidence.",
+      "exports": ["getSafeTroubleshootingContext"],
+      "affects": ["context", "safety"],
+      "riskLevel": "low",
+      "reason": "Troubleshooting context builder."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-current-user-context.ts",
+      "purpose": "Tool: returns current user context for copilot grounding.",
+      "exports": ["getCurrentUserContext"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "User context tool."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-inventory-logistics-status.ts",
+      "purpose": "Tool: retrieves inventory/logistics stock status.",
+      "exports": ["getInventoryLogisticsStatus"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Logistics loader."
+    },
+    {
+      "path": "src/services/chatbot/tools/get-procurement-status.ts",
+      "purpose": "Tool: retrieves procurement pipeline status.",
+      "exports": ["getProcurementStatus"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Procurement loader."
+    },
+    {
+      "path": "src/services/chatbot/troubleshooting-context.ts",
+      "purpose": "Builds Tier1TroubleshootingBundle with safe checklist, hypothesis buckets, and evidence references.",
+      "exports": ["buildTier1TroubleshootingBundle"],
+      "affects": ["context", "safety"],
+      "riskLevel": "low",
+      "reason": "Clean, bounded troubleshooting builder. Equipment-type-aware checklist."
+    },
+    {
+      "path": "src/services/chatbot/conversation-memory-service.ts",
+      "purpose": "Loads and persists conversation memory (rolling summary, thread intent, active capability, last entities).",
+      "exports": ["loadConversationMemory", "persistConversationMemory", "buildRollingMemorySummary"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "Memory service for multi-turn context."
+    },
+    {
+      "path": "src/services/chatbot/entity-resolution-service.ts",
+      "purpose": "Resolves entities (equipment, work order, department, part) from message text, context refs, module context, and memory.",
+      "exports": ["resolveEntitiesDetailed"],
+      "affects": ["context", "routing"],
+      "riskLevel": "medium",
+      "reason": "Entity resolution feeds contextRefs to loaders. Weak resolution causes missing context."
+    },
+    {
+      "path": "src/services/chatbot/proactive-signals.ts",
+      "purpose": "Generates proactive signals, alert synthesis, and cross-module snapshot for enrichment.",
+      "exports": ["buildProactiveSignals", "buildAlertSynthesis", "buildCrossModuleSnapshot"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Enrichment layer."
+    },
+    {
+      "path": "src/services/chatbot/data-lineage.ts",
+      "purpose": "Resolves data freshness, mode (live/snapshot/stale/sandbox), and age labels.",
+      "exports": ["resolveDataLineage"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Data lineage metadata."
+    },
+    {
+      "path": "src/services/chatbot/telemetry-service.ts",
+      "purpose": "Logs copilot telemetry events to Supabase.",
+      "exports": ["logCopilotTelemetry"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Telemetry logging."
+    },
+    {
+      "path": "src/services/chatbot/usage-service.ts",
+      "purpose": "Tracks and limits copilot usage (token counting, hard limits).",
+      "exports": ["getOwnCopilotUsageSnapshot", "logCopilotUsageEvent"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Usage tracking."
+    },
+    {
+      "path": "src/services/chatbot/usage-limits.ts",
+      "purpose": "Usage limit constants and threshold logic.",
+      "exports": ["USAGE_LIMITS"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Limit constants."
+    },
+    {
+      "path": "src/services/chatbot/capability-response-defaults.ts",
+      "purpose": "Default response metadata (title, intelligence_mode, follow_up_suggestions) per capability.",
+      "exports": ["getCapabilityResponseDefaults"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Default templates."
+    },
+    {
+      "path": "src/services/chatbot/chat-response-normalizer.ts",
+      "purpose": "Additional response normalization utilities.",
+      "exports": ["normalizeChatResponse"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Utility normalizer."
+    },
+    {
+      "path": "src/services/chatbot/chat-client.service.ts",
+      "purpose": "Client-side chat service for sending messages to /api/chat.",
+      "exports": ["sendChatMessage"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Client HTTP layer."
+    },
+    {
+      "path": "src/services/chatbot/workflow-explainers.ts",
+      "purpose": "Deterministic workflow explanation answers (how to create requests, track work orders, etc.).",
+      "exports": ["buildWorkflowExplainerAnswer", "workflowExplainerToAssistant"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Workflow guidance builders."
+    },
+    {
+      "path": "src/services/chatbot/follow-up-handlers.ts",
+      "purpose": "Handles short follow-up prompts ('why?', 'explain simply', 'where did you get that?') using previous turn context.",
+      "exports": ["handleFollowUp"],
+      "affects": ["routing", "output formatting"],
+      "riskLevel": "low",
+      "reason": "Follow-up handling."
+    },
+    {
+      "path": "src/services/chatbot/route-link-builder.ts",
+      "purpose": "Builds route links for assistant responses.",
+      "exports": ["buildRouteLinks"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Link builder utility."
+    },
+    {
+      "path": "src/services/chatbot/action-draft-service.ts",
+      "purpose": "Builds copilot action drafts (maintenance request, work order note, etc.) when user explicitly asks.",
+      "exports": ["buildActionDraftsFromContext"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Action draft builder. Correctly gated on explicit user request."
+    },
+    {
+      "path": "src/services/chatbot/evaluation/capability-evaluation-dataset.ts",
+      "purpose": "Evaluation dataset for capability classification testing.",
+      "exports": ["CAPABILITY_EVALUATION_DATASET"],
+      "affects": ["tests"],
+      "riskLevel": "low",
+      "reason": "Test dataset."
+    },
+    {
+      "path": "src/services/chatbot/evaluation/evaluation-harness.ts",
+      "purpose": "Evaluation harness for running capability classification tests.",
+      "exports": ["runCapabilityEvaluation"],
+      "affects": ["tests"],
+      "riskLevel": "low",
+      "reason": "Test harness."
+    },
+    {
+      "path": "src/types/chatbot.ts",
+      "purpose": "All TypeScript types for the chatbot system: intents, capabilities, decisions, evidence, profiles, schemas.",
+      "exports": ["ChatIntent", "CapabilityId", "ChatDecision", "AssistantContent", "UserChatProfile", "ChatEvidence", "ClassifiedRequest", "etc."],
+      "affects": ["intent", "routing", "context", "safety", "output formatting"],
+      "riskLevel": "medium",
+      "reason": "Type system. 32 intents and 25 capabilities defined here."
+    },
+    {
+      "path": "src/types/copilot-actions.ts",
+      "purpose": "Types for copilot action drafts.",
+      "exports": ["CopilotActionDraft", "CopilotActionDraftSchema"],
+      "affects": ["output formatting"],
+      "riskLevel": "low",
+      "reason": "Action draft types."
+    },
+    {
+      "path": "src/components/assistant/AskAiButton.tsx",
+      "purpose": "UI button that opens the assistant panel with a seed prompt and context refs.",
+      "exports": ["AskAiButton"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Entry point button. Passes moduleLabel, seedPrompt, and contextRefs."
+    },
+    {
+      "path": "src/components/assistant/AssistantPanel.tsx",
+      "purpose": "Main assistant slide-out panel with message list, input, quick prompts, and usage display.",
+      "exports": ["AssistantPanel"],
+      "affects": ["UI"],
+      "riskLevel": "medium",
+      "reason": "UI rendering. Contains QUICK_PROMPTS_BY_MODULE and QUICK_PROMPTS_BY_ROLE. Renders AssistantMessageCard."
+    },
+    {
+      "path": "src/components/assistant/AssistantProvider.tsx",
+      "purpose": "React context provider for assistant state (open/close, messages, session, context refs).",
+      "exports": ["AssistantProvider", "useAssistantContext"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "State management."
+    },
+    {
+      "path": "src/components/assistant/AssistantMessageCard.tsx",
+      "purpose": "Renders a single assistant message with structured sections (summary, findings, actions, troubleshooting steps, etc.).",
+      "exports": ["AssistantMessageCard"],
+      "affects": ["UI", "output formatting"],
+      "riskLevel": "medium",
+      "reason": "Key rendering component. Determines how structured data is displayed to user."
+    },
+    {
+      "path": "src/components/assistant/AssistantContextChips.tsx",
+      "purpose": "Displays context chips (equipment, work order, department) in the assistant panel.",
+      "exports": ["AssistantContextChips"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Context display."
+    },
+    {
+      "path": "src/components/assistant/AssistantPageContextBridge.tsx",
+      "purpose": "Bridge component that passes page-level context (route, module, selected record) into the assistant provider.",
+      "exports": ["AssistantPageContextBridge"],
+      "affects": ["UI", "context"],
+      "riskLevel": "medium",
+      "reason": "Critical for page-aware context. If this misses context, the copilot loses page awareness."
+    },
+    {
+      "path": "src/components/assistant/CopilotActionCard.tsx",
+      "purpose": "Renders copilot action draft cards with confirm/dismiss.",
+      "exports": ["CopilotActionCard"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Action card UI."
+    },
+    {
+      "path": "src/components/assistant/CopilotActionConfirmDialog.tsx",
+      "purpose": "Confirmation dialog for copilot actions.",
+      "exports": ["CopilotActionConfirmDialog"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Confirm dialog."
+    },
+    {
+      "path": "src/components/assistant/assistant-ui-display.ts",
+      "purpose": "UI display helpers for assistant messages.",
+      "exports": ["assistantUiDisplay"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Display utilities."
+    },
+    {
+      "path": "src/components/assistant/copilot-offline.ts",
+      "purpose": "Offline copilot fallback behavior.",
+      "exports": ["copilotOfflineFallback"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Offline fallback."
+    },
+    {
+      "path": "src/app/(dashboard)/chatbot/page.tsx",
+      "purpose": "Dedicated chatbot page route.",
+      "exports": ["default"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Page component."
+    },
+    {
+      "path": "src/app/(dashboard)/developer-lab/page.tsx",
+      "purpose": "Developer lab page with copilot diagnostics.",
+      "exports": ["default"],
+      "affects": ["UI", "telemetry"],
+      "riskLevel": "low",
+      "reason": "Developer-only page."
+    },
+    {
+      "path": "src/app/(dashboard)/developer-lab/CopilotDiagnosticsClient.tsx",
+      "purpose": "Client component for copilot diagnostics in developer lab.",
+      "exports": ["CopilotDiagnosticsClient"],
+      "affects": ["UI", "telemetry"],
+      "riskLevel": "low",
+      "reason": "Diagnostics UI."
+    },
+    {
+      "path": "src/app/(dashboard)/developer-lab/CopilotDiagnosticsSection.tsx",
+      "purpose": "Section component for copilot diagnostics display.",
+      "exports": ["CopilotDiagnosticsSection"],
+      "affects": ["UI", "telemetry"],
+      "riskLevel": "low",
+      "reason": "Diagnostics section."
+    },
+    {
+      "path": "src/app/(dashboard)/developer-lab/DeveloperLabClient.tsx",
+      "purpose": "Main developer lab client component.",
+      "exports": ["DeveloperLabClient"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Developer lab layout."
+    },
+    {
+      "path": "src/app/api/ai-smoke-test/route.ts",
+      "purpose": "API route for Gemini smoke test (developer diagnostics).",
+      "exports": ["POST"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Smoke test endpoint."
+    },
+    {
+      "path": "src/actions/copilot-actions.actions.ts",
+      "purpose": "Server actions for copilot action execution (drafts, mutations).",
+      "exports": ["executeCopilotAction"],
+      "affects": ["output formatting"],
+      "riskLevel": "medium",
+      "reason": "Action execution layer."
+    },
+    {
+      "path": "src/actions/copilot-diagnostics.actions.ts",
+      "purpose": "Server actions for copilot diagnostics.",
+      "exports": ["getCopilotDiagnostics"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Diagnostics actions."
+    },
+    {
+      "path": "src/actions/developer-lab.actions.ts",
+      "purpose": "Server actions for developer lab features.",
+      "exports": ["getDeveloperLabData"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Developer lab actions."
+    },
+    {
+      "path": "src/services/developer-lab.service.ts",
+      "purpose": "Developer lab service layer.",
+      "exports": ["developerLabService"],
+      "affects": ["telemetry"],
+      "riskLevel": "low",
+      "reason": "Developer lab service."
+    },
+    {
+      "path": "src/services/embeddings.ts",
+      "purpose": "Equipment document embedding search (pgvector/Gemini embeddings).",
+      "exports": ["searchEquipmentDocuments"],
+      "affects": ["context"],
+      "riskLevel": "low",
+      "reason": "RAG document retrieval."
+    },
+    {
+      "path": "src/utils/developer-lab/demo-role-validation.ts",
+      "purpose": "Demo role validation utilities for developer lab.",
+      "exports": ["validateDemoRole"],
+      "affects": ["tests"],
+      "riskLevel": "low",
+      "reason": "Demo validation."
+    },
+    {
+      "path": "src/hooks/useRole.ts",
+      "purpose": "React hook for current user role.",
+      "exports": ["useRole"],
+      "affects": ["UI"],
+      "riskLevel": "low",
+      "reason": "Role hook."
+    }
+  ],
+  "testFiles": [
+    { "path": "src/services/chatbot/__tests__/copilot-core.test.ts", "covers": "Core classifier and orchestrator integration" },
+    { "path": "src/services/chatbot/__tests__/copilot-phase1-trust.test.ts", "covers": "Phase 1 trust and safety boundaries" },
+    { "path": "src/services/chatbot/__tests__/copilot-phase2.test.ts", "covers": "Phase 2 page-aware tools and capabilities" },
+    { "path": "src/services/chatbot/__tests__/copilot-phase3.test.ts", "covers": "Phase 3 features" },
+    { "path": "src/services/chatbot/__tests__/copilot-r15-coverage.test.ts", "covers": "R15 coverage requirements" },
+    { "path": "src/services/chatbot/__tests__/copilot-rbac.test.ts", "covers": "RBAC and role-based access" },
+    { "path": "src/services/chatbot/__tests__/copilot-action-drafts.test.ts", "covers": "Action draft generation" },
+    { "path": "src/services/chatbot/__tests__/assistant-intro-pipeline.test.ts", "covers": "Assistant intro flow" },
+    { "path": "src/services/chatbot/__tests__/assistant-response-pipeline.test.ts", "covers": "Response parsing and normalization" },
+    { "path": "src/services/chatbot/__tests__/chat-request-validation.test.ts", "covers": "Request validation" },
+    { "path": "src/services/chatbot/__tests__/deterministic-answer-builders.test.ts", "covers": "Deterministic answer generation" },
+    { "path": "src/services/chatbot/__tests__/developer-lab-diagnostics.test.ts", "covers": "Developer lab diagnostics" },
+    { "path": "src/services/chatbot/__tests__/gemini-provider.test.ts", "covers": "Gemini provider and parser" },
+    { "path": "src/services/chatbot/__tests__/phase2-page-tools.test.ts", "covers": "Phase 2 page-aware tool selection" },
+    { "path": "src/services/chatbot/__tests__/structured-context-fallback.test.ts", "covers": "Structured context fallback" },
+    { "path": "src/services/chatbot/__tests__/usage-limits.test.ts", "covers": "Usage limit logic" },
+    { "path": "src/services/chatbot/evaluation/capability-evaluation-dataset.ts", "covers": "Capability evaluation dataset" },
+    { "path": "src/services/chatbot/evaluation/evaluation-harness.ts", "covers": "Evaluation harness runner" }
+  ]
+}

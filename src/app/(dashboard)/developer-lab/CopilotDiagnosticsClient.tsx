@@ -4,11 +4,13 @@ import { useState, useTransition } from 'react';
 import { Activity, FlaskConical, RefreshCcw } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, useToast } from '@/components/ui';
 import {
+  getCopilotRouteDriftSummaryAction,
   getCopilotTelemetrySummaryAction,
   getCopilotUsageSummaryAction,
   runGeminiSmokeTestAction,
 } from '@/actions/copilot-diagnostics.actions';
 import type { CopilotUsageSummary } from '@/services/chatbot/usage-service';
+import type { CopilotRouteDriftSummary } from '@/services/chatbot/telemetry-drift-service';
 
 function fmtTokens(tokens: number) {
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}k`;
@@ -18,25 +20,32 @@ function fmtTokens(tokens: number) {
 export default function CopilotDiagnosticsClient({
   initialSummary,
   initialTelemetry,
+  initialRouteDrift,
 }: {
   initialSummary: CopilotUsageSummary;
   initialTelemetry: Array<Record<string, unknown>>;
+  initialRouteDrift: CopilotRouteDriftSummary;
 }) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [summary, setSummary] = useState(initialSummary);
   const [telemetry, setTelemetry] = useState(initialTelemetry);
+  const [routeDrift, setRouteDrift] = useState(initialRouteDrift);
   const [smokeResult, setSmokeResult] = useState<string | null>(null);
 
   function refresh() {
     startTransition(async () => {
-      const [usageResult, telemetryResult] = await Promise.all([
+      const [usageResult, telemetryResult, routeDriftResult] = await Promise.all([
         getCopilotUsageSummaryAction(),
         getCopilotTelemetrySummaryAction(),
+        getCopilotRouteDriftSummaryAction(),
       ]);
       if (usageResult.success && usageResult.data) setSummary(usageResult.data);
       if (telemetryResult.success && telemetryResult.data) setTelemetry(telemetryResult.data);
-      if (!usageResult.success || !telemetryResult.success) toast('error', usageResult.error ?? telemetryResult.error ?? 'Refresh failed');
+      if (routeDriftResult.success && routeDriftResult.data) setRouteDrift(routeDriftResult.data);
+      if (!usageResult.success || !telemetryResult.success || !routeDriftResult.success) {
+        toast('error', usageResult.error ?? telemetryResult.error ?? routeDriftResult.error ?? 'Refresh failed');
+      }
     });
   }
 
@@ -204,7 +213,111 @@ export default function CopilotDiagnosticsClient({
           ))}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Route drift health</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <span className="text-[var(--text-muted)]">Events reviewed</span>
+              <span className="font-medium text-[var(--foreground)]">{routeDrift.totalEvents}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-[var(--text-muted)]">Fallback rate</span>
+              <span className="font-medium text-[var(--foreground)]">{Math.round(routeDrift.fallbackRate * 100)}%</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-[var(--text-muted)]">Parser recovery</span>
+              <span className="font-medium text-[var(--foreground)]">{Math.round(routeDrift.parserRecoveryRate * 100)}%</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-[var(--text-muted)]">Unsafe/blocked</span>
+              <span className="font-medium text-[var(--foreground)]">{Math.round(routeDrift.blockedRate * 100)}%</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-[var(--text-muted)]">Unsafe category rate</span>
+              <span className="font-medium text-[var(--foreground)]">{Math.round((routeDrift.unsafeBlockedRate ?? 0) * 100)}%</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Capability by route</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {routeDrift.capabilityByRoute.length ? routeDrift.capabilityByRoute.slice(0, 6).map((item) => (
+              <div key={`${item.route}-${item.capability}`} className="flex justify-between gap-3">
+                <span className="min-w-0 truncate text-[var(--text-muted)]">{item.route} · {item.capability}</span>
+                <span className="font-medium text-[var(--foreground)]">{item.count}</span>
+              </div>
+            )) : <p className="text-[var(--text-muted)]">No route telemetry yet.</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Suspicious drift buckets</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {routeDrift.suspiciousBuckets.length ? routeDrift.suspiciousBuckets.map((bucket) => (
+              <div key={bucket.bucket} className="rounded border border-[var(--border-subtle)] p-2">
+                <div className="flex justify-between gap-3">
+                  <span className="text-[var(--text-muted)]">{bucket.bucket.replace(/_/g, ' ')}</span>
+                  <span className="font-medium text-[var(--foreground)]">{bucket.count}</span>
+                </div>
+                <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                  {bucket.examples.map((item) => `${item.route} · ${item.intent} → ${item.capability}`).join(' | ')}
+                </p>
+              </div>
+            )) : <p className="text-[var(--text-muted)]">No suspicious drift in the review window.</p>}
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Evidence completeness</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {routeDrift.evidenceCompletenessByCapability?.length ? routeDrift.evidenceCompletenessByCapability.slice(0, 6).map((item) => (
+              <div key={`${item.capability}-${item.status}`} className="flex justify-between gap-3">
+                <span className="min-w-0 truncate text-[var(--text-muted)]">{item.capability} · {item.status}</span>
+                <span className="font-medium text-[var(--foreground)]">{item.count} · {Math.round(item.averageScore * 100)}%</span>
+              </div>
+            )) : <p className="text-[var(--text-muted)]">No completeness telemetry yet.</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Role/page clusters</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {routeDrift.rolePageBreakdown?.length ? routeDrift.rolePageBreakdown.slice(0, 6).map((item) => (
+              <div key={`${item.role_category}-${item.route}`} className="flex justify-between gap-3">
+                <span className="min-w-0 truncate text-[var(--text-muted)]">{item.role_category} · {item.route}</span>
+                <span className="font-medium text-[var(--foreground)]">{item.count}</span>
+              </div>
+            )) : <p className="text-[var(--text-muted)]">No role/page clusters yet.</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Low-confidence clusters</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {routeDrift.repeatedLowConfidenceClusters?.length ? routeDrift.repeatedLowConfidenceClusters.slice(0, 6).map((item) => (
+              <div key={`${item.route}-${item.intent}-${item.capability}`} className="rounded border border-[var(--border-subtle)] p-2">
+                <div className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate text-[var(--text-muted)]">{item.route}</span>
+                  <span className="font-medium text-[var(--foreground)]">{item.count}</span>
+                </div>
+                <p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.intent} → {item.capability}</p>
+              </div>
+            )) : <p className="text-[var(--text-muted)]">No repeated low-confidence clusters.</p>}
+          </CardContent>
+        </Card>
+      </div>
     </section>
   );
 }
-

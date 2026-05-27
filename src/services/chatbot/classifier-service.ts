@@ -117,6 +117,30 @@ const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
     ],
   },
   {
+    intent: 'asset_summary',
+    patterns: [
+      /\bsummari[sz]e\b(?!.*\b(command center|hospital|readiness|report|work orders?|wo[-\s]?\d+)\b).*\b(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\b(tell me about|what is the status of|status of|details? for|what should i know about)\b.*\b(this\s+)?(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\bcurrent status\b.*\b(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\bwhat is\b.*\b(failure count|status|condition)\b.*\b(this\s+)?(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /^\s*summari[sz]e\s+[A-Z]{2,}[-\s]?\d{2,}\s*$/i,
+    ],
+  },
+  {
+    intent: 'inventory_search',
+    patterns: [
+      /\b(which|list|show|find|how many)\b.*\b(equipment|assets?|devices?|units?|monitors?|patient monitors?|ultrasounds?|ventilators?|pumps?|analy[sz]ers?|defibrillators?)\b.*\b(in|for|at|within)\b.*\b(ed|icu|emergency|department|ward|unit)\b/i,
+      /\blist\b.*\b(ed|icu|emergency|department|ward|unit)\b.*\b(equipment|assets?|devices?|units?|monitors?|patient monitors?|ultrasounds?|ventilators?|pumps?|analy[sz]ers?|defibrillators?)\b/i,
+    ],
+  },
+  {
+    intent: 'equipment_history',
+    patterns: [
+      /\b(show|summari[sz]e|give me)\b.*\b(failure|fault|maintenance|repair|service)\s+history\b.*\b(this\s+)?(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\b(failure|fault|maintenance|repair|service)\s+history\b.*\b(this\s+)?(asset|equipment|device|monitor|patient monitor|ultrasound|ventilator|analy[sz]er|pump|defibrillator|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+    ],
+  },
+  {
     intent: 'preventive_maintenance',
     patterns: [
       /\boverdue pm\b/i,
@@ -198,6 +222,8 @@ const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
       /\brpn\b/i,
       /\bfmea\b/i,
       /\bwhy\b.*\brisk\b/i,
+      /\brisk\b.*\b(explanation|likely causes?|drivers?|factors?)\b/i,
+      /\bexplain\b.*\brisk\b/i,
     ],
   },
   {
@@ -255,18 +281,21 @@ const INTENT_PATTERNS: Array<{ intent: ChatIntent; patterns: RegExp[] }> = [
   {
     intent: 'troubleshooting',
     patterns: [
-      /\btroubleshoot/i,
-      /\bfault\b/i,
+      /\btroubleshoot(?:ing)?\b/i,
       /\bnot working\b/i,
-      /\bfailure\b/i,
+      /\bmalfunctioning\b/i,
       /\bfirst[-\s]?line checks?\b/i,
       /\bwhat should i check (next|first)\b/i,
+      /\bwhat should i check first\b/i,
+      /\bsafe first[-\s]?line\b/i,
       /\blikely causes?\b/i,
-      /\bescalat(e|ion)\b/i,
-      /\bultrasound\b/i,
-      /\bpatient monitor\b/i,
-      /\bmonitor (issue|problem|fault|not powering|won't|wont|no power|powering)\b/i,
-      /\bnot powering|won'?t power|no power|black screen|blank screen|image quality|artifact|artefact\b/i,
+      /\bdiagnose\b.*\b(fault|failure|problem|issue)\b/i,
+      /\b(fault|failure|error)\b.{0,40}\b(check|fix|diagnose|troubleshoot|not working|malfunctioning)\b/i,
+      /\b(check|fix|diagnose|troubleshoot)\b.{0,40}\b(fault|failure|error|alarm|problem|issue)\b/i,
+      /\b(monitor|patient monitor|ultrasound|ventilator|pump|analy[sz]er|defibrillator|device|equipment)\b.{0,50}\b(issue|problem|fault|not working|malfunctioning|broken|not powering|won'?t power|wont power|no power|black screen|blank screen|alarm|image quality|blurry|artifact|artefact)\b/i,
+      /\b(issue|problem|fault|not working|malfunctioning|broken|not powering|won'?t power|wont power|no power|black screen|blank screen|alarm|image quality|blurry|artifact|artefact)\b.{0,50}\b(monitor|patient monitor|ultrasound|ventilator|pump|analy[sz]er|defibrillator|device|equipment)\b/i,
+      /\balarm\b.*\b(showing|displayed|what do i check|check first)\b/i,
+      /\bnot powering|won'?t power|wont power|no power|black screen|blank screen|image quality|artifact|artefact|blurry\b/i,
     ],
   },
   {
@@ -353,9 +382,13 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
   {
     capability: 'summarize_equipment',
     patterns: [
+      /\bsummari[sz]e\b(?!.*\bhospital\b)(?!.*\breadiness\b)(?!.*\bcommand center\b)(?!.*\breport\b).*\b[A-Z]{2,}[-\s]?\d{2,}\b/i,
       /\bsummari[sz]e\b(?!.*\bhospital\b)(?!.*\breadiness\b).*\b(equipment|asset|device)\b/i,
       /\bstatus\b.*\b(equipment|asset|device)\b/i,
       /\bmaintenance history\b.*\b(equipment|asset|device)\b/i,
+      /\b(failure|fault|maintenance|repair|service)\s+history\b.*\b(monitor|patient monitor|ultrasound|ventilator|asset|equipment|device|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\bfailure count\b.*\b(monitor|patient monitor|ultrasound|ventilator|asset|equipment|device|[A-Z]{2,}[-\s]?\d{2,})\b/i,
+      /\b(which|list|show|find|how many)\b.*\b(units?|monitors?|patient monitors?|ultrasounds?|ventilators?|pumps?|analy[sz]ers?|defibrillators?)\b.*\b(in|for|at|within)\b.*\b(ed|icu|emergency|department|ward|unit)\b/i,
       /\bequipment\b.*\b(history|status|condition)\b/i,
       /\basset\b.*\b(history|status|condition)\b/i,
       /\bstatus of this (asset|device|equipment)\b/i,
@@ -382,6 +415,8 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
       /\bconsidered for replacement\b/i,
       /\brpi\b/i,
       /\bwhy is .* risk\b/i,
+      /\brisk\b.*\b(explanation|likely causes?|drivers?|factors?)\b/i,
+      /\bexplain\b.*\brisk\b/i,
     ],
     baseScore: 0.78,
   },
@@ -405,8 +440,9 @@ const CAPABILITY_KEYWORDS: Array<{ capability: CapabilityId; patterns: RegExp[];
       /\bcheck first\b/i,
       /\bbefore escalation\b/i,
       /\bsafe checks?\b/i,
-      /\bintermittent\b/i,
-      /\bfailure\b/i,
+      /\bintermittent\b.{0,30}\b(issue|problem|fault|failure|not working|malfunctioning)\b/i,
+      /\b(failure|fault|error)\b.{0,40}\b(check|fix|diagnose|troubleshoot|not working|malfunctioning)\b/i,
+      /\b(check|fix|diagnose|troubleshoot)\b.{0,40}\b(failure|fault|error|alarm|problem|issue)\b/i,
       /\bnot powering|won'?t power|no power|blank screen|black screen\b/i,
     ],
     baseScore: 0.7,
@@ -553,8 +589,10 @@ const INTENT_TO_CAPABILITY: Record<ChatIntent, CapabilityId> = {
   troubleshooting: 'safe_troubleshooting',
   safe_troubleshooting: 'safe_troubleshooting',
   work_order_help: 'summarize_work_order',
-  work_order_status: 'prioritize_tasks',
+  work_order_status: 'summarize_work_order',
   maintenance_status: 'prioritize_tasks',
+  asset_summary: 'summarize_equipment',
+  inventory_search: 'summarize_equipment',
   equipment_lookup: 'summarize_equipment',
   equipment_history: 'summarize_equipment',
   analytics_explanation: 'summarize_department_readiness',
@@ -721,6 +759,18 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
     });
   }
 
+  if (/\b(earlier|previous|we said|discussed)\b/i.test(normalized) && /\b(summari[sz]e|compare|same issue|what should)\b/i.test(normalized)) {
+    reasons.push('Follow-up over previous context; keep memory route instead of generic troubleshooting.');
+    matchedSignals.push('memory_follow_up_context');
+    return buildResult(hint?.threadIntent ?? 'general_conversation', {
+      capability: hint?.activeCapability ?? 'my_tasks',
+      confidence: Math.max(0.74, topCandidate?.confidence ?? 0),
+      confidenceLabel: 'medium',
+      specificity: 'general',
+      fallbackReason: hint?.activeCapability ? undefined : 'low_confidence_match',
+    });
+  }
+
   for (const intentPattern of INTENT_PATTERNS) {
     if (intentPattern.patterns.some((pattern) => pattern.test(normalized))) {
       reasons.push(`Matched heuristic for ${intentPattern.intent}.`);
@@ -754,8 +804,30 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
         });
       }
 
+      if (intentPattern.intent === 'work_order_status') {
+        const hasSpecificWorkOrder = /\b(?:work order\s*)?wo[-\s]?\d+\b/i.test(normalized);
+        if (hasSpecificWorkOrder) {
+          matchedSignals.push('specific_work_order_status');
+          return buildResult(intentPattern.intent, {
+            capability: 'summarize_work_order',
+            confidence: Math.max(0.82, topCandidate?.confidence ?? 0),
+            confidenceLabel: 'high',
+            fallbackReason: undefined,
+            specificity: 'specific',
+          });
+        }
+
+        matchedSignals.push('work_order_queue_status');
+        return buildResult(intentPattern.intent, {
+          capability: topCandidate?.capability === 'summarize_work_order' ? 'summarize_work_order' : 'prioritize_tasks',
+          confidence: Math.max(0.74, topCandidate?.confidence ?? 0),
+          confidenceLabel: toConfidenceLabel(Math.max(0.74, topCandidate?.confidence ?? 0)),
+          specificity: 'general',
+        });
+      }
+
       return buildResult(intentPattern.intent, {
-          capability: topCandidate?.capability ?? INTENT_TO_CAPABILITY[intentPattern.intent] ?? 'general_system_fallback',
+        capability: topCandidate?.capability ?? INTENT_TO_CAPABILITY[intentPattern.intent] ?? 'general_system_fallback',
         specificity: 'general',
       });
     }
@@ -792,12 +864,12 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
     });
   }
 
-  reasons.push('Defaulted to maintenance_tip for operational guidance.');
-  matchedSignals.push('default_maintenance_tip');
+  reasons.push('Defaulted to neutral BMEDIS help instead of maintenance guidance.');
+  matchedSignals.push('default_general_fallback');
 
   if (hint?.activeCapability && isShortFollowUp(normalized) && ambiguous) {
     matchedSignals.push('memory_capability_bias');
-    return buildResult(hint.threadIntent ?? 'maintenance_tip', {
+    return buildResult(hint.threadIntent ?? 'general_conversation', {
       capability: hint.activeCapability,
       confidence: Math.max(0.55, topCandidate?.confidence ?? 0.52),
       confidenceLabel: 'medium',
@@ -810,7 +882,7 @@ export function classifyChatRequest(message: string, hint?: MemoryRoutingHint): 
   const defaultCapability = topCandidate?.capability ?? 'general_system_fallback';
   const defaultLabel = toConfidenceLabel(defaultConfidence);
 
-  return buildResult('maintenance_tip', {
+  return buildResult('general_conversation', {
     capability: defaultCapability,
     confidence: defaultConfidence,
     confidenceLabel: defaultLabel,

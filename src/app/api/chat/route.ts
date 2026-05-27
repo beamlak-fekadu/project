@@ -12,6 +12,14 @@ function debugProviderFlowEnabled() {
   return (process.env.CHAT_DEBUG_PROVIDER_FLOW ?? '').toLowerCase() === 'true';
 }
 
+function shouldExposeCopilotDebug(profile: UserChatProfile) {
+  return (
+    process.env.NODE_ENV !== 'production' ||
+    debugProviderFlowEnabled() ||
+    profile.roleNames.includes('developer')
+  );
+}
+
 async function getUserChatProfile() {
   const supabase = await createClient();
   const {
@@ -298,6 +306,7 @@ export async function POST(request: Request) {
       providerMetadata: orchestrated.providerMetadata ?? null,
       resolvedEntities: orchestrated.resolvedEntities,
       evidenceSignals: orchestrated.evidence.evidenceSignals,
+      evidenceCompleteness: orchestrated.evidence.evidenceCompleteness ?? null,
       assistant: orchestrated.assistant,
     },
   });
@@ -312,6 +321,7 @@ export async function POST(request: Request) {
     fallbackReason: orchestrated.fallbackReason,
     assistant: orchestrated.assistant,
     usageStatus: await getOwnCopilotUsageSnapshot(supabase, profile.profileId),
+    _debug: shouldExposeCopilotDebug(profile) ? orchestrated.debugMetadata : undefined,
   });
 
   return NextResponse.json(responsePayload, { status: 200 });

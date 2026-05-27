@@ -24,10 +24,17 @@ Write naturally, like a useful biomedical operations copilot. Avoid raw bullet d
 For normal roles, do not expose routing, parser, provider, telemetry, classifier, or tool-trace details. Developer diagnostics may summarize those details only when the role policy/context allows it.
 Include compact evidence and limitations when useful. If data is missing, say exactly what could not be accessed.
 For harmless general or conceptual questions, answer normally and connect back to BMEDIS when relevant.
-For troubleshooting, provide safe first-line checks only. Never provide internal board-level repair, alarm bypass, service mode, hidden-menu, firmware, component-level, or manufacturer-specific calibration steps.
 Only support action drafts when the user clearly asks to create, draft, request, report, log, reorder, write, submit, or queue something.
 Avoid phrases like "I think", "probably", or "maybe." Use "Based on current system records", "The available evidence shows", or "This is an inference because..." when needed.
 Return JSON only.
+`.trim();
+
+const NON_TROUBLESHOOTING_SYSTEM_ADDENDUM = `
+Unless the selected capability is safe_troubleshooting, do not generate troubleshooting_steps, likely_causes, required_tools_or_parts, maintenance_tips, or generic first-line checks. For summary, status, analytics, report, workflow, and inventory requests, answer only the requested question using available BMEDIS system data and disclose missing data.
+`.trim();
+
+const SAFE_TROUBLESHOOTING_SYSTEM_ADDENDUM = `
+The selected capability is safe_troubleshooting. Provide only safe first-line external checks, system-history review, and escalation criteria. Never provide internal board-level repair, alarm bypass, service mode, hidden-menu, firmware, component-level, or manufacturer-specific calibration steps.
 `.trim();
 
 const JSON_OUTPUT_HARDENING_RULES = `
@@ -118,6 +125,75 @@ function capabilityAddendum(capability: CapabilityId): string {
   }
 }
 
+function systemPromptForCapability(capability: CapabilityId) {
+  if (capability === 'assistant_intro') return ASSISTANT_INTRO_SYSTEM_PROMPT;
+  return [
+    CHATBOT_SYSTEM_PROMPT,
+    capability === 'safe_troubleshooting'
+      ? SAFE_TROUBLESHOOTING_SYSTEM_ADDENDUM
+      : NON_TROUBLESHOOTING_SYSTEM_ADDENDUM,
+  ].join('\n\n');
+}
+
+function buildOutputContract(capability: CapabilityId) {
+  const base = {
+    decision: 'answer | limited_answer | check_manual | escalate | refuse',
+    intelligence_mode: 'standard | troubleshooting | prioritization | synthesis',
+    summary: 'string',
+    title: 'string | optional',
+    key_findings: 'string[]',
+    recommended_actions: 'string[]',
+    actions: 'string[]',
+    insights: 'string[]',
+    recommendations: 'string[]',
+    reason_for_limit: 'string | optional',
+    answer_basis:
+      'system_data | system_capabilities | manual_or_sop | general_safe_guidance | insufficient_data | model_output | format_recovery',
+    confidence: 'high | medium | low',
+    escalation_required: 'boolean',
+    entities_referenced: 'string[]',
+    follow_up_suggestions: 'string[]',
+    proactive_signals: 'string[]',
+    evidence_used: 'string[]',
+    links: '{ label: string, href: string, type?: string }[]',
+    limitations: 'string[]',
+    missingDataFlags: 'string[]; echo only provided missingDataFlags that materially affect the answer',
+    data_freshness: 'string | optional',
+    source_tables: 'string[]',
+  };
+
+  if (capability === 'safe_troubleshooting') {
+    return {
+      ...base,
+      intelligence_mode: 'troubleshooting',
+      troubleshooting_steps: 'string[]',
+      likely_causes: 'string[]',
+      required_tools_or_parts: 'string[]',
+      escalation_guidance: 'string | optional',
+      escalation_recommendation: 'string | optional',
+    };
+  }
+
+  if (capability === 'prioritize_tasks' || capability === 'my_tasks') {
+    return {
+      ...base,
+      intelligence_mode: 'prioritization',
+      priority_reasoning: 'string[]',
+    };
+  }
+
+  if (capability === 'metric_debug' || capability === 'report_summary' || capability === 'copilot_diagnostics') {
+    return {
+      ...base,
+      evidence_used: 'string[] required when available',
+      source_tables: 'string[] required when available',
+      data_freshness: 'string required when available',
+    };
+  }
+
+  return base;
+}
+
 export function buildPromptPayload(params: {
   message: string;
   intent: ChatIntent;
@@ -192,11 +268,14 @@ export function buildPromptPayload(params: {
       : null,
     memory: memory
       ? {
-          summary: memory.shortSummary,
-          focus: memory.focus,
-          recentTurns: memory.recentTurns,
-          activeCapability: memory.activeCapability,
-        }
+      summary: memory.shortSummary,
+      focus: memory.focus,
+      recentTurns: memory.recentTurns,
+      activeCapability: memory.activeCapability,
+      memoryConfidence: memory.memoryConfidence,
+      memoryAgeTurns: memory.memoryAgeTurns,
+      lastEvidenceCompleteness: memory.lastEvidenceCompleteness,
+    }
       : null,
     contextBlocks: compactContextBlocks(contextBlocks),
     evidence: {
@@ -204,46 +283,19 @@ export function buildPromptPayload(params: {
       workOrder: evidence.workOrder,
       department: evidence.department,
       maintenanceHistory: evidence.maintenanceHistory,
+      openWorkOrders: evidence.openWorkOrders ?? [],
+      maintenanceRequests: evidence.maintenanceRequests ?? [],
       pmSnapshot: evidence.pmSnapshot,
       calibrationStatus: evidence.calibrationStatus,
       logisticsSnapshot: evidence.logisticsSnapshot,
       analyticsSnapshot: evidence.analyticsSnapshot,
       manualOrSopTexts: evidence.manualOrSopTexts,
       documentRetrieval: evidence.documentRetrieval,
+      missingDataFlags: evidence.missingDataFlags,
+      evidenceCompleteness: evidence.evidenceCompleteness,
       evidenceSignals: evidence.evidenceSignals,
     },
-    outputContract: {
-      decision: 'answer | limited_answer | check_manual | escalate | refuse',
-      intelligence_mode: 'standard | troubleshooting | prioritization | synthesis',
-      summary: 'string',
-      actions: 'string[]',
-      insights: 'string[]',
-      recommendations: 'string[]',
-      escalation_guidance: 'string | optional',
-      title: 'string | optional',
-      key_findings: 'string[]',
-      recommended_actions: 'string[]',
-      priority_reasoning: 'string[]',
-      likely_causes: 'string[]',
-      troubleshooting_steps: 'string[]',
-      maintenance_tips: 'string[]',
-      required_tools_or_parts: 'string[]',
-      escalation_recommendation: 'string | optional',
-      reason_for_limit: 'string | optional',
-      answer_basis:
-        'system_data | system_capabilities | manual_or_sop | general_safe_guidance | insufficient_data | model_output | format_recovery',
-      confidence: 'high | medium | low',
-      escalation_required: 'boolean',
-      entities_referenced: 'string[]',
-      follow_up_suggestions: 'string[]',
-      proactive_signals: 'string[]',
-      routing_explanation: 'string[]',
-      evidence_used: 'string[]',
-      links: '{ label: string, href: string, type?: string }[]',
-      limitations: 'string[]',
-      data_freshness: 'string | optional',
-      source_tables: 'string[]',
-    },
+    outputContract: buildOutputContract(capability),
   };
 
   const responseInstruction =
@@ -259,12 +311,16 @@ export function buildPromptPayload(params: {
 - Do not add unsupported technical details.
 - Use deterministicAnswerDraft as the factual skeleton when it is present.
 - If retrieved records exist, never answer with generic advice alone.
+- If evidenceCompleteness is partial or insufficient, answer only from present evidence, state what required evidence is missing, and avoid filling gaps with guesses.
+- If context conflict signals are present, prefer explicitly named text entities over page or memory context and mention the limitation briefly.
 - Preserve capability focus and avoid drifting into unrelated domains.
 - Keep list fields concise and practical.
 - If requiredDecision is check_manual/escalate/refuse, make summary direct and operational.
 - Never claim model-specific or manufacturer-specific procedures unless explicit manualOrSopTexts evidence exists.
 - Include reason_for_limit whenever requiredDecision is limited_answer, check_manual, escalate, or refuse.
-- If decision is limited_answer, provide only safe first-line checks and clearly recommend escalation criteria.
+- If capability is safe_troubleshooting and decision is limited_answer, provide only safe first-line checks and clearly recommend escalation criteria.
+- If capability is not safe_troubleshooting, keep troubleshooting_steps, likely_causes, required_tools_or_parts, and maintenance_tips empty. Do not add generic check power/cables/alarms guidance unless it is directly requested and supported by retrieved evidence.
+- For non-troubleshooting limited answers, explain the available system data and what context is missing instead of switching into a troubleshooting checklist.
 - Always populate actions, insights, and recommendations arrays.
 - Populate evidence_used, source_tables, limitations, data_freshness, and links when tool results provide them.
 - Links must use exact href values from tool/page context only; never invent routes or raw HTML.
@@ -289,7 +345,7 @@ ${responseInstruction}
 `.trim();
 
   return {
-    systemPrompt: capability === 'assistant_intro' ? ASSISTANT_INTRO_SYSTEM_PROMPT : CHATBOT_SYSTEM_PROMPT,
+    systemPrompt: systemPromptForCapability(capability),
     userPrompt,
   };
 }

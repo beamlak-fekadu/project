@@ -242,7 +242,23 @@ function sanitizeAssistantSummaryForUi(summary: string) {
   return text.slice(0, 2000);
 }
 
-function normalizeObjectPayload(rawObject: Record<string, unknown>, requiredDecision: ChatDecision): { assistant: AssistantContent; validationPassed: boolean } {
+function stripIrrelevantTroubleshootingFields(assistant: AssistantContent, capability: CapabilityId): AssistantContent {
+  if (capability === 'safe_troubleshooting') return assistant;
+  return {
+    ...assistant,
+    intelligence_mode: assistant.intelligence_mode === 'troubleshooting' ? 'standard' : assistant.intelligence_mode,
+    likely_causes: [],
+    troubleshooting_steps: [],
+    required_tools_or_parts: [],
+    maintenance_tips: capability === 'maintenance_tips' ? assistant.maintenance_tips : [],
+  };
+}
+
+function normalizeObjectPayload(
+  rawObject: Record<string, unknown>,
+  requiredDecision: ChatDecision,
+  capability: CapabilityId
+): { assistant: AssistantContent; validationPassed: boolean } {
   const normalized: AssistantContent = {
     decision: (typeof rawObject.decision === 'string' ? rawObject.decision : requiredDecision) as ChatDecision,
     title: typeof rawObject.title === 'string' ? rawObject.title.slice(0, 180) : undefined,
@@ -283,6 +299,7 @@ function normalizeObjectPayload(rawObject: Record<string, unknown>, requiredDeci
     evidence_used: stringArray(rawObject.evidence_used ?? rawObject.evidenceUsed, 12, 320),
     links: linkArray(rawObject.links),
     limitations: stringArray(rawObject.limitations, 8, 320),
+    missingDataFlags: stringArray(rawObject.missingDataFlags ?? rawObject.missing_data_flags, 12, 120),
     data_freshness: typeof rawObject.data_freshness === 'string' ? rawObject.data_freshness.slice(0, 200) : undefined,
     source_tables: stringArray(rawObject.source_tables ?? rawObject.sourceTables, 12, 120),
     data_mode: (() => {
@@ -300,9 +317,10 @@ function normalizeObjectPayload(rawObject: Record<string, unknown>, requiredDeci
     action_drafts: [],
   };
 
-  const parsed = AssistantContentSchema.safeParse(normalized);
+  const scoped = stripIrrelevantTroubleshootingFields(normalized, capability);
+  const parsed = AssistantContentSchema.safeParse(scoped);
   return {
-    assistant: ensureUiSafeAssistant(parsed.success ? parsed.data : normalized, requiredDecision),
+    assistant: ensureUiSafeAssistant(parsed.success ? parsed.data : scoped, requiredDecision),
     validationPassed: parsed.success,
   };
 }
@@ -340,6 +358,7 @@ function wrapPlainTextAsAssistant(params: { text: string; capability: Capability
       evidence_used: [],
       links: [],
       limitations: [],
+      missingDataFlags: [],
       data_freshness: undefined,
       source_tables: [],
       action_drafts: [],
@@ -379,6 +398,7 @@ function formatRecoveryAssistant(capability: CapabilityId, requiredDecision: Cha
       evidence_used: [],
       links: [],
       limitations: [],
+      missingDataFlags: [],
       data_freshness: undefined,
       source_tables: [],
       action_drafts: [],
@@ -404,7 +424,7 @@ export function normalizeAssistantResponse(params: NormalizeAssistantResponsePar
   }
 
   if (rawProviderContent && typeof rawProviderContent === 'object' && !Array.isArray(rawProviderContent)) {
-    const normalized = normalizeObjectPayload(rawProviderContent as Record<string, unknown>, requiredDecision);
+    const normalized = normalizeObjectPayload(rawProviderContent as Record<string, unknown>, requiredDecision, capability);
     return {
       assistant: normalized.assistant,
       metadata: parserMetadata({
@@ -457,7 +477,7 @@ export function normalizeAssistantResponse(params: NormalizeAssistantResponsePar
     const parsed = safeJsonParse(candidate);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
     const obj = parsed as Record<string, unknown>;
-    const normalized = normalizeObjectPayload(obj, requiredDecision);
+    const normalized = normalizeObjectPayload(obj, requiredDecision, capability);
     parsedCandidates.push({
       obj,
       score: scoreAssistantCandidate(obj) + (normalized.validationPassed ? 6 : 0),
@@ -469,7 +489,7 @@ export function normalizeAssistantResponse(params: NormalizeAssistantResponsePar
   if (parsedCandidates.length > 0) {
     parsedCandidates.sort((a, b) => b.score - a.score);
     const best = parsedCandidates[0];
-    const normalized = normalizeObjectPayload(best.obj, requiredDecision);
+    const normalized = normalizeObjectPayload(best.obj, requiredDecision, capability);
     const strategy = best.source === 'balanced' ? 'balanced_json' : 'json_candidate';
     return {
       assistant: normalized.assistant,

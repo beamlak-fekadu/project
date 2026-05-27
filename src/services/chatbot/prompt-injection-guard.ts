@@ -36,6 +36,7 @@ export type UnsafeBiomedicalCategory =
   | 'firmware_patch'
   | 'calibration_shortcut'
   | 'unsafe_use_despite_alarm'
+  | 'clinical_patient_diagnosis'
   | 'none';
 
 export interface PromptInjectionResult {
@@ -97,6 +98,7 @@ const UNSAFE_BIOMEDICAL_PATTERNS: Array<{
 }> = [
   // Alarm bypass / disable
   { pattern: /\b(disable|silence|mute|turn\s+off|switch\s+off|bypass|override|defeat|deactivate)\s+(the\s+)?alarm(s)?\b/i, category: 'alarm_bypass', signal: 'disable_alarm' },
+  { pattern: /\b(desactivar|silenciar|apagar|omitir)\s+(?:la\s+)?alarma\b/i, category: 'alarm_bypass', signal: 'disable_alarm_spanish' },
   { pattern: /\balarm\s+(silenc(e|ing)|bypass(ed|ing)?|disabl(e|ed|ing)|override(d|n)?)\b/i, category: 'alarm_bypass', signal: 'alarm_silencing' },
   { pattern: /\bhow\s+(do|can)\s+i\s+(silence|disable|stop|turn\s+off|mute)\s+(the|this)?\s*alarm/i, category: 'alarm_bypass', signal: 'how_to_silence_alarm' },
 
@@ -123,12 +125,18 @@ const UNSAFE_BIOMEDICAL_PATTERNS: Array<{
 
   // Calibration shortcut
   { pattern: /\bcalibration\s+(shortcut|cheat|skip|workaround|hack|bypass)\b/i, category: 'calibration_shortcut', signal: 'calibration_shortcut' },
-  { pattern: /\b(skip|bypass|fake|forge)\s+(the\s+)?calibration\b/i, category: 'calibration_shortcut', signal: 'skip_calibration' },
+  { pattern: /\bhow\s+(?:do|can)\s+i\s+calibrat(?:e|ion)\s+(?:this\s+)?(?:analy[sz]er|device|equipment|asset|unit)\b/i, category: 'calibration_shortcut', signal: 'calibration_procedure_request' },
+  { pattern: /\b(skip|bypass|bypas|fake|forge|falsif(?:y|ying)|short\s*cut)\s+(the\s+)?calibrat(?:e|ion|oin)\b/i, category: 'calibration_shortcut', signal: 'skip_calibration' },
+  { pattern: /\b(override|disable|bypass|bypas)\s+(?:the\s+)?(?:calibration|calibrtion|cal)\s+(?:lock|warning|requirement|check)\b/i, category: 'calibration_shortcut', signal: 'override_calibration_requirement' },
 
   // Unsafe continued use
   { pattern: /\b(?:use|run|keep\s+(?:running|using)|continue\s+using)\s+(?:the\s+)?(?:device|equipment|machine|monitor|ventilator|defibrillator|infusion\s+pump)\s+(?:even\s+if|despite|with\s+the?)\s+(?:unsafe|alarms?|fault|defect|broken|failure|warning)/i, category: 'unsafe_use_despite_alarm', signal: 'use_device_unsafe' },
   { pattern: /\bkeep\s+(?:the\s+)?(?:equipment|device|machine|monitor|ventilator)\s+running\s+despite\s+(?:an?\s+)?alarms?\b/i, category: 'unsafe_use_despite_alarm', signal: 'keep_running_despite_alarm' },
   { pattern: /\bignore\s+(?:the\s+)?(?:alarms?|fault|warning|safety\s+alert)\s+and\s+(?:use|run|continue)/i, category: 'unsafe_use_despite_alarm', signal: 'ignore_alarm_and_run' },
+
+  // Clinical diagnosis / treatment requests routed away from biomedical equipment operations.
+  { pattern: /\b(diagnose|diagnosis|treat|treatment|prescribe|dose|triage)\s+(?:this\s+)?patient\b/i, category: 'clinical_patient_diagnosis', signal: 'clinical_patient_advice' },
+  { pattern: /\bwhat\s+(?:disease|condition|medicine|drug|dose)\s+(?:does|should)\s+(?:the\s+)?patient\b/i, category: 'clinical_patient_diagnosis', signal: 'patient_diagnosis_or_treatment' },
 ];
 
 export function detectPromptInjection(message: string): PromptInjectionResult {
@@ -186,6 +194,8 @@ export function describeUnsafeRefusal(category: UnsafeBiomedicalCategory): strin
       return 'I cannot guide skipping, faking, or shortcutting calibration. Use the approved calibration procedure and record the result in BMEDIS.';
     case 'unsafe_use_despite_alarm':
       return 'I cannot guide using equipment that is alarming, broken, or showing a safety fault. Remove from clinical use, log a corrective request in BMEDIS, and escalate.';
+    case 'clinical_patient_diagnosis':
+      return 'I cannot diagnose, treat, prescribe, or make clinical decisions for a patient. Use licensed clinical staff and approved clinical workflows; I can only help with biomedical equipment management.';
     default:
       return 'I cannot guide that action because it would not be safe for the patient or the operator.';
   }

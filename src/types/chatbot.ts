@@ -13,6 +13,8 @@ export const CHAT_INTENTS = [
   'work_order_help',
   'work_order_status',
   'maintenance_status',
+  'asset_summary',
+  'inventory_search',
   'equipment_lookup',
   'equipment_history',
   'analytics_explanation',
@@ -119,6 +121,15 @@ export type FallbackReason = (typeof FALLBACK_REASONS)[number];
 export type CopilotParserStrategy = (typeof COPILOT_PARSER_STRATEGIES)[number];
 export type ChatMessageRole = 'user' | 'assistant';
 export type ChatModelMessageRole = 'system' | 'user' | 'assistant';
+export type EvidenceCompletenessStatus = 'complete' | 'partial' | 'insufficient' | 'denied' | 'unknown';
+export type EvidenceSourceCoverageKey =
+  | 'explicit_context'
+  | 'page_context'
+  | 'memory_context'
+  | 'text_match'
+  | 'formal_tool'
+  | 'snapshot'
+  | 'manual_or_sop';
 export type TroubleshootingSubtype =
   | 'safe_general_troubleshooting'
   | 'specific_technical_troubleshooting'
@@ -212,6 +223,7 @@ export const AssistantContentSchema = z.object({
     type: z.string().max(60).optional(),
   })).max(10).default([]),
   limitations: z.array(z.string().max(320)).max(8).default([]),
+  missingDataFlags: z.array(z.string().max(120)).max(12).default([]),
   data_freshness: z.string().max(200).optional(),
   source_tables: z.array(z.string().max(120)).max(12).default([]),
   /**
@@ -244,6 +256,7 @@ export const ChatResponseSchema = z.object({
     warning: z.string().nullable(),
     hardLimited: z.boolean(),
   }).optional(),
+  _debug: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ChatContextRefs = z.infer<typeof ChatContextRefsSchema>;
@@ -287,6 +300,8 @@ export interface ChatEvidence {
   workOrder: Record<string, unknown> | null;
   department: Record<string, unknown> | null;
   maintenanceHistory: Record<string, unknown>[];
+  openWorkOrders?: Record<string, unknown>[];
+  maintenanceRequests?: Record<string, unknown>[];
   pmSnapshot: Record<string, unknown> | null;
   calibrationStatus: Record<string, unknown> | null;
   logisticsSnapshot: Record<string, unknown> | null;
@@ -297,6 +312,17 @@ export interface ChatEvidence {
     searchDocuments: Array<{ id?: string; title: string; snippet?: string }>;
     forEquipment: Array<{ id?: string; title: string; snippet?: string }>;
     forCategory: Array<{ id?: string; title: string; snippet?: string }>;
+  };
+  missingDataFlags: string[];
+  evidenceCompleteness?: {
+    status: EvidenceCompletenessStatus;
+    score: number;
+    requiredPresent: string[];
+    requiredMissing: string[];
+    optionalMissing: string[];
+    staleSignals: string[];
+    conflictSignals: string[];
+    sourceCoverage: Record<EvidenceSourceCoverageKey, boolean>;
   };
   evidenceSignals: string[];
   deniedContextRefs: Array<'equipment' | 'work_order' | 'department'>;
@@ -314,6 +340,9 @@ export interface ResolvedEntity {
   id: string;
   label: string;
   source: ResolutionSource;
+  confidence?: number;
+  freshness?: 'current' | 'recent' | 'stale' | 'unknown';
+  conflictReason?: string;
 }
 
 export interface MemorySnapshot {
@@ -324,6 +353,15 @@ export interface MemorySnapshot {
   activeCapability?: CapabilityId;
   recentTurns: Array<{ role: ChatMessageRole; content: string }>;
   lastEntities: ResolvedEntity[];
+  lastEvidenceUsed?: string[];
+  lastSourceTables?: string[];
+  lastDataFreshness?: string;
+  lastDataMode?: AssistantContent['data_mode'];
+  lastAnswerBasis?: AssistantContent['answer_basis'];
+  lastEvidenceCompleteness?: ChatEvidence['evidenceCompleteness'];
+  memoryConfidence?: 'high' | 'medium' | 'low';
+  memoryAgeTurns?: number;
+  lastTurnAt?: string;
 }
 
 export interface TaskContextBundle {
@@ -409,6 +447,7 @@ export interface OrchestratorResult {
   model?: string;
   providerMetadata?: Record<string, unknown>;
   policyReason?: string;
+  debugMetadata?: Record<string, unknown>;
 }
 
 export interface ChatModuleContext {

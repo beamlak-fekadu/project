@@ -7,8 +7,9 @@ import type {
   ClassifiedRequest,
   TaskContextBundle,
   UserChatProfile,
+  ChatIntent,
 } from '@/types/chatbot';
-import { buildChatEvidence } from './context-service';
+import { buildChatEvidence, type ChatEvidenceLoadConfig } from './context-service';
 import { planToolRetrieval, type CopilotToolName } from './tool-plan';
 import { buildAlertSynthesis, buildCrossModuleSnapshot, buildProactiveSignals } from './proactive-signals';
 import { buildTier1TroubleshootingBundle } from './troubleshooting-context';
@@ -80,6 +81,58 @@ export interface TaskContextParams {
   message: string;
   moduleContext?: ChatModuleContext;
   classified: ClassifiedRequest;
+}
+
+const CAPABILITY_EVIDENCE_CONFIG: Record<CapabilityId, ChatEvidenceLoadConfig> = {
+  assistant_intro: {},
+  general_conversation: {},
+  off_topic_safe: {},
+  my_tasks: { loadLogistics: true, loadAnalytics: true, expected: [] },
+  prioritize_tasks: { loadLogistics: true, loadAnalytics: true, expected: [] },
+  summarize_work_order: { loadLogistics: true, loadAnalytics: false, expected: ['workOrder'] },
+  summarize_equipment: {
+    loadLogistics: false,
+    loadAnalytics: true,
+    expected: ['equipment'],
+    optional: ['maintenanceHistory', 'openWorkOrders', 'maintenanceRequests', 'pmSnapshot', 'calibrationStatus', 'analyticsSnapshot'],
+  },
+  explain_equipment_risk: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  explain_pm_status: { loadLogistics: false, loadAnalytics: true, expected: ['pmSnapshot', 'calibrationStatus', 'analyticsSnapshot'] },
+  summarize_alerts: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  safe_troubleshooting: {
+    loadLogistics: false,
+    loadAnalytics: true,
+    expected: [],
+    optional: ['equipment', 'maintenanceHistory', 'openWorkOrders', 'maintenanceRequests', 'pmSnapshot', 'calibrationStatus', 'manualOrSopTexts'],
+  },
+  maintenance_tips: { loadLogistics: false, loadAnalytics: true, expected: ['pmSnapshot'] },
+  logistics_status: { loadLogistics: true, loadAnalytics: false, expected: ['logisticsSnapshot'] },
+  procurement_status: { loadLogistics: true, loadAnalytics: false, expected: ['logisticsSnapshot'] },
+  summarize_department_readiness: { loadLogistics: false, loadAnalytics: true, expected: ['department', 'analyticsSnapshot'] },
+  training_status: { loadLogistics: false, loadAnalytics: false, expected: [] },
+  disposal_status: { loadLogistics: false, loadAnalytics: false, expected: [] },
+  qr_asset_context: { loadLogistics: false, loadAnalytics: true, expected: ['equipment', 'analyticsSnapshot'] },
+  offline_sync_status: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  report_summary: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  metric_debug: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  copilot_diagnostics: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  usage_status: { loadLogistics: false, loadAnalytics: true, expected: ['analyticsSnapshot'] },
+  unsafe_or_restricted: {},
+  general_system_fallback: {},
+};
+
+function evidenceConfigForCapability(capability: CapabilityId, intent: ChatIntent): ChatEvidenceLoadConfig {
+  const base = CAPABILITY_EVIDENCE_CONFIG[capability] ?? {};
+  if (capability === 'summarize_equipment' && intent === 'inventory_search') {
+    return { ...base, expected: ['department'], optional: ['analyticsSnapshot'] };
+  }
+  if (capability === 'summarize_equipment' && intent !== 'asset_summary' && intent !== 'equipment_history') {
+    return { ...base, expected: ['analyticsSnapshot'] };
+  }
+  if (capability === 'explain_pm_status' && intent !== 'calibration_status' && intent !== 'preventive_maintenance') {
+    return { ...base, expected: ['analyticsSnapshot'] };
+  }
+  return base;
 }
 
 function buildPriorityReasoning(blocks: {
@@ -338,31 +391,32 @@ export async function buildTaskContext(params: TaskContextParams): Promise<TaskC
         },
         evidenceSignals: [],
         deniedContextRefs: [],
+        missingDataFlags: [],
+        evidenceCompleteness: {
+          status: 'unknown',
+          score: 1,
+          requiredPresent: [],
+          requiredMissing: [],
+          optionalMissing: [],
+          staleSignals: [],
+          conflictSignals: [],
+          sourceCoverage: {
+            explicit_context: false,
+            page_context: Boolean(moduleContext),
+            memory_context: false,
+            text_match: false,
+            formal_tool: false,
+            snapshot: false,
+            manual_or_sop: false,
+          },
+        },
         accessDenied: false,
       },
     };
   }
 
-  const intentForEvidence =
-    capability === 'logistics_status'
-        ? 'calibration_or_logistics'
-        : capability === 'procurement_status'
-          ? 'calibration_or_logistics'
-        : capability === 'safe_troubleshooting'
-            ? 'troubleshooting'
-            : capability === 'explain_equipment_risk' || capability === 'summarize_alerts' || capability === 'summarize_department_readiness' || capability === 'qr_asset_context' || capability === 'offline_sync_status' || capability === 'report_summary' || capability === 'metric_debug' || capability === 'copilot_diagnostics' || capability === 'usage_status'
-              ? 'analytics_explanation'
-              : capability === 'summarize_work_order'
-                ? 'work_order_help'
-                : capability === 'summarize_equipment'
-                  ? 'equipment_lookup'
-                  : capability === 'training_status'
-                    ? 'maintenance_tip'
-                    : capability === 'disposal_status'
-                      ? 'maintenance_tip'
-                      : 'maintenance_tip';
-
-  const evidence: ChatEvidence = await buildChatEvidence(supabase, contextRefs, profile, intentForEvidence, message);
+  const evidenceConfig = evidenceConfigForCapability(capability, classified.intent);
+  const evidence: ChatEvidence = await buildChatEvidence(supabase, contextRefs, profile, evidenceConfig, message);
   const [shared, riskAnalytics, logistics, decisionSupport] = await Promise.all([
     loadTaskBlocks(supabase, profile),
     loadRiskAndAnalytics(supabase, contextRefs, profile),
@@ -405,6 +459,24 @@ export async function buildTaskContext(params: TaskContextParams): Promise<TaskC
     )
   );
   const formalToolSummary = summarizeToolResults(formalToolResults);
+  if (evidence.evidenceCompleteness) {
+    evidence.evidenceCompleteness.sourceCoverage.formal_tool = formalToolSummary.evidenceUsed.length > 0;
+    evidence.evidenceCompleteness.sourceCoverage.page_context = Boolean(
+      moduleContext?.route ||
+        moduleContext?.pathname ||
+        moduleContext?.selectedRecordType ||
+        moduleContext?.selectedRecordId ||
+        moduleContext?.visibleCounts
+    );
+    if (formalToolSummary.warnings.length > 0) {
+      evidence.evidenceCompleteness.staleSignals = Array.from(
+        new Set([
+          ...evidence.evidenceCompleteness.staleSignals,
+          ...formalToolSummary.warnings.filter((warning) => /stale|old|outdated/i.test(warning)).slice(0, 4),
+        ])
+      );
+    }
+  }
   let blocks: Record<string, unknown> = selectCapabilityBlocks(capability, shared, riskAnalytics, logistics, decisionSupport);
   if (assetFocus) {
     blocks = {

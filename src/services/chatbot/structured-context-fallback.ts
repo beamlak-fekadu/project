@@ -68,6 +68,7 @@ function baseAssistant(
     evidence_used: [],
     links: [],
     limitations: [],
+    missingDataFlags: [],
     data_freshness: 'Current system records available to this request.',
     source_tables: [],
     action_drafts: [],

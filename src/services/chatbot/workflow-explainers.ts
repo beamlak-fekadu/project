@@ -1180,6 +1180,7 @@ export function workflowExplainerToAssistant(
     evidence_used: explainer.evidence_used,
     links: explainer.links,
     limitations: explainer.limitations,
+    missingDataFlags: [],
     data_freshness: explainer.data_freshness,
     data_mode: explainer.data_mode,
     data_age_label: undefined,

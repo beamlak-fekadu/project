@@ -15,6 +15,7 @@ export interface PersistedChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  intent: string | null;
   decision: string | null;
   answer_basis: string | null;
   confidence: string | null;
@@ -63,7 +64,7 @@ export async function listChatMessages(sessionId: string) {
   const supabase = createClient();
   return supabase
     .from('chat_messages')
-    .select('id, role, content, decision, answer_basis, confidence, created_at, metadata')
+    .select('id, role, content, intent, decision, answer_basis, confidence, created_at, metadata')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
 }

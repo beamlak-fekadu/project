@@ -1,4 +1,5 @@
 import type { AssistantContent } from '@/types/chatbot';
+import { getAssistantVisibleSections } from './assistant-message-sections';
 
 const DISPLAY_REPAIR_SUMMARY =
   "I could not finish formatting a response. Try rephrasing, or open the relevant page (asset, work order, report) and ask again.";
@@ -22,20 +23,22 @@ export function displayableAssistantSummary(summary: string | undefined) {
   return cleaned;
 }
 
-export function buildAssistantCopyText(assistant: AssistantContent) {
+export function buildAssistantCopyText(assistant: AssistantContent, capability?: string) {
+  const sectionsForCapability = getAssistantVisibleSections(assistant, capability);
   const sections = [
     assistant.title ? `Title: ${assistant.title}` : '',
     `Summary: ${displayableAssistantSummary(assistant.summary)}`,
-    assistant.key_findings?.length ? `Key findings:\n- ${assistant.key_findings.join('\n- ')}` : '',
-    assistant.recommended_actions?.length ? `Recommended actions:\n- ${assistant.recommended_actions.join('\n- ')}` : '',
-    assistant.priority_reasoning?.length ? `Priority reasoning:\n- ${assistant.priority_reasoning.join('\n- ')}` : '',
-    assistant.likely_causes?.length ? `Likely causes:\n- ${assistant.likely_causes.join('\n- ')}` : '',
-    assistant.troubleshooting_steps?.length ? `Troubleshooting steps:\n- ${assistant.troubleshooting_steps.join('\n- ')}` : '',
-    assistant.maintenance_tips?.length ? `Maintenance tips:\n- ${assistant.maintenance_tips.join('\n- ')}` : '',
-    assistant.required_tools_or_parts?.length ? `Required tools or parts:\n- ${assistant.required_tools_or_parts.join('\n- ')}` : '',
+    sectionsForCapability.keyFindings.length ? `Key findings:\n- ${sectionsForCapability.keyFindings.join('\n- ')}` : '',
+    sectionsForCapability.recommendedActions.length ? `Recommended actions:\n- ${sectionsForCapability.recommendedActions.join('\n- ')}` : '',
+    sectionsForCapability.priorityReasoning.length ? `Priority reasoning:\n- ${sectionsForCapability.priorityReasoning.join('\n- ')}` : '',
+    sectionsForCapability.likelyCauses.length ? `Likely causes:\n- ${sectionsForCapability.likelyCauses.join('\n- ')}` : '',
+    sectionsForCapability.troubleshootingSteps.length ? `Troubleshooting steps:\n- ${sectionsForCapability.troubleshootingSteps.join('\n- ')}` : '',
+    sectionsForCapability.maintenanceTips.length ? `Maintenance tips:\n- ${sectionsForCapability.maintenanceTips.join('\n- ')}` : '',
+    sectionsForCapability.requiredToolsParts.length ? `Required tools or parts:\n- ${sectionsForCapability.requiredToolsParts.join('\n- ')}` : '',
     assistant.evidence_used?.length ? `Evidence used:\n- ${assistant.evidence_used.join('\n- ')}` : '',
+    sectionsForCapability.missingDataNotices.length ? `Missing data:\n- ${sectionsForCapability.missingDataNotices.join('\n- ')}` : '',
     assistant.links?.length ? `Links:\n- ${assistant.links.map((link) => `${link.label}: ${link.href}`).join('\n- ')}` : '',
-    assistant.limitations?.length ? `Limitations:\n- ${assistant.limitations.join('\n- ')}` : '',
+    sectionsForCapability.limitations.length ? `Limitations:\n- ${sectionsForCapability.limitations.join('\n- ')}` : '',
     assistant.source_tables?.length ? `Source tables: ${assistant.source_tables.join(', ')}` : '',
     assistant.data_freshness ? `Data freshness: ${assistant.data_freshness}` : '',
     assistant.escalation_recommendation ? `Escalation recommendation: ${assistant.escalation_recommendation}` : '',

@@ -12,6 +12,7 @@ import { buildAssistantCopyText, displayableAssistantSummary } from './assistant
 import { normalizeAssistantPayloadForUi } from '@/services/chatbot/chat-response-normalizer';
 import { CopilotActionCard } from './CopilotActionCard';
 import { useRole } from '@/hooks/useRole';
+import { getAssistantVisibleSections, safeAssistantList } from './assistant-message-sections';
 
 const BASIS_BADGE_VARIANT: Record<string, 'default' | 'info' | 'purple' | 'warning'> = {
   system_data: 'info',
@@ -20,29 +21,10 @@ const BASIS_BADGE_VARIANT: Record<string, 'default' | 'info' | 'purple' | 'warni
   insufficient_data: 'warning',
 };
 
-function asString(value: unknown, max = 200): string {
-  if (typeof value === 'string') return value.slice(0, max);
-  if (value == null) return '';
-  try {
-    return JSON.stringify(value).slice(0, max);
-  } catch {
-    return '';
-  }
-}
-
-function safeList(items: unknown[] | undefined, max = 6): string[] {
-  if (!Array.isArray(items)) return [];
-  return items
-    .map((item) => asString(item))
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-    .slice(0, max);
-}
-
 function buildEvidenceChips(assistant: AssistantContent): string[] {
-  const evidence = safeList(assistant.evidence_used, 5);
+  const evidence = safeAssistantList(assistant.evidence_used, 5);
   if (evidence.length > 0) return evidence;
-  return safeList(assistant.entities_referenced as unknown[] | undefined, 5);
+  return safeAssistantList(assistant.entities_referenced as unknown[] | undefined, 5);
 }
 
 function paragraphs(summary: string): string[] {
@@ -61,7 +43,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
 
   const isUser = message.role === 'user';
   const assistant = message.assistant
-    ? normalizeAssistantPayloadForUi(message.assistant, message.content)
+    ? normalizeAssistantPayloadForUi(message.assistant, message.content, undefined, message.capability)
     : undefined;
 
   if (isUser) {
@@ -97,16 +79,19 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
   const links = (assistant.links ?? []).filter((link) => link?.href?.startsWith('/'));
   const actionDrafts = assistant.action_drafts ?? [];
 
-  const recommendedActions = safeList(assistant.recommended_actions, 6);
-  const priorityReasoning = safeList(assistant.priority_reasoning, 6);
-  const troubleshootingSteps = safeList(assistant.troubleshooting_steps, 8);
-  const likelyCauses = safeList(assistant.likely_causes, 6);
-  const maintenanceTips = safeList(assistant.maintenance_tips, 6);
-  const requiredToolsParts = safeList(assistant.required_tools_or_parts, 6);
-  const keyFindings = safeList(assistant.key_findings, 6);
-  const followUps = safeList(assistant.follow_up_suggestions, 4);
-  const limitations = safeList(assistant.limitations, 4);
-  const sourceTables = safeList(assistant.source_tables, 8);
+  const {
+    recommendedActions,
+    priorityReasoning,
+    troubleshootingSteps,
+    likelyCauses,
+    maintenanceTips,
+    requiredToolsParts,
+    keyFindings,
+    followUps,
+    limitations,
+    sourceTables,
+    missingDataNotices,
+  } = getAssistantVisibleSections(assistant, message.capability);
 
   const summaryParas = paragraphs(summary);
 
@@ -216,6 +201,17 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
           </div>
         )}
 
+        {missingDataNotices.length > 0 && (
+          <div className="mt-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--assistant-surface-elev)]/70 p-3 text-sm text-[var(--text-muted)]">
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide">Missing data</p>
+            <ul className="list-disc space-y-1 pl-5">
+              {missingDataNotices.map((item, idx) => (
+                <li key={`md-${idx}`}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {actionDrafts.length > 0 && (
           <div className="mt-3 space-y-2">
             <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Suggested actions</p>
@@ -294,7 +290,7 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
             size="sm"
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(buildAssistantCopyText(assistant as AssistantContent));
+                await navigator.clipboard.writeText(buildAssistantCopyText(assistant as AssistantContent, message.capability));
                 toast('success', 'Copied');
               } catch {
                 toast('error', 'Could not copy');
@@ -363,8 +359,8 @@ export function AssistantMessageCard({ message }: { message: AssistantUiMessage 
               <div>
                 <p className="font-semibold text-[var(--foreground)]">Routing</p>
                 <ul className="list-disc space-y-0.5 pl-4">
-                  {(assistant.routing_explanation ?? []).slice(0, 6).map((item, idx) => (
-                    <li key={`r-${idx}`}>{asString(item)}</li>
+                  {safeAssistantList(assistant.routing_explanation, 6).map((item, idx) => (
+                    <li key={`r-${idx}`}>{item}</li>
                   ))}
                 </ul>
               </div>

@@ -21,7 +21,7 @@ export const STANDARD_RESPONSES = {
 } as const;
 
 const ROLE_INTENT_BLOCKS: Record<string, ChatIntent[]> = {
-  viewer: ['calibration_or_logistics', 'spare_parts_lookup', 'logistics_stock', 'procurement_status', 'calibration_status'],
+  viewer: ['calibration_or_logistics', 'spare_parts_lookup', 'logistics_stock', 'procurement_status'],
   store_user: ['troubleshooting', 'safe_troubleshooting'],
 };
 
@@ -34,7 +34,7 @@ const ROLE_CAPABILITY_BLOCKS: Record<string, CapabilityId[]> = {
 };
 
 const EXACT_ERROR_CODE_PATTERN = /\b(error\s*code|code\s*[a-z]?\d{2,}|E\d{2,})\b/i;
-const CALIBRATION_EXACT_PATTERN = /\b(exact|step[-\s]?by[-\s]?step|service mode|calibrat(e|ion)\s+this model)\b/i;
+const CALIBRATION_EXACT_PATTERN = /\b(exact|step[-\s]?by[-\s]?step|service mode|calibrat(?:e|ion)\s+this\s+(?:model|analy[sz]er|device|equipment|asset|unit))\b/i;
 const DEEP_REPAIR_PATTERN = /\b(board|component|pcb|solder|firmware|internal repair|replace board)\b/i;
 const MUTATION_REQUEST_PATTERN =
   /\b(create|draft|submit|assign|reassign|close|complete|approve|reject|delete|update|mark)\b.*\b(work orders?|maintenance requests?|requests?|procurement|calibration|training|disposal|assets?|equipment)\b/i;
@@ -44,6 +44,8 @@ const SAFE_NO_RECORD_INTENTS = new Set<ChatIntent>([
   'work_order_help',
   'work_order_status',
   'maintenance_status',
+  'asset_summary',
+  'inventory_search',
   'equipment_lookup',
   'equipment_history',
   'risk_analysis',
@@ -140,12 +142,17 @@ export function evaluateSafetyDecision(
   }
 
   if (intent === 'general_conversation' || intent === 'off_topic_safe') {
+    const neutralFallback =
+      classified.capability === 'general_system_fallback' ||
+      classified.matchedSignals.includes('default_general_fallback');
     return {
-      decision: 'answer',
+      decision: neutralFallback ? 'limited_answer' : 'answer',
       blocked: false,
       answerBasis: 'general_safe_guidance',
-      confidence: 'medium',
-      reason: 'Harmless non-operational prompt; provide brief safe response and redirect to BMEDIS support.',
+      confidence: neutralFallback ? 'low' : 'medium',
+      reason: neutralFallback
+        ? 'No specific BMEDIS intent was identified; ask a neutral clarification or offer general system help.'
+        : 'Harmless non-operational prompt; provide brief safe response and redirect to BMEDIS support.',
       escalationRequired: false,
       evidenceTier: 'low',
       policyCategory: 'general_operational',
@@ -299,6 +306,10 @@ export function evaluateSafetyDecision(
 
   const hasManualSupport = evidence.manualOrSopTexts.length > 0;
   const hasEvidence = hasGroundedContext(evidence);
+  const completeness = evidence.evidenceCompleteness;
+  const completenessInsufficient =
+    completeness?.status === 'insufficient' ||
+    ((completeness?.requiredMissing?.length ?? 0) > 0 && (completeness?.score ?? 1) < 0.55);
   const isDepartmentUser = profile.roleNames.includes('department_user') && !profile.roleNames.includes('admin');
   const asksExactErrorCode = EXACT_ERROR_CODE_PATTERN.test(normalizedMessage);
   const asksExactCalibration = CALIBRATION_EXACT_PATTERN.test(normalizedMessage);
@@ -307,6 +318,19 @@ export function evaluateSafetyDecision(
   const specificTechnical =
     classified.specificity === 'specific' || classified.troubleshootingSubtype === 'specific_technical_troubleshooting';
   const unsafeTroubleshooting = classified.troubleshootingSubtype === 'unsafe_internal_or_bypass_troubleshooting';
+
+  if (intent === 'calibration_status' && asksExactCalibration) {
+    return {
+      decision: 'check_manual',
+      blocked: true,
+      answerBasis: 'insufficient_data',
+      confidence: 'low',
+      reason: STANDARD_RESPONSES.checkManual,
+      escalationRequired: false,
+      evidenceTier: 'low',
+      policyCategory: 'specific_technical',
+    };
+  }
 
   if (technicalDetailIntent && (asksExactErrorCode || asksExactCalibration || specificTechnical) && !hasManualSupport) {
     return {
@@ -366,6 +390,23 @@ export function evaluateSafetyDecision(
       escalationRequired: false,
       evidenceTier: 'low',
       policyCategory: 'specific_technical',
+    };
+  }
+
+  if (
+    completenessInsufficient &&
+    classified.capability !== 'safe_troubleshooting' &&
+    classified.capability !== 'unsafe_or_restricted'
+  ) {
+    return {
+      decision: 'limited_answer',
+      blocked: false,
+      answerBasis: 'insufficient_data',
+      confidence: 'low',
+      reason: `Required evidence is incomplete for this capability: ${(completeness?.requiredMissing ?? []).join(', ') || 'missing required context'}.`,
+      escalationRequired: false,
+      evidenceTier: 'low',
+      policyCategory: 'general_operational',
     };
   }
 

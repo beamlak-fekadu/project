@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AssistantContent, ChatMessageRole, MemorySnapshot, ResolvedEntity } from '@/types/chatbot';
+import type { AssistantContent, ChatEvidence, ChatMessageRole, MemorySnapshot, ResolvedEntity } from '@/types/chatbot';
 
 const MEMORY_TURN_LIMIT = 10;
 const RECENT_TURN_SUMMARY_LIMIT = 6;
@@ -41,6 +41,24 @@ function summarizeTurns(turns: Array<{ role: ChatMessageRole; content: string }>
   return sample.slice(0, 800);
 }
 
+function entityConfidence(entities: ResolvedEntity[]) {
+  if (!entities.length) return 0;
+  return Math.max(...entities.map((entity) => entity.confidence ?? 0.5));
+}
+
+function deriveMemoryConfidence(params: {
+  entities: ResolvedEntity[];
+  activeCapability?: MemorySnapshot['activeCapability'];
+  ageTurns: number;
+  evidenceCompleteness?: ChatEvidence['evidenceCompleteness'];
+}): NonNullable<MemorySnapshot['memoryConfidence']> {
+  const entityScore = entityConfidence(params.entities);
+  const completenessScore = params.evidenceCompleteness?.score ?? 0.4;
+  if (params.activeCapability && entityScore >= 0.8 && params.ageTurns <= 4 && completenessScore >= 0.6) return 'high';
+  if (params.activeCapability && entityScore >= 0.55 && params.ageTurns <= 8) return 'medium';
+  return 'low';
+}
+
 export async function loadConversationMemory(
   supabase: SupabaseClient,
   sessionId: string,
@@ -48,17 +66,28 @@ export async function loadConversationMemory(
 ): Promise<MemorySnapshot> {
   const { data: messages } = await supabase
     .from('chat_messages')
-    .select('role, content')
+    .select('role, content, metadata, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: false })
     .limit(MEMORY_TURN_LIMIT);
 
-  const recentTurns = ((messages ?? []) as Array<{ role: ChatMessageRole; content: string }>)
+  const rawTurns = ((messages ?? []) as Array<{ role: ChatMessageRole; content: string; metadata?: Record<string, unknown> | null; created_at?: string | null }>)
     .reverse()
     .map((row) => ({
       role: row.role,
       content: row.content,
+      metadata: row.metadata ?? null,
+      created_at: row.created_at ?? null,
     }));
+  const recentTurns = rawTurns.map((row) => ({ role: row.role, content: row.content }));
+  const lastAssistantIndex = rawTurns.map((turn, index) => ({ turn, index })).reverse().find(({ turn }) => turn.role === 'assistant');
+  const lastAssistantMetadata = lastAssistantIndex?.turn.metadata ?? null;
+  const lastAssistant = lastAssistantMetadata && typeof lastAssistantMetadata === 'object' ? lastAssistantMetadata : {};
+  const lastAssistantPayload = (lastAssistant as { assistant?: unknown }).assistant as AssistantContent | undefined;
+  const metadataEntities = Array.isArray((lastAssistant as { resolvedEntities?: unknown }).resolvedEntities)
+    ? ((lastAssistant as { resolvedEntities: ResolvedEntity[] }).resolvedEntities)
+    : [];
+  const memoryAgeTurns = lastAssistantIndex ? rawTurns.length - 1 - lastAssistantIndex.index : rawTurns.length;
 
   const shortSummary = summarizeTurns(recentTurns);
   const focusSeed = recentTurns.length ? recentTurns[recentTurns.length - 1].content : '';
@@ -82,15 +111,38 @@ export async function loadConversationMemory(
   const persistedEntities = Array.isArray(memoryRow?.last_entities)
     ? (memoryRow.last_entities as ResolvedEntity[])
     : [];
+  const lastEntities = persistedEntities.length ? persistedEntities : metadataEntities.length ? metadataEntities : fallbackEntities;
+  const activeCapability =
+    (memoryRow?.active_capability as MemorySnapshot['activeCapability']) ??
+    ((lastAssistant as { capability?: MemorySnapshot['activeCapability'] }).capability);
+  const threadIntent =
+    (memoryRow?.thread_intent as MemorySnapshot['threadIntent']) ??
+    ((lastAssistant as { intent?: MemorySnapshot['threadIntent'] }).intent);
+  const lastEvidenceCompleteness = (lastAssistant as { evidenceCompleteness?: ChatEvidence['evidenceCompleteness'] }).evidenceCompleteness;
+  const memoryConfidence = deriveMemoryConfidence({
+    entities: lastEntities,
+    activeCapability,
+    ageTurns: memoryAgeTurns,
+    evidenceCompleteness: lastEvidenceCompleteness,
+  });
 
   return {
     sessionId,
     shortSummary: typeof memoryRow?.summary_text === 'string' && memoryRow.summary_text.trim() ? memoryRow.summary_text : shortSummary,
     focus: typeof memoryRow?.focus === 'string' && memoryRow.focus.trim() ? memoryRow.focus : focus,
-    threadIntent: (memoryRow?.thread_intent as MemorySnapshot['threadIntent']) ?? undefined,
-    activeCapability: (memoryRow?.active_capability as MemorySnapshot['activeCapability']) ?? undefined,
+    threadIntent,
+    activeCapability,
     recentTurns,
-    lastEntities: persistedEntities.length ? persistedEntities : fallbackEntities,
+    lastEntities,
+    lastEvidenceUsed: lastAssistantPayload?.evidence_used,
+    lastSourceTables: lastAssistantPayload?.source_tables,
+    lastDataFreshness: lastAssistantPayload?.data_freshness,
+    lastDataMode: lastAssistantPayload?.data_mode,
+    lastAnswerBasis: lastAssistantPayload?.answer_basis,
+    lastEvidenceCompleteness,
+    memoryConfidence,
+    memoryAgeTurns,
+    lastTurnAt: lastAssistantIndex?.turn.created_at ?? undefined,
   };
 }
 

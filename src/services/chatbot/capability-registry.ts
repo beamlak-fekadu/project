@@ -90,7 +90,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
   },
   summarize_equipment: {
     id: 'summarize_equipment',
-    intents: ['equipment_lookup', 'equipment_history', 'analytics_explanation'],
+    intents: ['asset_summary', 'inventory_search', 'equipment_lookup', 'equipment_history', 'analytics_explanation'],
     description: 'Summarizes current equipment status, reliability, and maintenance context.',
     requiredInputs: ['equipmentId'],
     retrievalBlocks: ['equipment', 'maintenanceHistory', 'riskScores', 'reliability'],
@@ -288,7 +288,7 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = {
   },
   general_system_fallback: {
     id: 'general_system_fallback',
-    intents: ['maintenance_tip', 'workflow_help', 'insufficient_context'],
+    intents: ['general_conversation', 'maintenance_tip', 'workflow_help', 'insufficient_context'],
     description: 'Safe, contextual fallback preserving system-operational tone.',
     requiredInputs: [],
     retrievalBlocks: ['lightweightContext'],

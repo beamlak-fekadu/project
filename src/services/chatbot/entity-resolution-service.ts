@@ -12,7 +12,7 @@ interface ResolveParams {
 }
 
 export interface EntityResolutionWarning {
-  type: 'ambiguous_text_match' | 'out_of_department_text_match' | 'no_scoped_match';
+  type: 'ambiguous_text_match' | 'out_of_department_text_match' | 'no_scoped_match' | 'context_conflict';
   reason: string;
   detail?: string;
 }
@@ -68,6 +68,8 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
           id: data.id as string,
           label: `${(data.asset_code as string) ?? ''} ${(data.name as string) ?? ''}`.trim(),
           source: 'explicit_context',
+          confidence: 0.88,
+          freshness: 'current',
         });
       }
     }
@@ -94,6 +96,8 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
           id: data.id as string,
           label: (data.work_order_number as string) ?? 'Work order',
           source: 'explicit_context',
+          confidence: 0.88,
+          freshness: 'current',
         });
       }
     }
@@ -114,6 +118,8 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
           id: data.id as string,
           label: (data.name as string) ?? 'Department',
           source: 'explicit_context',
+          confidence: 0.86,
+          freshness: 'current',
         });
       }
     }
@@ -127,6 +133,8 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
         id: data.id as string,
         label: (data.name as string) ?? 'Department',
         source: 'module_context',
+        confidence: 0.72,
+        freshness: 'unknown',
       });
     }
   }
@@ -137,6 +145,8 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
         resolved.push({
           ...entity,
           source: 'memory_context',
+          confidence: Math.min(entity.confidence ?? 0.58, 0.58),
+          freshness: entity.freshness ?? 'unknown',
         });
       }
     }
@@ -147,15 +157,15 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
   const prefersEquipmentContext = routeHint.includes('inventory') || routeHint.includes('equipment');
   if (prefersWorkOrderContext && !resolved.find((item) => item.type === 'work_order') && memory?.lastEntities?.length) {
     const previousWorkOrder = memory.lastEntities.find((item) => item.type === 'work_order');
-    if (previousWorkOrder) resolved.push({ ...previousWorkOrder, source: 'module_context' });
+    if (previousWorkOrder) resolved.push({ ...previousWorkOrder, source: 'module_context', confidence: 0.62, freshness: 'unknown' });
   }
   if (prefersEquipmentContext && !resolved.find((item) => item.type === 'equipment') && memory?.lastEntities?.length) {
     const previousEquipment = memory.lastEntities.find((item) => item.type === 'equipment');
-    if (previousEquipment) resolved.push({ ...previousEquipment, source: 'module_context' });
+    if (previousEquipment) resolved.push({ ...previousEquipment, source: 'module_context', confidence: 0.62, freshness: 'unknown' });
   }
 
   const workOrderNumber = parseWorkOrderNumber(message);
-  if (workOrderNumber && !resolved.find((item) => item.type === 'work_order')) {
+  if (workOrderNumber) {
     let woQuery = supabase
       .from('work_orders')
       .select('id, work_order_number, asset_id, equipment_assets:asset_id(department_id)')
@@ -195,17 +205,31 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
           detail: 'The matched work order is outside your department.',
         });
       } else {
-        resolved.push({
+        const existingWorkOrder = resolved.find((item) => item.type === 'work_order');
+        const textResolved: ResolvedEntity = {
           type: 'work_order',
           id: row.id as string,
           label: row.work_order_number as string,
           source: 'text_match',
-        });
+          confidence: 0.96,
+          freshness: 'current',
+        };
+        if (existingWorkOrder && existingWorkOrder.id !== textResolved.id) {
+          warnings.push({
+            type: 'context_conflict',
+            reason: 'work_order_text_overrode_context',
+            detail: `The message names ${workOrderNumber}, which differs from the current page or memory work order. I used the explicitly named work order.`,
+          });
+          const index = resolved.findIndex((item) => item.type === 'work_order');
+          resolved.splice(index, 1, { ...textResolved, conflictReason: 'Explicit work-order text overrode page or memory context.' });
+        } else if (!existingWorkOrder) {
+          resolved.push(textResolved);
+        }
       }
     }
   }
 
-  if (!resolved.find((item) => item.type === 'equipment')) {
+  {
     const equipmentToken = message.match(/\basset\s+([A-Z0-9-]{3,})\b/i)?.[1];
     if (equipmentToken) {
       let assetQuery = supabase
@@ -242,12 +266,26 @@ export async function resolveEntitiesDetailed(params: ResolveParams): Promise<En
             detail: 'The matched asset is outside your department.',
           });
         } else {
-          resolved.push({
+          const existingEquipment = resolved.find((item) => item.type === 'equipment');
+          const textResolved: ResolvedEntity = {
             type: 'equipment',
             id: row.id as string,
             label: `${(row.asset_code as string) ?? ''} ${(row.name as string) ?? ''}`.trim(),
             source: 'text_match',
-          });
+            confidence: 0.94,
+            freshness: 'current',
+          };
+          if (existingEquipment && existingEquipment.id !== textResolved.id) {
+            warnings.push({
+              type: 'context_conflict',
+              reason: 'equipment_text_overrode_context',
+              detail: `The message names asset ${equipmentToken}, which differs from the current page or memory asset. I used the explicitly named asset.`,
+            });
+            const index = resolved.findIndex((item) => item.type === 'equipment');
+            resolved.splice(index, 1, { ...textResolved, conflictReason: 'Explicit asset text overrode page or memory context.' });
+          } else if (!existingEquipment) {
+            resolved.push(textResolved);
+          }
         }
       }
     }

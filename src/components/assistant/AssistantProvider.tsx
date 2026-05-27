@@ -177,7 +177,8 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       const assistantNormalized = normalizeAssistantPayloadForUi(
         response.assistant,
         undefined,
-        response.assistant?.decision as ChatDecision | undefined
+        response.assistant?.decision as ChatDecision | undefined,
+        response.capability
       );
 
       const assistantMessage: AssistantUiMessage = {

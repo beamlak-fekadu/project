@@ -17,6 +17,7 @@ const EMPTY_EVIDENCE: ChatEvidence = {
   evidenceSignals: [],
   deniedContextRefs: [],
   accessDenied: false,
+  missingDataFlags: [],
 };
 
 test('prioritize_tasks malformed provider output recovers using operational signals', () => {

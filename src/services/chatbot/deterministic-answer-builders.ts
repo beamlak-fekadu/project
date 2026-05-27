@@ -174,8 +174,10 @@ function sanitizeDecision(decision: ChatDecision): ChatDecision {
 function hasRecordData(params: DeterministicAnswerParams) {
   const { blocks, evidence, moduleContext } = params;
   return Boolean(
-    getEquipment(blocks, evidence) ||
+      getEquipment(blocks, evidence) ||
       getWorkOrder(blocks, evidence) ||
+      (evidence.openWorkOrders?.length ?? 0) ||
+      (evidence.maintenanceRequests?.length ?? 0) ||
       asRows(blocks.rankedOperationalQueue).length ||
       asRows(blocks.assignedWorkOrders).length ||
       asRows(blocks.overduePm).length ||
@@ -232,6 +234,7 @@ function baseAssistant(
     evidence_used: uniqueStrings(patch.evidence_used ?? evidenceLabels(params), 10),
     links: patch.links ?? routeLinks(params.blocks, params.moduleContext),
     limitations: uniqueStrings([...(patch.limitations ?? []), ...limitations(params.blocks)], 6),
+    missingDataFlags: uniqueStrings(patch.missingDataFlags ?? params.evidence.missingDataFlags ?? [], 12),
     data_freshness: patch.data_freshness ?? (recordBacked ? 'Current scoped BMEDIS records and page context.' : undefined),
     source_tables: uniqueStrings(patch.source_tables ?? sourceTables(params.blocks), 12),
     action_drafts: [],
@@ -437,10 +440,14 @@ function buildAssetContextAnswer(params: DeterministicAnswerParams): AssistantCo
   const riskScores = asRows(analytics?.riskScores);
   const reliabilityMetrics = asRows(analytics?.reliabilityMetrics);
   const replacementPriority = asRows(analytics?.replacementPriority);
+  const openWorkOrders = evidence.openWorkOrders ?? [];
+  const maintenanceRequests = evidence.maintenanceRequests ?? [];
 
   const summaryParts = [`Based on current system records, ${name} is marked ${condition} with status ${status}.`];
   if (criticality) summaryParts.push(`Its category criticality is ${criticality}.`);
   if (selectionReason) summaryParts.push(selectionReason);
+  if (openWorkOrders.length) summaryParts.push(`There are ${openWorkOrders.length} visible open work order(s) for this asset.`);
+  if (maintenanceRequests.length) summaryParts.push(`There are ${maintenanceRequests.length} recent maintenance request(s) linked to it.`);
   if (history.length) summaryParts.push(`I found ${history.length} recent maintenance event(s) linked to it.`);
   if (riskScores.length || reliabilityMetrics.length || replacementPriority.length) {
     summaryParts.push('Risk, reliability, or replacement evidence is available for review.');
@@ -474,6 +481,8 @@ function buildAssetContextAnswer(params: DeterministicAnswerParams): AssistantCo
       text(asset?.installation_date) ? `installation date: ${text(asset?.installation_date)}` : '',
       text(asset?.warranty_expiry) ? `warranty expiry: ${text(asset?.warranty_expiry)}` : '',
       text(asset?.service_contract_expiry) ? `service contract expiry: ${text(asset?.service_contract_expiry)}` : '',
+      openWorkOrders.length ? `${openWorkOrders.length} open work order(s) visible for this asset.` : '',
+      maintenanceRequests.length ? `${maintenanceRequests.length} maintenance request(s) retrieved.` : '',
       history.length ? `${history.length} recent maintenance event(s) retrieved.` : '',
       riskScores.length ? `${riskScores.length} risk score row(s) available.` : '',
       reliabilityMetrics.length ? `${reliabilityMetrics.length} reliability metric row(s) available.` : '',
